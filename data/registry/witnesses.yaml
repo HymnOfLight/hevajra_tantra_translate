@@ -1,249 +1,289 @@
-# 《喜金刚本续》(Hevajratantra) 见证清单 —— 见证矩阵的“列”定义
+# Witnesses of the Hevajratantra: the columns of the witness matrix, read by
+# hevajra_matrix.registry.load_witnesses (unknown keys are rejected).
 #
-# 字段说明
-#   id            机器标识，矩阵列名
-#   lang          sa / bo / zh / txg(西夏) / mn / en
-#   layer         primary   直接见证（该语言的独立古代文本）
-#                 edition   现代校勘本（对同一语言写本传承的重构，视作“带编者干预的见证”）
-#                 indirect  注疏引文等间接见证（只在被引出的偈颂上有值）
-#                 pivot     现代译本，只作检索/复核桥梁，不进入偏移统计
-#   source_lang   该见证的直接来源语言（译出方向）；null 表示本身即梵文
-#   date          成书 / 译出年代（尽可能给出依据）
-#   independence  相对梵文金标准的独立性评级：
-#                 independent  直接译自梵文，与其他译本无从属关系
-#                 derived      译自另一译本（如藏→汉、藏→西夏），只能作为其来源列的“二阶见证”
-#                 revised      在早期译本基础上修订（如德格本经 15 世纪贡译师修订）
+# Fields
+#   id            machine id, the matrix column name
+#   lang          sa | bo | zh | txg (Tangut) | mn | en
+#   layer         primary   a direct witness (an ancient text in that language)
+#                 edition   a modern critical edition (a reconstruction with editorial choices)
+#                 indirect  quotations in commentaries (values only for the quoted verses)
+#                 pivot     a modern translation, used only as a bridge for retrieval and human
+#                           review, never in deviation statistics
+#   source_lang   the language the witness was translated from; null for Sanskrit witnesses,
+#                 "unknown" when not established
+#   date          date of composition, translation or copy, with its basis
+#   independence  relation to the other witnesses:
+#                 independent  translated directly from Sanskrit / not derived from another witness
+#                 derived      translated or copied from another witness (a second-order witness)
+#                 revised      an earlier translation revised later (e.g. the Derge, see its notes)
 #                 unknown
-#   status        available / license_restricted / to_verify / not_digitized
-#   role          gold / reference_variant / target / control / pivot / indirect
-#   notes         必须诚实标注“待核”事项，不得在未核实时填入具体编号
+#   status        available | license_restricted | to_verify | not_digitized
+#   role          gold | reference_variant | target | control | pivot | indirect
+#   notes         English; anything unverified is said to be unverified, and no catalogue
+#                 number, page or shelfmark is filled in before it has been checked
+#   other keys    editor, translator, reviser, source_url, license, coords, unit_scheme
 #
-# 约定：梵文金标准不是单一文本，而是 sa_* 各列构成的“金标准分布”（见 docs/02_矩阵与偏移度量.md §2）。
+# The Sanskrit reference is not one text but the distribution formed by the sa_* columns.
+# Corrections of 2026-09-30 (code review, critique B9) are marked "(B9)".
 
 witnesses:
 
-  # ---------------------------------------------------------------- 梵文层
+  # ---------------------------------------------------------------- Sanskrit
   - id: sa_snellgrove1959
     lang: sa
     layer: edition
     source_lang: null
     title: "The Hevajra Tantra: A Critical Study, Part II (Sanskrit and Tibetan texts)"
     editor: "D. L. Snellgrove"
-    date: "1959（校勘本；据尼泊尔及剑桥写本）"
+    date: "1959 (critical edition based on Nepalese and Cambridge manuscripts)"
     independence: independent
     status: license_restricted
     role: gold
-    unit_scheme: "I.1.1 … II.12.n（Snellgrove 分品偈号，本项目默认行标识）"
+    unit_scheme: "I.1.1 ... II.12.n (Snellgrove's chapter and verse numbers; the project's default row ids)"
     notes: >
-      本项目默认的行（row）编号来源。校勘本正文受版权保护，仓库不再分发文本，
-      只保存偈号坐标；研究者自备电子文本放入 data/reference/。
+      Default source of the row ids. The edited text is under copyright, so the repository
+      keeps only unit coordinates; researchers put their own electronic text in data/reference/.
 
   - id: sa_tripathi_negi2001
     lang: sa
     layer: edition
     source_lang: null
     title: "Hevajratantram with Muktāvalī Pañjikā of Ratnākaraśānti"
-    editor: "Ram Shankar Tripathi & Thakur Sain Negi"
-    date: "2001（CIHTS, Sarnath）"
+    editor: "Ram Shankar Tripathi and Thakur Sain Negi"
+    date: "2001 (CIHTS, Sarnath)"
     independence: independent
     status: license_restricted
     role: reference_variant
-    notes: "与 Snellgrove 本的异读构成“金标准内部方差”的主要来源之一。"
+    notes: "Its readings that differ from Snellgrove's are a main source of variance within the Sanskrit reference."
 
   - id: sa_farrow_menon1992
     lang: sa
     layer: edition
     source_lang: null
     title: "The Concealed Essence of the Hevajra Tantra, with the Commentary Yogaratnamālā"
-    editor: "G. W. Farrow & I. Menon"
+    editor: "G. W. Farrow and I. Menon"
     date: "1992"
-    independence: independent
+    independence: derived
     status: license_restricted
     role: reference_variant
-    notes: "正文基本承袭 Snellgrove，独立价值主要在附带的 Yogaratnamālā 校文。"
+    notes: >
+      (B9) The root text largely follows Snellgrove 1959, so it is not an independent witness
+      of the Sanskrit transmission; its own value lies in the Yogaratnamālā text.
 
   - id: sa_conlon2022
     lang: sa
     layer: edition
     source_lang: null
-    title: "Hevajratantra, provisional critical edition"
-    editor: "Ryan Conlon（Hamburg）"
-    date: "2022（暂定校本）"
+    title: "Hevajratantra, provisional critical edition (online TEI edition heta_1.4)"
+    editor: "Ryan Conlon (Hamburg)"
+    date: "2022-, online and still under revision"
     independence: independent
     status: to_verify
     role: reference_variant
+    source_url: "https://mail.saktumiva.org/wiki/conlon/hevajratantra/heta_1.4/htec_1.4"
     notes: >
-      引入更多写本（含贝叶本与纸本）。许可声明未见，使用前须与编者联系。
-      Isaacson 2022 指出 T0892 末尾三偈与部分梵文写本相合而藏译无——这是
-      “汉译底本属另一传本”假说的关键证据，须以此校本逐处核对。
+      (B9) An online TEI edition on saktumiva, not a publication, and still under revision
+      (version heta_1.4). It collates five Sanskrit manuscripts (C, K, Na, Nb, P; see
+      data/registry/sa_manuscripts.yaml) and two printed editions, and no Tibetan or Chinese.
+      There is currently no page for II.12, so the decomposition is "insufficient" for II.12
+      by construction. No licence statement was found: ask the editor before use (open
+      question Q4). Isaacson 2022 (pp. 161-186) is reported to argue that the three final
+      gathas of T0892 agree with some Sanskrit manuscripts against the Tibetan. Only the
+      "the Chinese has them, the Tibetan lacks them" half is confirmed (sentinel S4); the
+      agreement with Sanskrit manuscripts is unverified and must be checked in this edition.
 
   - id: sa_mss_group
     lang: sa
     layer: primary
     source_lang: null
-    title: "梵文写本群（尼泊尔贝叶本、纸本；NGMPP 缩微）"
-    date: "约 12–19 世纪抄本"
+    title: "Sanskrit manuscripts (Nepalese palm-leaf and paper manuscripts; NGMPP microfilms)"
+    date: "copies of about the 12th to 19th centuries"
     independence: independent
     status: not_digitized
     role: reference_variant
     notes: >
-      作为“金标准分布”的底层。逐一编号须据 Conlon 2022 / Isaacson 2022 的写本清单，
-      本文件不臆填缩微号。第一阶段只以校勘本异读间接引入；第二阶段按重要异读回查影像。
+      The bottom layer of the Sanskrit reference. The individual manuscripts are listed in
+      data/registry/sa_manuscripts.yaml (Conlon's sigla); no microfilm or shelfmark number is
+      filled in without checking. Phase 1 uses them only through edition readings; phase 2
+      checks important readings against the images.
 
-  # ---------------------------------------------------------------- 藏文层
+  # ---------------------------------------------------------------- Tibetan
   - id: bo_derge_D417_418
     lang: bo
     layer: primary
     source_lang: sa
-    title: "ཀྱེའི་རྡོ་རྗེ་ཞེས་བྱ་བ་རྒྱུད་ཀྱི་རྒྱལ་པོ (brTag pa gnyis pa)，德格甘珠尔 Toh 417–418"
-    translator: "Gayadhara（印度）＋ 'Brog mi Shākya ye shes（藏）"
-    date: "初译 11 世纪（约 1040 年代）；德格本颂尾题记明言后经 lo tsā ba gZhon nu dpal 补阙订正"
+    title: "ཀྱེའི་རྡོ་རྗེ་ཞེས་བྱ་བ་རྒྱུད་ཀྱི་རྒྱལ་པོ (brTag pa gnyis pa), Derge Kangyur Toh 417-418"
+    translator: "Gayādhara (Indian preceptor) and 'Brog mi Shākya ye shes (Tibetan translator)"
+    reviser: "gZhon nu dpal; per the 84000 authority file 'Gos lo tsā ba gZhon nu dpal (1392-1481); usual Chinese form 廓（桂）译师宣奴贝 (code review 2026-09-30)"
+    date: "11th century (84000: 11th century; Szántó 2015: about contemporary with the Chinese); revised later by gZhon nu dpal"
     independence: revised
     status: available
     role: target
-    source_url: "https://github.com/Esukhia/derge-kangyur (text/080_རྒྱུད་འབུམ།_ང.txt, {D417}–{D419})"
-    coords: "叶.行，如 13b.5；Toh 417 = 1b.1–13b.5，Toh 418 = 13b.5–30a.3"
+    source_url: "https://github.com/Esukhia/derge-kangyur (text/080_རྒྱུད་འབུམ།_ང.txt, {D417}-{D419})"
+    coords: "folio.line, e.g. 13b.5; Toh 417 = 1b.1-13b.5, Toh 418 = 13b.5-30a.3"
     notes: >
-      关键事实：德格本不是 11 世纀译文的原貌。题记「སླར་ཡང་ལོ་ཙྪ་བ་གཞོན་ནུ་དཔལ་གྱིས་འགྱུར་ཆད་པས་བས་ཤིང་དག་པར་བགྱིས་པའོ」
-      表明贡译师童祥（1392–1481）补足了脱文并作校正。因此藏文层必须多列，
-      不能把德格本当作“藏译”的唯一代表。
+      The Derge is not the 11th-century translation as such. The translators' colophon
+      (30a.3) reads "སླར་ཡང་ལོ་ཙྪ་བ་གཞོན་ནུ་དཔལ་གྱིས་འགྱུར་ཆད་པས་བས་ཤིང་དག་པར་བགྱིས་པའོ"
+      ("later the translator gZhon nu dpal filled the gaps in the translation and corrected
+      it"). (B9) Identifying him with 'Gos lo tsā ba gZhon nu dpal (1392-1481) rests on the
+      84000 authority file alone; the 84000 introduction does not argue it. (B9) The earlier
+      date "c. 1040s" had no basis and is removed: 84000 says only 11th century, and 'Brog
+      mi's death is dated either 1043 or 1072. Because of the revision layer the Tibetan
+      needs several columns; the Derge alone does not represent "the Tibetan translation".
 
   - id: bo_kangyur_other
     lang: bo
     layer: primary
     source_lang: sa
-    title: "其他甘珠尔版本（北京、那塘、卓尼、拉萨、乌尔嘎、斯托克宫、伦敦/协噶尔、普扎等）"
-    date: "13–18 世纀刻本/抄本"
+    title: "Other Kangyur editions (Peking, Narthang, Choné, Lhasa, Urga, Stok Palace, London/Shelkar, Phukdrak, ...)"
+    date: "13th-18th century prints and manuscripts"
     independence: revised
     status: to_verify
     role: reference_variant
     notes: >
-      目的：分离“贡译师修订层”与“卓弥初译层”。Them spangs ma 系与 Tshal pa 系
-      分别取至少一部作对照列；普扎（Phug brag）本常保留独立读法。
-      数字化状态与许可（rKTs / BDRC / ACIP）待逐一核对。
+      Purpose: to separate the gZhon nu dpal revision layer from the 'Brog mi layer. Take at
+      least one Them spangs ma witness (e.g. Stok or London) and one Tshal pa witness; the
+      Phug brag often keeps independent readings. Digitisation status and licences (rKTs,
+      BDRC, ACIP) are to be checked one by one.
 
   - id: bo_dunhuang
     lang: bo
     layer: primary
     source_lang: sa
-    title: "敦煌藏文写本"
+    title: "Dunhuang Tibetan manuscripts"
     status: not_digitized
     role: control
-    notes: "目前未知敦煌有《喜金刚》本续写本；此条仅作占位，若核实无则删除。"
+    notes: "No Dunhuang manuscript of the root tantra is known; a placeholder, to be deleted if none exists."
 
-  # ---------------------------------------------------------------- 汉文层
+  # ---------------------------------------------------------------- Chinese
   - id: zh_T0892_song
     lang: zh
     layer: primary
     source_lang: sa
     title: "佛說大悲空智金剛大教王儀軌經，五卷，宋 法護 譯（T18 no. 892）"
-    translator: "法護（Dharmapāla / *Dharmarakṣa）"
-    date: "约 1054–1055（84000 作 1055；Isaacson 作 1054–1055；DILA 仅给法护活动年限 1004–1058）"
+    translator: "法護 (Dharmapāla / *Dharmarakṣa)"
+    date: "1054-1055 (84000 and Szántó 2015: 1055; Willemen as cited on Wikipedia: presented at the end of the first Zhihe year; DILA gives only Fahu's active years 1004-1058)"
     independence: independent
     status: available
     role: target
     source_url: "https://github.com/cbeta-org/xml-p5 (T/T18/T18n0892.xml)"
     license: "CC BY-NC-SA 4.0 (CBETA)"
-    coords: "大正藏 卷/页/栏/行，如 0587c06；20 品"
+    coords: "Taishō page, register and line, e.g. 0587c06; 20 chapters (pin1-pin20)"
     notes: >
-      卷一经题下夹注「大幻化普通儀軌三十一分中略出二無我法」对应藏文全经卷末题记
-      （藏作“三十二”），是经文对自身来源的传统自述，不是汉译者自陈删略（见评估文 §4.1）。
-      因此不预设“摘出边界”，整品缺失只能靠逐品对齐确定。
-      与藏译几乎同时（相差约十年）、各自直接译自梵文——构成同源双译对照。
+      (B9) Date 1054-1055 with the sources given in `date`. Taishō base text: footnote
+      0587005 reads "【原】明本，東京帝國大學梵本三百三十五號": the Ming edition, collated with
+      Sanskrit manuscript no. 335 of Tokyo Imperial University (see sa_manuscripts.yaml,
+      tokyo335). The Taishō records no Song, Yuan or Palace readings, so this column is a
+      single, Ming-transmitted witness of the Song translation. The title note under the
+      first fascicle heading ("大幻化普通儀軌三十一分中略出二無我法") parallels the uddhṛta
+      formula of the Derge colophon (30a.2, "thirty-two" there): it is the text's
+      traditional statement of its source, not the translator saying that he abridged, so no
+      extraction boundary is assumed. Translated directly from Sanskrit at about the same
+      time as the Tibetan.
 
   - id: zh_xixia_period
     lang: zh
     layer: primary
     source_lang: bo
-    title: "西夏时期汉译《吉祥喜金刚本续》相关文本（黑水城出土）"
-    date: "12–13 世纪"
+    title: "Xixia-period Chinese texts related to the 吉祥喜金剛本續 (Khara-Khoto finds)"
+    date: "12th-13th century"
     independence: derived
     status: to_verify
     role: control
     notes: >
-      沈卫荣曾比较“宋、西夏、明三种汉译《吉祥喜金刚本续》”，正文与文本比定待核。
-      若确为译自藏文，则它是“同一目标语言（汉语）、不同来源语言与时代”的对照列，
-      可分离“汉语文化环境”与“宋代译场”两种解释。
+      Shen Weirong (ed.) 2013 contains a comparison of Song, Xixia and Ming Chinese versions
+      ("宋、西夏、明三种汉译《吉祥喜金刚本续》的比较研究", in 汉藏佛学研究：文本、人物、图像和历史,
+      中国藏学出版社). (B9) Whether a Xixia-period translation of the root tantra exists and can
+      be obtained is to be checked in Shen 2013; RQ2 is out of scope for v0.3. If it was
+      translated from Tibetan it would be a control column (same target language, another
+      source language and period).
 
   - id: zh_ming_ms
     lang: zh
-    layer: primary
-    source_lang: bo
-    title: "明抄本汉译《吉祥喜金刚本续王》（国家图书馆藏，藏号待核）"
-    date: "明（14–15 世纪）"
-    independence: derived
+    layer: indirect
+    source_lang: unknown
+    title: "《吉祥喜金剛本續王》後分注疏 (Ming manuscript, National Library of China)"
+    date: "Ming"
+    independence: unknown
     status: to_verify
-    role: control
-    notes: "安海燕相关研究与藏号待核（评估文 §7）。作用同 zh_xixia_period。"
+    role: indirect
+    notes: >
+      (B9) Re-identified: An Haiyan's study (in Shen 2013) concerns a Ming manuscript of a
+      commentary on the later part of the tantra, not a translation of the root tantra, as
+      earlier project documents assumed. Kept only as a pointer to possible quotations;
+      to_verify pending the Shen 2013 check; not a matrix column in v0.3.
 
-  # ---------------------------------------------------------------- 其他语言层
+  # ---------------------------------------------------------------- other languages
   - id: txg_tangut
     lang: txg
     layer: primary
     source_lang: bo
-    title: "西夏文《喜金刚本续》（Tang. 326，条目号待核）"
-    date: "12 世纀"
+    title: "Tangut Hevajratantra (St Petersburg Tang. 326; Kychanov 1999 catalogue nos. 354-355)"
+    date: "12th century"
     independence: derived
-    status: not_digitized
+    status: to_verify
     role: control
-    notes: "评估文指出“354–355”是目录条目号而非页码；未核实前不填页码。"
+    notes: >
+      Tang. 326 is the St Petersburg pressmark; 354-355 are Kychanov 1999 catalogue numbers,
+      not pages. (B9) Whether it is a root-tantra translation, and its accessibility, are to
+      be checked (Shen 2013); RQ2 is out of scope for v0.3.
 
   - id: mn_kanjur
     lang: mn
     layer: primary
     source_lang: bo
-    title: "蒙文甘珠尔本"
-    date: "17–18 世纪"
+    title: "Mongolian Kanjur version"
+    date: "17th-18th century"
     independence: derived
     status: not_digitized
     role: control
-    notes: "作为藏文的二阶见证，用于检验“派生见证不应带来新偏移”的方法假设。"
+    notes: "A second-order witness of the Tibetan, to test the assumption that a derived witness adds no new deviations."
 
-  # ---------------------------------------------------------------- 间接见证（注疏引文）
+  # ---------------------------------------------------------------- indirect (commentary quotations)
   - id: ind_yogaratnamala
     lang: sa
     layer: indirect
     source_lang: null
-    title: "Yogaratnamālā（Kāṇha / Kṛṣṇācārya），梵文注疏，随文引出根本续"
+    title: "Yogaratnamālā (Kāṇha / Kṛṣṇācārya), Sanskrit commentary quoting the root tantra"
     status: license_restricted
     role: indirect
-    notes: "Snellgrove 1959 Part II 与 Farrow–Menon 1992 均收。引文提供独立于校勘本的梵文读法。"
+    notes: "Edited in Snellgrove 1959 Part II and in Farrow-Menon 1992. Its quotations give Sanskrit readings independent of the editions."
 
   - id: ind_muktavali
     lang: sa
     layer: indirect
     source_lang: null
-    title: "Muktāvalī（Ratnākaraśānti），梵文注疏"
+    title: "Muktāvalī (Ratnākaraśānti), Sanskrit commentary"
     status: license_restricted
     role: indirect
-    notes: "Tripathi–Negi 2001 收。"
+    notes: "Edited in Tripathi-Negi 2001."
 
   - id: ind_tib_commentaries
     lang: bo
     layer: indirect
     source_lang: sa
-    title: "藏译注疏（丹珠尔）中引出的根本续偈颂"
+    title: "Root-tantra verses quoted in Tibetan translations of commentaries (Tengyur)"
     status: to_verify
     role: indirect
-    notes: "用于检验德格本某一读法是否在早期注疏引文中已存在（区分初译层与修订层）。"
+    notes: "To test whether a Derge reading already existed in early commentary quotations (first-translation layer vs revision layer)."
 
-  # ---------------------------------------------------------------- 现代译本（仅作桥梁）
+  # ---------------------------------------------------------------- modern translations (bridges only)
   - id: en_84000_2025
     lang: en
     layer: pivot
     source_lang: bo
-    title: "84000, The Hevajra Tantra (Toh 417–418), tr. Wiesiek Mical, v1.0.0"
+    title: "84000, The Hevajra Tantra (Toh 417-418), tr. Wiesiek Mical, v1.0.0"
     date: "2025"
     status: license_restricted
     role: pivot
-    license: "CC BY-NC-ND 4.0（草案条款 2026-05-15）；不发布派生片段，只发布段号坐标"
-    notes: "译自藏文（参梵文）。用于候选检索与人工复核，不作独立古代见证。"
+    license: "CC BY-NC-ND 4.0 (draft terms 2026-05-15); no derived excerpts are published, only paragraph coordinates"
+    notes: "Translated from the Tibetan (consulting the Sanskrit). Used for retrieval and human review, never as an ancient witness."
 
   - id: en_snellgrove1959
     lang: en
     layer: pivot
     source_lang: sa
-    title: "Snellgrove 1959 Part I 英译"
+    title: "Snellgrove 1959 Part I (English translation)"
     status: license_restricted
     role: pivot
 
@@ -254,20 +294,31 @@ witnesses:
     title: "Willemen, The Chinese Hevajratantra (1983)"
     status: license_restricted
     role: pivot
-    notes: "唯一的汉译全译；其导言把宋译定性为适应 11 世纀中国环境的“diplomatic effort”。作复核与先行例证清单。"
+    notes: >
+      The only complete translation of T0892; used for review and as a list of differences
+      noted before. (B9) The phrase "diplomatic effort" (the Song translation as adapted to
+      11th-century China) is found in the publisher's description; do not attribute it to
+      the introduction without checking the book.
 
-# ---------------------------------------------------------------- 外部复现集（不计入新发现）
+# ---------------------------------------------------------------- external replication sets
+# Differences already published elsewhere; they are not counted as new findings.
 external_replication_sets:
   - id: rep_suzuseki_1938_39
-    title: "鈴關宥俊，梵藏汉三译对照，《智山学报》12–13 号（1938–39）"
-    notes: "覆盖范围待核；凡其已指出的差异，标 prior=true。"
-  - id: rep_tokushige_hevajra_2026
-    title: "德重弘志，Hevajratantra 汉译自主规制，日本印度学佛教学会报告（2026-09-04）；书面版待刊"
+    title: "佛説大悲空智金剛大教王儀軌經の研究：特に梵藏漢三譯對照の結果に就て, 智山学報 12 (1938) pp. 133-167 and 13 (1939) pp. 152-200"
     notes: >
-      本项目不以“自主规制分类”为目标；待其书面版刊出后，把其偈颂清单作为
-      “省略/替换检测”的外部召回验证集。与其结论一致或不一致处逐条报告。
+      DOIs 10.18963/chisangakuho.1938.12_133 and 10.18963/chisangakuho.1939.13_152. The
+      reading of the author's name (鈴關宥俊) is unconfirmed; the extent of coverage is to be
+      checked. Differences it already reports are flagged prior=true.
+  - id: rep_tokushige_hevajra_2026
+    title: "Hevajratantraの漢訳における自主規制について (Tokushige Hiroshi, JAIBS conference paper, 2026-09-04)"
+    notes: >
+      Not yet published in writing; pre-emption risk is real. When the written version
+      appears, its verse list becomes an external recall set for omission and substitution
+      detection, and every agreement or disagreement is reported. His IBK 74(2) (2026)
+      pp. 838-843 paper on T885 (1,100 verses, 261 or about 24% self-censored, 243 of them
+      in eight categories) is the methodological precedent.
   - id: rep_isaacson_2022
-    title: "Isaacson 2022（Almogi 编，Hamburg，162–186）"
-    notes: "T0892 作为梵本传承独立见证的论证；末尾三偈问题。"
+    title: "Isaacson 2022, Studies in the Transmission of the Hevajratantra (I), in Almogi (ed.), Evolution of Scriptures, Formation of Canons (Indian and Tibetan Studies 13, Hamburg), pp. 161-186"
+    notes: "Reported to argue that T0892 is an independent witness of the Sanskrit transmission (final three gathas); the claim is unverified here (see sa_conlon2022)."
   - id: rep_willemen_1983
-    title: "Willemen 1983 导言与脚注中指出的差异"
+    title: "Differences pointed out in the introduction and notes of Willemen 1983"

@@ -1,0 +1,71 @@
+# Sanskrit manuscripts of the Hevajratantra that can become manuscript columns of the
+# decomposition (E3), read by hevajra_matrix.registry.load_manuscripts. Printed editions
+# are not manuscripts and never appear here (they are witnesses in witnesses.yaml).
+#
+# Fields (all required; unknown facts are "to_verify", never guessed)
+#   id            siglum used by the source
+#   description   what is known about the manuscript
+#   group         stemmatic group or family, as stated by a source
+#   independence  independent | derived | to_verify (relative to the other manuscripts)
+#   shelfmark     library shelfmark or microfilm reel, only when checked
+#   source        where the manuscript is reported
+#   access        how its readings can reach this project
+#
+# Per-manuscript readings go in data/reference/readings/<chapter>.tsv (see
+# data/reference/README.md), with these ids in the "ms" column.
+
+schema_version: 1
+
+manuscripts:
+  - id: C
+    description: "Sanskrit manuscript collated in Conlon's online edition under the siglum C; not yet identified here"
+    group: to_verify
+    independence: to_verify
+    shelfmark: to_verify
+    source: "Conlon, online TEI edition heta_1.4 (witnesses.yaml: sa_conlon2022); code review 2026-09-30"
+    access: "Conlon's apparatus, once permission is given (open question Q4)"
+
+  - id: K
+    description: "Sanskrit manuscript collated in Conlon's online edition under the siglum K; not yet identified here"
+    group: to_verify
+    independence: to_verify
+    shelfmark: to_verify
+    source: "Conlon, online TEI edition heta_1.4 (witnesses.yaml: sa_conlon2022); code review 2026-09-30"
+    access: "Conlon's apparatus, once permission is given (open question Q4)"
+
+  - id: Na
+    description: "Sanskrit manuscript collated in Conlon's online edition under the siglum Na; not yet identified here"
+    group: to_verify
+    independence: to_verify
+    shelfmark: to_verify
+    source: "Conlon, online TEI edition heta_1.4 (witnesses.yaml: sa_conlon2022); code review 2026-09-30"
+    access: "Conlon's apparatus, once permission is given (open question Q4)"
+
+  - id: Nb
+    description: "Sanskrit manuscript collated in Conlon's online edition under the siglum Nb; not yet identified here"
+    group: to_verify
+    independence: to_verify
+    shelfmark: to_verify
+    source: "Conlon, online TEI edition heta_1.4 (witnesses.yaml: sa_conlon2022); code review 2026-09-30"
+    access: "Conlon's apparatus, once permission is given (open question Q4)"
+
+  - id: P
+    description: "Sanskrit manuscript collated in Conlon's online edition under the siglum P; not yet identified here"
+    group: to_verify
+    independence: to_verify
+    shelfmark: to_verify
+    source: "Conlon, online TEI edition heta_1.4 (witnesses.yaml: sa_conlon2022); code review 2026-09-30"
+    access: "Conlon's apparatus, once permission is given (open question Q4)"
+
+  - id: tokyo335
+    description: >
+      Sanskrit manuscript no. 335 of Tokyo Imperial University, cited in Taishō footnote
+      0587005 ("東京帝國大學梵本三百三十五號") as collated for T0892. It is not the Chinese
+      translator's Vorlage, so the Vorlage question stays open. The Taishō editors matched
+      Chinese chapter headings to its colophons by ordinal (footnotes 0594008, 0595012).
+      Whether it is one of Conlon's manuscripts is to be checked.
+    group: to_verify
+    independence: to_verify
+    shelfmark: to_verify
+    source: "Taishō T0892 footnotes (CBETA XML); synthesis 0.2; critique 2026-09-30"
+    access: "indirect only: 16 Taishō footnotes marked （梵本） report its readings (ingest Footnote.source = tokyo335)"

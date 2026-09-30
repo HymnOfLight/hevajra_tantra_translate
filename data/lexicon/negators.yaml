@@ -1,0 +1,31 @@
+# Negation words, read by core.lexicon.load_negators and matched with
+# core.textnorm.find_terms (whole tokens: Chinese characters, Tibetan syllables, words).
+#
+# Used by the polarity check of the collator (a reversal is corroborated when a negator
+# occurs in exactly one of the two quotes), the negation perturbation and the
+# negation-aware lexical baseline of the over-attribution experiment. A missed negator
+# only leaves a reversal uncorroborated (it goes to a human); a false negator could
+# corroborate a wrong reversal, so the lists are conservative and the exclusion contexts
+# remove known non-negating uses of a form.
+
+forms:
+  zh: [不, 非, 無, 未, 莫, 勿, 弗, 毋, 否, 沒, 没, 靡, 罔]
+  # Tibetan: mi (present/future), min (is not), med (there is not), ma yin (is not).
+  # Bare "ma" is left out: as a separate syllable it is mostly the feminine suffix.
+  bo: [མི, མིན, མེད, མ་ཡིན]
+  sa: [na, mā, naiva, nāsti]
+  en: [not, "no", never, none, nothing, nobody, without, nor, neither, cannot]   # quoted: YAML reads a bare no as false
+
+exclusions:
+  zh:
+    - 南無          # namo, a transliterated homage formula
+  bo:
+    # "mi" as the noun "human" (D417/418 survey: mi rnams 4, mi yul 1, mi yis 1).
+    - མི་རྣམས
+    - མི་ཡུལ
+    - མི་ཡིས
+    - མི་ཡི
+    - མི་ཤ           # human flesh
+    - མི་རོ          # human corpse
+  en:
+    - no doubt

@@ -5,10 +5,10 @@ Chinese, ...); keys, comments and this README are English.
 
 | Directory | Content | Committed |
 |---|---|---|
-| `registry/` | `witnesses.yaml` (matrix columns), `concordance.yaml` (chapter concordance v2, many-to-many, unit-range splits) | yes |
+| `registry/` | `witnesses.yaml` (matrix columns), `concordance.yaml` (chapter concordance, schema v2: many-to-many, unit-range splits, evidence per mapping), `sa_manuscripts.yaml` (Sanskrit manuscripts; unknown values stay `to_verify`) | yes |
 | `lexicon/` | Deterministic linguistic resources: cross-lingual anchors, numerals, Derge parser markers, CBETA note classes, negators, variant character forms, motive terms | yes |
 | `codebook/` | Topic vocabulary and synthetic few-shot examples for the Claude tasks | yes |
-| `sentinels/` | Expert-verified or proposed collation facts, keyed by witness coordinates, checked on every run | yes |
+| `sentinels/` | `sentinels.yaml` (schema v2): expert-verified or proposed collation facts keyed by witness coordinates, checked on every run; only `verified` entries block a gate | yes |
 | `annotations/` | Human-authored research data: blind gold alignments, review verdicts, topic labels. Ids and short quotes only | yes |
 | `ledger/` | Append-only record of every scoring of the sealed test set | yes |
 | `experiments/` | Over-attribution experiment items (coordinates only) and human codes | yes |

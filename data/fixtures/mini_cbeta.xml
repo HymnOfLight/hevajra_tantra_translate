@@ -1,34 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <TEI xmlns="http://www.tei-c.org/ns/1.0" xmlns:cb="http://www.cbeta.org/ns/1.0" xml:id="T18n0892">
-<teiHeader><fileDesc><titleStmt><title>mini</title></titleStmt></fileDesc></teiHeader>
+<teiHeader><fileDesc><titleStmt><title>Synthetic mini fixture for hevajra_matrix.ingest.cbeta (short excerpts and made-up lines)</title></titleStmt></fileDesc></teiHeader>
 <text>
 <body>
 <milestone n="1" unit="juan"/>
 <pb n="0587c" ed="T" xml:id="T18.0892.0587c"/>
-<lb n="0587c05" ed="T"/><cb:juan n="001" fun="open"><cb:mulu n="001" type="卷"></cb:mulu><cb:jhead>佛說大悲空智金剛大教王儀軌
+<lb n="0587c04" ed="T"/><cb:docNumber>No. 892</cb:docNumber>
+<lb n="0587c05" ed="T"/><cb:juan n="001" fun="open"><cb:mulu n="001" type="卷"></cb:mulu><cb:jhead><anchor xml:id="nkr_note_orig_0587005" n="0587005"/>佛說大悲空智金剛大教王儀軌
 <lb n="0587c06" ed="T"/>經卷第一<note place="inline">大幻化普通儀軌三十一分中略出二無我法</note></cb:jhead></cb:juan>
+<lb n="0587c08" ed="T"/><byline cb:type="Translator">宋西天三藏
+<lb n="0587c09" ed="T"/>法護奉　詔譯</byline>
 <lb n="0587c10" ed="T"/><cb:div type="pin"><cb:mulu n="1" level="1" type="品">1 金剛部序品</cb:mulu><head>金剛部序品第一</head>
-<lb n="0587c11" ed="T"/><p xml:id="p1">如是我聞：</p><p xml:id="p2" cb:place="inline">一時薄伽梵住<anchor xml:id="beg1"/>一切如來身語
-<lb n="0587c12" ed="T"/>心金剛喻施婆倪數<anchor xml:id="end1"/>祕密中祕密出生妙三摩
-<lb n="0587c13" ed="T"/>地。時彼世尊從是三摩地起，讚言：「善哉，善哉。
-<lb n="0587c14" ed="T"/>金剛藏菩薩摩訶薩！」</p>
+<lb n="0587c11" ed="T"/><p xml:id="p1">如是我聞：</p><p xml:id="p2" cb:place="inline">一時薄伽梵住<anchor xml:id="nkr_note_orig_0587006" n="0587006"/><anchor xml:id="beg0587006" n="0587006"/>一切如來身語
+<lb n="0587c12" ed="T"/>心金剛喻施婆倪數<anchor xml:id="end0587006"/>祕密中祕密出生妙三摩
+<lb n="0587c13" ed="T"/>地。時彼世尊從是三摩地起，讚言：「善哉，善哉。」</p>
+<lb n="0587c14" ed="T"/><p xml:id="p3">次以龍華樹汁塗之<note place="inline">或以白蒿汁代之</note>，復以<anchor xml:id="beg0588b0801" n="0588b0801"/>晝<anchor xml:id="end0588b0801"/>夜作<g ref="#CB00768">𡁠</g>法。</p>
 <lb n="0587c15" ed="T"/><lg type="regular" xml:id="lg1"><l>「最初觀於慈，<caesura/>次即觀於悲，</l>
-<lb n="0587c16" ed="T"/><l>第三當觀喜，<caesura/>一切處學捨。」</l></lg>
-<lb n="0587c17" ed="T"/><p xml:id="p3">彼血脈相有三十二種<note place="inline">引</note>。</p>
+<lb n="0587c16" ed="T"/><l><anchor xml:id="nkr_note_orig_0587007" n="0587007"/>第三當觀喜，<caesura/>一切處學捨。」</l></lg>
 </cb:div>
-<lb n="0587c18" ed="T"/><cb:div type="pin"><cb:mulu n="2" level="1" type="品">2 真言品</cb:mulu><head>真言品第二</head>
-<lb n="0587c19" ed="T"/><p xml:id="p4">唵吽發吒。</p>
+<lb n="0587c17" ed="T"/><cb:div type="pin"><cb:mulu n="2" level="1" type="品">2 真言品</cb:mulu><head><anchor xml:id="nkr_note_orig_0587008" n="0587008"/>真言品第二</head>
+<lb n="0587c18" ed="T"/><p cb:type="dharani" xml:id="p4">「<anchor xml:id="nkr_note_foreign_0587009" n="0587009"/><anchor xml:id="nkr_note_orig_0587009" n="0587009"/>唵<note place="inline">引</note><note place="inline">一</note>　阿吽<note place="inline">二
+<lb n="0587c19" ed="T"/>合</note><note place="inline">二</note>　發吒<note place="inline">上呂角切下同</note>莎賀」</p>
+<lb n="0587c20" ed="T"/><p xml:id="p5">十二處，一者某國、<note place="inline">七者、八者，梵本元闕</note>九者某城。</p>
+<lb n="0587c21" ed="T"/><cb:juan n="001" fun="close"><cb:jhead>佛說大悲空智金剛大教王儀軌經卷第一</cb:jhead></cb:juan>
+<lb n="0587c22" ed="T"/><cb:juan n="002" fun="open"><cb:jhead>佛說大悲空智金剛大教王儀軌經卷第二<note place="inline">第三同卷</note></cb:jhead>
+<lb n="0587c23" ed="T"/><cb:jhead type="pin">真言品第二之餘</cb:jhead></cb:juan>
+<lb n="0587c24" ed="T"/><p xml:id="p6">唵吽發吒。</p>
 </cb:div>
 </body>
 <back>
 <cb:div type="apparatus"><head>校注</head><p>
-<app from="#beg0588b0801" to="#end0588b0801"><lem resp="#resp1" wit="#wit.cbeta">晝</lem><rdg wit="#wit.orig">畫</rdg></app>
+<app from="#beg0588b0801" to="#end0588b0801"><lem resp="#resp1" wit="#wit.cbeta">晝<note type="cf1">T18n0892_p0600a06</note></lem><rdg wit="#wit.orig">畫</rdg></app>
 </p></cb:div>
 <cb:div type="tt"><head>多語詞條對照</head><p>
-<cb:tt type="app" from="#beg1" to="#end1">
-	<cb:t resp="#resp2" xml:lang="zh-Hant">一切如來身語心金剛喻施婆倪數</cb:t>
-	<cb:t resp="#resp2" xml:lang="sa" place="foot">Sarvatathāgata-kāya-vāk-citta-vajra-yogirbhageṣu.</cb:t>
+<cb:tt type="app" from="#beg0587006" to="#end0587006">
+	<cb:t resp="#resp2" xml:lang="zh-Hant">一切如來身語<lb n="0587c12" ed="T"/>心金剛喻施婆倪數</cb:t>
+	<cb:t resp="#resp2" xml:lang="sa" place="foot">Sarvatathā-gata-kāya-vāk-citta-vajra-yogirbhageṣu.</cb:t>
 </cb:tt>
+</p></cb:div>
+<cb:div type="cbeta-notes"><head>CBETA 校注</head><p>
+<note n="0587008" resp="#resp1" type="mod" target="#nkr_note_mod_0587008">真言品第二 mantra-paṭala (a CBETA modification, not a Taisho footnote)</note>
+</p></cb:div>
+<cb:div type="taisho-notes"><head>大正藏 校注</head><p>
+<note n="0587005" resp="#resp2" type="orig" place="foot text" target="#nkr_note_orig_0587005">【原】明本，東京帝國大學梵本三百三十五號, Hevajra-tantra</note>
+<note n="0587006" resp="#resp2" type="orig" place="foot text" target="#nkr_note_orig_0587006">一切如…數 Sarvatathā-gata-kāya-vāk-citta-vajra-yogirbhageṣu.</note>
+<note n="0587007" resp="#resp2" type="orig" place="foot text" target="#nkr_note_orig_0587007">相應 viyoga.（梵本）</note>
+<note n="0587008" resp="#resp2" type="orig" place="foot text" target="#nkr_note_orig_0587008">清涼</note>
+<note n="0587009" resp="#resp2" type="orig" place="foot text" target="#nkr_note_orig_0587009">Oṁ ā hūṁ phaṭ svāhā.</note>
+</p></cb:div>
+<cb:div type="rest-notes"><head>其他校注</head><p>
+<note target="#nkr_note_foreign_0587009"><foreign cb:place="foot" cb:resp="#resp2" n="0587009" xml:lang="sa">Oṁ ā hūṁ phaṭ svāhā.</foreign></note>
 </p></cb:div>
 </back>
 </text>

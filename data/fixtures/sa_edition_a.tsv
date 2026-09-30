@@ -1,7 +1,9 @@
-# minimal Sanskrit reference fixture (edition A)
+# Synthetic Sanskrit reference fixture, edition A (unit tests of ingest.sanskrit.load_reference)
 I.1.p01	evaṃ mayā śrutam ekasmin samaye bhagavān sarvatathāgatakāyavākcittahṛdayavajrayoṣidbhageṣu vijahāra
-I.1.p02	vajragarbha mahāsattva sādhu sādhu
+I.1.p02	vajragarbha mahāsattva  sādhu sādhu
 I.1.1	dvātriṃśan nāḍyaḥ
 I.1.2	prajñopāyātmakaṃ tattvam
+
+I.1.3a	lalanā rasanā ca
 I.2.1	oṃ hūṃ phaṭ
 II.1.1	pratiṣṭhā vidhiḥ

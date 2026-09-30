@@ -1,0 +1,7 @@
+# Synthetic per-manuscript readings for chapter I.1 (unit tests of ingest.sanskrit.load_readings)
+unit_id	ms	status	reading	source	note
+I.1.1	C	present		synthetic	
+I.1.1	K	variant	dvātriṃśa nāḍyaḥ	synthetic	metrically short
+I.1.1	Na	not_collated			
+I.1.2	C	absent		synthetic	omitted by eye-skip?
+I.1.p01	P	illegible		synthetic

@@ -1,0 +1,35 @@
+# A toy chapter for tests/unit/test_align_dp.py, excerpted from the I.7 place list
+# (D417 8a.3-8a.5, T0892 0592a18-a22) with one change: the Tibetan unit about the
+# charnel grounds has no Chinese counterpart here (T0892 replaces the category names by
+# ordinals). Ids follow core.ids; they need not be the real coordinates.
+#
+# expected_anchor: reference unit id -> witness ids linked by the anchor DP (B0) with the
+# default parameters and the real lexicon; [] means no_counterpart.
+
+reference:
+  - {id: "D417:8a.3.1", text: "རྡོ་རྗེ་སྙིང་པོས་ཞུས་པ།"}
+  - {id: "D417:8a.3.2", text: "དུར་ཁྲོད་ཉེ་བའི་དུར་ཁྲོད་ཉིད།"}
+  - {id: "D417:8a.4.1", text: "གནས་ནི་ཛཱ་ལན་དྷ་རར་བཤད།"}
+  - {id: "D417:8a.5.1", text: "ཉེ་གནས་མཱ་ལ་ཝ་ཞེས་བརྗོད།"}
+  - {id: "D417:8a.5.2", text: "ཞིང་ནི་མུམྨུ་ནིར་བཤད་དེ།"}
+
+witness:
+  - {id: "T0892:0592a18.1", text: "金剛藏白佛言："}
+  - {id: "T0892:0592a21.1", text: "一者惹藍馱囕國、"}
+  - {id: "T0892:0592a22.1", text: "二者摩羅鑁國"}
+  - {id: "T0892:0592a22.2", text: "三者蒙牟尼國、"}
+
+expected_anchor:
+  "D417:8a.3.1": ["T0892:0592a18.1"]
+  "D417:8a.3.2": []
+  "D417:8a.4.1": ["T0892:0592a21.1"]
+  "D417:8a.5.1": ["T0892:0592a22.1"]
+  "D417:8a.5.2": ["T0892:0592a22.2"]
+
+# Repro check #6: a bead whose two sides both carry anchors but share none must be
+# reported as a conflict, so the DP adds its anchor_conflict penalty. (In v0.2 the
+# penalty was applied only when the similarity was exactly 0.0, which the hybrid
+# embedding similarity never returned.)
+conflict_case:
+  reference: "རྡོ་རྗེ་སྙིང་པོ།"
+  witness: "五甘露。"

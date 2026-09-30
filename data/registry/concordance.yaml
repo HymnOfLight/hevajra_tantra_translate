@@ -1,123 +1,295 @@
-# 章级同本系概表（G0 关口的输入，不是结论）
+# Chapter concordance, schema version 2, read by hevajra_matrix.registry.load_concordance.
 #
-# 行 = 梵文金标准的品（Snellgrove 1959 编号：I.1–I.11, II.1–II.12）
-# 列 = 各见证中的对应品及其定位
-# status:
-#   proposed   仅据品名/题记推定，未经逐偈对齐核实
-#   verified   已由逐偈对齐与两位文献学者签署确认
-#   absent     经逐偈对齐确认该见证无对应品（整品缺失）
-#   merged     该见证将本品与相邻品合并（在 merged_into 注明）
-#   uncertain  品名不对应，需逐偈对齐后判定
+# Rows are the reference chapters in Snellgrove's numbering (I.1-I.11, II.1-II.12). For every
+# witness, `spans` lists where (part of) the chapter lies in that witness:
+#   local      witness-local chapter key (as the ingester writes Segment.local_chapter);
+#              null exactly when the span is absent
+#   status     proposed          from titles, order and length ratios; not checked unit by unit
+#              verified          checked in the source texts (source names by whom)
+#              absent_candidate  no counterpart found so far; to be verified unit by unit
+#              absent            absence verified unit by unit
+#   ref_from, ref_to   optional, inclusive reference-witness line coordinates when the span
+#              covers only part of the chapter (lines are coarse: neighbouring spans may
+#              share their boundary line)
+#   evidence   why the mapping holds; source  who established it
 #
-# 重要：汉译 20 品 vs 梵/藏 23 品的差额（3 品）来自何处，只能由逐偈对齐决定。
-# 不得依据卷一夹注「三十一分中略出」反推“摘出边界”（见 docs/01 §3.1）。
+# The concordance only proposes where the collator should look first (the "core window":
+# mapped chapters +/- neighbours). The collator sees the full witness text, and a link
+# outside the window is reported as a relocation, never prevented. The Chinese has 20
+# chapters against 23; where the 3 went is decided by unit-level alignment, never by the
+# title note under the first fascicle heading (see witnesses.yaml, zh_T0892_song).
+#
+# Length ratios quoted below (Chinese characters / Tibetan syllables; mean over the text
+# 0.74) come from the v0.2 concordance.
 
+schema_version: 2
 reference_scheme: sa_snellgrove1959
 
+witnesses:
+  bo_derge_D417_418:
+    locals: ["D417:1", "D417:2", "D417:3", "D417:4", "D417:5", "D417:6", "D417:7", "D417:8", "D417:9",
+             "D417:10", "D417:11", "D418:1", "D418:2", "D418:3", "D418:4", "D418:5", "D418:6", "D418:7",
+             "D418:8", "D418:9", "D418:10", "D418:11", "D418:12"]
+  zh_T0892_song:
+    locals: [pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8, pin9, pin10, pin11, pin12, pin13, pin14,
+             pin15, pin16, pin17, pin18, pin19, pin20]
+
+# Derge spans: the ingester numbers Derge chapters by counting colophons and checks each
+# colophon's own ordinal (ingest report chapter_ordinal_mismatches, empty on Toh 417-418);
+# Snellgrove's chapters follow the same division. Evidence gives the colophon line.
+
 chapters:
-  # ---------------------------------------------------------------- Part I（藏 Toh 417 / 前分 brtag pa dang po）
+  # ---------------------------------------------------------------- Part I (Toh 417)
   - ref: I.1
     sa_title: Vajrakulapaṭala
-    bo: {chapter: 1, title: "རྡོ་རྗེ་རིགས་ཀྱི་ལེའུ", colophon_at: "3a.5", status: proposed}
-    zh: {pin: 1, title: "金剛部序品第一", start: "0587c10", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:1", status: verified, evidence: ["chapter colophon, ordinal 1, 3a.5 (རྡོ་རྗེ་རིགས་ཀྱི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin1, status: proposed, evidence: ["title 金剛部序品第一 (vajrakula); order"], source: "v0.2 concordance"}
+
   - ref: I.2
     sa_title: Mantrapaṭala
-    bo: {chapter: 2, title: "སྔགས་ཀྱི་ལེའུ", colophon_at: "4b.6", status: proposed}
-    zh: {pin: 2, title: "拏吉尼熾盛威儀真言品第二", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:2", status: verified, evidence: ["chapter colophon, ordinal 2, 4b.6 (སྔགས་ཀྱི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin2, status: proposed, evidence: ["title 拏吉尼熾盛威儀真言品第二 (mantra); order"], source: "v0.2 concordance"}
+
   - ref: I.3
     sa_title: Devatāpaṭala
-    bo: {chapter: 3, title: "ལྷའི་ལེའུ", colophon_at: "5b.4", status: proposed}
-    zh: {pin: 3, title: "一切如來身語心聖賢品第三", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:3", status: verified, evidence: ["chapter colophon, ordinal 3, 5b.4 (ལྷའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin3, status: proposed, evidence: ["title 一切如來身語心聖賢品第三 (deities); order"], source: "v0.2 concordance"}
+
   - ref: I.4
     sa_title: Abhiṣekapaṭala (devatābhiṣeka)
-    bo: {chapter: 4, title: "དབང་གི་ལེའུ", colophon_at: "6a.1", status: proposed}
-    zh: {pin: 4, title: "賢聖灌頂部品第四", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:4", status: verified, evidence: ["chapter colophon, ordinal 4, 6a.1 (དབང་གི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin4, status: proposed, evidence: ["title 賢聖灌頂部品第四 (consecration); order"], source: "v0.2 concordance"}
+
   - ref: I.5
     sa_title: Tattvapaṭala
-    bo: {chapter: 5, title: "དེ་ཁོ་ན་ཉིད་ཀྱི་ལེའུ", colophon_at: "6b.6", status: proposed}
-    zh: {pin: 5, title: "大真實品第五", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:5", status: verified, evidence: ["chapter colophon, ordinal 5, 6b.6 (དེ་ཁོ་ན་ཉིད་ཀྱི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin5, status: proposed, evidence: ["title 大真實品第五 (tattva); order"], source: "v0.2 concordance"}
+
   - ref: I.6
     sa_title: Caryāpaṭala
-    bo: {chapter: 6, title: "སྤྱོད་པའི་ལེའུ", colophon_at: "7b.5", status: proposed}
-    zh: {pin: 6, title: "行品第六", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:6", status: verified, evidence: ["chapter colophon, ordinal 6, 7b.5 (སྤྱོད་པའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin6, status: proposed, evidence: ["title 行品第六 (caryā); order"], source: "v0.2 concordance"}
+
   - ref: I.7
     sa_title: Chomāpaṭala
-    bo: {chapter: 7, title: "བརྡ་དང་གནས་གཏན་ལ་ཕབ་པའི་ལེའུ", colophon_at: "8b.6", status: proposed}
-    zh: {pin: 7, title: "說密印品第七", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:7", status: verified, evidence: ["chapter colophon, ordinal 7, 8b.6 (བརྡ་དང་གནས་གཏན་ལ་ཕབ་པའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin7
+          status: proposed
+          evidence:
+            - "title 說密印品第七 (chomā, secret signs); order"
+            - "the twelve places: D417 8a.3-8b.1 <-> 0592a19-b01 (sentinels S1a, S1b, S7)"
+          source: "v0.2 concordance; code review 2026-09-30 section 2 row 1"
+
   - ref: I.8
     sa_title: Yoginīcakrapaṭala
-    bo: {chapter: 8, title: "རྣལ་འབྱོར་མའི་འཁོར་ལོ་ཞེས་བྱ་བ་འདུ་བའི་ལེའུ", colophon_at: "10b.6", status: proposed}
-    zh: {pin: 8, title: "大相應輪品第八", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:8", status: verified, evidence: ["chapter colophon, ordinal 8, 10b.6 (རྣལ་འབྱོར་མའི་འཁོར་ལོ་ཞེས་བྱ་བ་འདུ་བའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin8, status: proposed, evidence: ["title 大相應輪品第八 (yoginīcakra); order"], source: "v0.2 concordance"}
+
   - ref: I.9
     sa_title: Viśuddhipaṭala
-    bo: {chapter: 9, title: "རྣམ་པར་དག་པའི་ལེའུ", colophon_at: "11b.3", status: proposed}
-    zh: {pin: 9, title: "清淨品第九", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:9", status: verified, evidence: ["chapter colophon, ordinal 9, 11b.3 (རྣམ་པར་དག་པའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin9
+          status: proposed
+          evidence:
+            - "title 清淨品第九 (viśuddhi); order"
+            - "Taishō footnote 0593001 on the heading gives the colophon visiddhi-paṭāla nama-navaḥ"
+          source: "v0.2 concordance; Taishō footnotes"
+
   - ref: I.10
     sa_title: Abhiṣekapaṭala (maṇḍala / abhiṣeka)
-    bo: {chapter: 10, title: "དབང་གི་ལེའུ་ཞེས་བྱ་བ", colophon_at: "13a.5", status: proposed}
-    zh: {pin: 10, title: "灌頂品第十", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:10", status: verified, evidence: ["chapter colophon, ordinal 10, 13a.5 (དབང་གི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin10
+          status: proposed
+          evidence:
+            - "title 灌頂品第十 (abhiṣeka); order"
+            - "Taishō footnote 0593002 on the heading gives the colophon abhiṣeka-paṭālo daśamaḥ"
+          source: "v0.2 concordance; Taishō footnotes"
+
   - ref: I.11
     sa_title: Vajragarbhābhisambodhipaṭala
-    bo: {chapter: 11, title: "རྡོ་རྗེ་སྙིང་པོ་མངོན་པར་བྱང་ཆུབ་པ", colophon_at: "13b.5（Toh 417 卷末题记）", status: proposed}
-    zh: {pin: 11, title: "金剛藏菩薩現證儀軌王品第十一", status: proposed,
-         note: "篇幅比异常（汉 773 字 / 藏 406 音节 = 1.9，全经均值 0.74）；若并入 II.1（418 音节）则比值 0.94。见 II.1"}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D417:11", status: verified, evidence: ["text-end colophon of Toh 417, 13b.5 (no chapter colophon; closes Part I)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin11
+          status: proposed
+          evidence:
+            - "title 金剛藏菩薩現證儀軌王品第十一 = vajragarbhābhisambodhi"
+            - "Taishō footnote 0594008 on the chapter 11 heading gives the colophon that closes Part I, vajragarbhābhisaṁbodhi-nāma-kalpa-rājāḥ (Tokyo ms 335)"
+            - "length ratio 1.9 for I.11 alone (773 characters / 406 syllables), 0.94 with II.1: chapter 11 also holds II.1"
+          source: "v0.2 concordance; critique 2026-09-30 (footnote 0594008)"
 
-  # ---------------------------------------------------------------- Part II（藏 Toh 418 / 后分 brtag pa gnyis pa）
+  # ---------------------------------------------------------------- Part II (Toh 418)
   - ref: II.1
     sa_title: Pratiṣṭhāpaṭala
-    bo: {chapter: 1, title: "རབ་གནས་ཀྱི་ལེའུ", colophon_at: "14a.6", status: proposed}
-    zh: {pin: 11, title: "（并入第十一品）", status: proposed,
-         note: "L1 篇幅比证据：汉第 11 品远长于藏 I.11，恰可容纳 II.1；汉译不分前后二分，合并合理。待逐偈对齐核实后改 merged"}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:1", status: verified, evidence: ["chapter colophon, ordinal 1, 14a.6 (རབ་གནས་ཀྱི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin11
+          status: proposed
+          evidence:
+            - "II.1's homa material and closing mantras end chapter 11 in the same order: D418 14a.3 ཞི་ལ་ཏིལ་དང་རྒྱས་ལ་ཞོ <-> 0595a09 息災用脂麻，增益用酪; 14a.5 ཨོཾ་དྷྭྃ་དྷྭྃ་ལྷ་བཤོས་ཀྱི་སྔགས་སོ (followed by the II.1 colophon) <-> 0595a26-27 獻食真言曰：唵探探 (sentinel S9)"
+            - "Taishō footnotes 0594008 (chapter 11 heading: the colophon closing Part I) and 0595012 (chapter 12 heading: the II.1 colophon of Tokyo ms 335, hevajre ḍākīnījāla saṁvare dvitīya kalpasya prathamaḥ paṭālaḥ) show that the Taishō matched headings to that manuscript's colophons by ordinal; II.1 closes where Chinese chapter 11 ends"
+            - "length ratio of chapter 11 against I.11 + II.1: 0.94 (see I.11)"
+          source: "philology design 2026-09-30; synthesis 0.2; critique 2026-09-30 (footnotes 0594008, 0595012)"
+
   - ref: II.2
     sa_title: Siddhinirṇayapaṭala
-    bo: {chapter: 2, title: "དངོས་གྲུབ་གཏན་ལ་ཕབ་པ", status: proposed}
-    zh: {pin: 12, title: "熾盛拏吉尼所說成就品第十二", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:2", status: verified, evidence: ["chapter colophon, ordinal 2, 16b.3 (དངོས་གྲུབ་གཏན་ལ་ཕབ་པ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin12, status: proposed, evidence: ["title 熾盛拏吉尼所說成就品第十二 (siddhi); order after pin11 = I.11 + II.1"], source: "v0.2 concordance"}
+
   - ref: II.3
     sa_title: Sarvatantranidānasandhyābhāṣāpaṭala
-    bo: {chapter: 3, title: "རྒྱུད་ཐམས་ཅད་ཀྱི་གླེང་གཞི་དང་གསང་བའི་སྐད", colophon_at: "19b.1", status: proposed}
-    zh: {pin: 13, title: "說方便品第十三", status: uncertain,
-         note: "品名不直接对应（sandhyābhāṣā 密语 ≠ 方便）；按顺序推定"}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:3", status: verified, evidence: ["chapter colophon, ordinal 3, 19b.1 (རྒྱུད་ཐམས་ཅད་ཀྱི་གླེང་གཞི་དང་གསང་བའི་སྐད)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin13
+          status: proposed
+          evidence:
+            - "title 說方便品第十三 does not render sandhyābhāṣā; mapped by order"
+            - "the vows passage D418 17b.6 <-> 0596b25-27 lies in chapter 13 (reversal, sentinel S2)"
+          source: "v0.2 concordance; code review 2026-09-30 section 2 row 2"
+
   - ref: II.4
     sa_title: Sarvatantramudrāpiṇḍārthapaṭala
-    bo: {chapter: 4, title: "རྒྱུད་ཐམས་ཅད་ཀྱི་ཕྱག་རྒྱ་བསྡུས་པའི་དོན", colophon_at: "23b.1", status: proposed}
-    zh: {pin: 14, title: "集一切儀軌部品第十四", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:4", status: verified, evidence: ["chapter colophon, ordinal 4, 23b.1 (རྒྱུད་ཐམས་ཅད་ཀྱི་ཕྱག་རྒྱ་བསྡུས་པའི་དོན)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin14, status: proposed, evidence: ["title 集一切儀軌部品第十四 (sarvatantra); order"], source: "v0.2 concordance"}
+
   - ref: II.5
     sa_title: Hevajrābhyudayapaṭala
-    bo: {chapter: 5, title: "ཀྱེ་རྡོ་རྗེ་མངོན་པར་འབྱུང་བ", status: proposed}
-    zh: {pin: 15, title: "金剛王出現品第十五", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:5", status: verified, evidence: ["chapter colophon, ordinal 5, 26a.2 (ཀྱེ་རྡོ་རྗེ་མངོན་པར་འབྱུང་བ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin15, status: proposed, evidence: ["title 金剛王出現品第十五 (abhyudaya); order"], source: "v0.2 concordance"}
+
   - ref: II.6
     sa_title: Paṭavidhānapaṭala
-    bo: {chapter: 6, title: "བྲིས་སྐུའི་ཆོ་གའི་ལེའུ", colophon_at: "26b.2", status: proposed}
-    zh: {pin: 16, title: "金剛空智熾盛拏吉尼畫像儀式品第十六", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:6", status: verified, evidence: ["chapter colophon, ordinal 6, 26b.2 (བྲིས་སྐུའི་ཆོ་གའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin16, status: proposed, evidence: ["title 金剛空智熾盛拏吉尼畫像儀式品第十六 (paṭa, painted image); order"], source: "v0.2 concordance"}
+
   - ref: II.7
     sa_title: Bhojanapaṭala
-    bo: {chapter: 7, title: "བཟའ་བའི་ལེའུ", colophon_at: "27a.2", status: proposed}
-    zh: {pin: 17, title: "飲食品第十七", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:7", status: verified, evidence: ["chapter colophon, ordinal 7, 27a.2 (བཟའ་བའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin17, status: proposed, evidence: ["title 飲食品第十七 (bhojana); order"], source: "v0.2 concordance"}
+
   - ref: II.8
     sa_title: Vineyapaṭala
-    bo: {chapter: 8, title: "འདུལ་བའི་ལེའུ", colophon_at: "27b.1", status: proposed}
-    zh: {pin: 18, title: "教授品第十八", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:8", status: verified, evidence: ["chapter colophon, ordinal 8, 27b.1 (འདུལ་བའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin18
+          status: proposed
+          evidence:
+            - "title 教授品第十八 (vineya, instruction); order"
+            - "chapter 18 has 527 characters against 345 syllables of II.8 (ratio 1.53): it also holds the opening of II.9"
+          source: "v0.2 concordance"
+
   - ref: II.9
     sa_title: Mantroddhārapaṭala
-    bo: {chapter: 9, title: "སྔགས་བཏུ་བའི་ལེའུ", status: proposed}
-    zh:
-      pin: null
-      status: uncertain
-      note: >
-        藏 II.9 有 1,251 音节，是后分第三长的品；汉第 19 品仅 128 字、与 II.10（149 音节）相当，
-        汉第 18 品 527 字 vs 藏 II.8 345 音节（比 1.53）。两种假说：(a) II.9 整品缺失，
-        (b) II.9 大幅压缩并入第 18 品。抽字法（mantroddhāra）依赖梵文字母表，汉译无法直译。须逐偈核
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:9", status: verified, evidence: ["chapter colophon, ordinal 9, 29a.2 (སྔགས་བཏུ་བའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin18
+          status: verified
+          ref_from: "D418:27b.1"
+          ref_to: "D418:28a.1"
+          evidence:
+            - "the opening of II.9, D418 27b.1 དེ་ནས་ཁ་སྦྱར་འབྱེད་པ་ཡི ... 28a.1 རུས་པ་བདེན་པ་བཞི་པོ་ཉིད, matches 0600c28-0601a16 欲作降伏法者 ... 七等覺支及四真諦所生 in the same order (sentinel S3)"
+            - "D418 27b.4 དམིགས་ནས་སྐད་ཅིག་གསོད་པར་བྱེད <-> 0601a03 剎那降伏: kill rendered as subdue (sentinel S3c)"
+          source: "code review 2026-09-30, section 2 row 3"
+        - local: null
+          status: absent_candidate
+          ref_from: "D418:28a.1"
+          ref_to: "D418:29a.2"
+          evidence:
+            - "the mantroddhāra proper (extraction of mantra syllables from the Sanskrit alphabet), from 28a.1 བདག་མེད་མས་གསོལ་བ, has no counterpart found in T0892; about 125 units, pending unit-level verification (sentinel S8b)"
+            - "II.9 has 1,251 syllables; Chinese chapter 19 (128 characters) matches II.10 (149 syllables), not II.9"
+          source: "code review 2026-09-30, section 2 row 3; v0.2 concordance"
+        - local: pin18
+          status: proposed
+          ref_from: "D418:29a.2"
+          ref_to: "D418:29a.2"
+          evidence:
+            - "the closing bali mantra 29a.2 ཨོཾ་ཨཱཿཧཱུྃ་ཕཊ་སྭཱ་ཧཱ ... འབྱུང་པོ་ཐམས་ཅད་ཀྱི་གཏོར་མའི་སྔགས་སོ <-> 0601a15-17 諸八部真言曰：唵阿吽發吒薩嚩賀 (sentinel S8a); the same mantra string occurs elsewhere, so the link rests on the locus, not on the string"
+          source: "philology design 2026-09-30"
+
   - ref: II.10
     sa_title: Japapaṭala
-    bo: {chapter: 10, title: "བཟླས་པའི་ལེའུ", colophon_at: "29a.5", status: proposed}
-    zh: {pin: 19, title: "持念品第十九", status: proposed}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:10", status: verified, evidence: ["chapter colophon, ordinal 10, 29a.5 (བཟླས་པའི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - {local: pin19, status: proposed, evidence: ["title 持念品第十九 (japa); 128 characters against 149 syllables"], source: "v0.2 concordance"}
+
   - ref: II.11
     sa_title: Sahajārthapaṭala
-    bo: {chapter: 11, title: "ལྷན་ཅིག་སྐྱེས་པའི་སྦྱོར་བ་དོན་གྱི་ལེའུ", colophon_at: "29b.6", status: proposed}
-    zh: {pin: 20, title: "俱生義品第二十", status: proposed,
-         note: "篇幅比 1.22（汉 512 / 藏 420）；若并入 II.12（262 音节）则 0.75。见 II.12"}
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:11", status: verified, evidence: ["chapter colophon, ordinal 11, 29b.6 (ལྷན་ཅིག་སྐྱེས་པའི་སྦྱོར་བ་དོན་གྱི་ལེའུ)"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin20
+          status: proposed
+          evidence:
+            - "title 俱生義品第二十 (sahajārtha); order"
+            - "length ratio 1.22 for II.11 alone (512 characters / 420 syllables), 0.75 with II.12: chapter 20 also holds II.12"
+          source: "v0.2 concordance"
+
   - ref: II.12
-    sa_title: "（Snellgrove 末品；品名待据校勘本填入）"
-    bo: {chapter: 12, title: "（德格本无独立题记；29b.6–30a.2，以全经卷末题记结束）", status: proposed}
-    zh: {pin: 20, title: "（并入第二十品）", status: proposed,
-         note: "L1 篇幅比证据支持并入第 20 品。Isaacson 2022 讨论的 T0892 末尾三偈问题在此处；须逐偈判定后改 merged"}
+    sa_title: "(Snellgrove's last chapter of Part II; title to be taken from the edition)"
+    spans:
+      bo_derge_D417_418:
+        - {local: "D418:12", status: verified, evidence: ["no chapter colophon: runs from 29b.6 to the text-end colophon of Toh 418 at 30a.2"], source: "Derge colophons, checked at ingest"}
+      zh_T0892_song:
+        - local: pin20
+          status: proposed
+          evidence:
+            - "the blessing mantra of the vajra and lotus, D418 30a.1 <-> 0601b22-23 加持金剛蓮華真言 (sentinel S10), followed in Chinese only by three gathas 0601c01-c07 (sentinel S4)"
+            - "length ratio of chapter 20 against II.11 + II.12: 0.75 (see II.11)"
+          source: "v0.2 concordance; code review 2026-09-30 section 2 row 4"

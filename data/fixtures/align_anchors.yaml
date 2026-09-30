@@ -1,0 +1,127 @@
+# Anchor extraction cases for tests/unit/test_align_anchors.py.
+#
+# real_lexicon: cases run against data/lexicon/anchors.yaml and numerals.yaml. Each case
+#   gives "exact" (the full key set), or "present" / "absent" (keys that must / must not be
+#   found; an absent lexicon key must exist in the lexicon, so the check is not vacuous).
+#   The first group are the review's repro check #7 cases (defect #3, critique B11).
+# rules: a small synthetic lexicon ("lexicon", same schema as anchors.yaml) and cases that
+#   pin down one matching rule each, independent of the real lexicon's contents.
+# invalid: records the loader must reject, with a fragment of the expected error message.
+
+real_lexicon:
+  # repro check #7
+  - {lang: bo, text: "ཤེས་རབ་དང་ཐབས་ཤིན་ཏུ་བཤད།", exact: [term:prajñā, term:upāya]}   # no anchor inside "know"
+  - {lang: bo, text: "སྟོང་པ་ཉིད་དུ་བསྒོམ།", exact: []}                            # emptiness is not 1000
+  - {lang: zh, text: "唵嚩日囉吽", exact: []}                                       # no "sun" inside vajra
+  - {lang: zh, text: "從是三摩地起", exact: []}                                     # no 3 inside samadhi
+  - {lang: zh, text: "入寒林中", exact: [term:śmaśāna]}                             # "cold forest"
+  - {lang: zh, text: "持髑髏器", exact: [term:kapāla]}                              # traditional skull form
+  - {lang: sa, text: "kaṣṭa", exact: []}                                           # was num:8 in v0.2
+  - {lang: sa, text: "rātri", exact: []}                                           # was num:3
+  - {lang: sa, text: "kṣatriya", exact: []}                                        # was num:3
+  - {lang: sa, text: "lakṣaṇa", exact: []}                                         # was num:100000
+  - {lang: sa, text: "advitīya", exact: []}                                        # was num:2
+  # exclusion contexts of whole-syllable homographs (critique B11)
+  - {lang: bo, text: "ས་བཅུའི་དབང་ཕྱུག་མགོན་པོ་ཉིད།", absent: [term:abhiṣeka]}        # "lord", not empowerment
+  - {lang: bo, text: "དབང་པོ་ལྔ་ཡི་རང་བཞིན་ནོ།", absent: [term:abhiṣeka], present: ["num:5"]}
+  - {lang: bo, text: "ཡེ་ཤེས་ལྷ་ལ་དབང་བསྐུར་བ།", present: [term:abhiṣeka]}
+  - {lang: bo, text: "དབང་ནི་རྣམ་པ་བཞི་རུ་བཤད།", present: [term:abhiṣeka, "num:4"]}
+  - {lang: bo, text: "སྙིང་གར་རབ་ཏུ་བསྒོམ་པར་བྱ།", absent: [term:nṛtya]}              # "in the heart"
+  - {lang: bo, text: "གླུ་དང་གར་གྱིས་མཆོད་པར་བྱ།", exact: [term:gīta, term:nṛtya]}
+  - {lang: bo, text: "སུམ་ཅུ་རྩ་གཉིས་ཀྱི་རྩ་རྣམས།", exact: [term:nāḍī, "num:32"]}      # numeral connector is not a channel
+  # fused case particles are listed as forms of their own
+  - {lang: bo, text: "ཐོད་པའི་ཕྲེང་བ", exact: [term:kapāla]}
+  - {lang: bo, text: "རྡོ་རྗེ་སྙིང་པོས་ཞུས་པ།", exact: [name:vajragarbha]}
+  - {lang: bo, text: "གནས་ནི་ཛཱ་ལན་དྷ་རར་བཤད།", exact: [place:jālandhara]}
+  # leftmost-longest: the name consumes the shorter term inside it
+  - {lang: bo, text: "ཀྱེའི་རྡོ་རྗེ་ལ་ཕྱག་འཚལ་ལོ།", exact: [name:hevajra]}
+  - {lang: zh, text: "大悲空智金剛大教王", exact: [name:hevajra]}
+  - {lang: zh, text: "持金剛杵", exact: [term:vajra]}
+  # Chinese
+  - {lang: zh, text: "一者惹藍馱囕國", exact: [place:jālandhara]}
+  - {lang: zh, text: "金剛藏菩薩白佛言：", exact: [name:vajragarbha, name:bhagavān]}
+  - {lang: zh, text: "彼血脈相有三十二種", exact: [term:nāḍī, "num:32"]}
+  - {lang: zh, text: "阿閦如來", exact: [name:akṣobhya]}
+  # Sanskrit: word-initial stems
+  - {lang: sa, text: "vajragarbha uvāca", exact: [name:vajragarbha]}
+  - {lang: sa, text: "śmaśānaṃ gatvā", exact: [term:śmaśāna]}
+  - {lang: sa, text: "śmaśāne", exact: []}                        # known limit: the stem changes its last vowel
+  - {lang: sa, text: "dvātriṃśan nāḍyaḥ", exact: ["num:32"]}      # same limit for nāḍī
+
+rules:
+  lexicon:
+    - key: sha
+      type: term
+      sa: [māṃsa]
+      bo: [ཤ]
+      zh: [人肉]
+    - key: dbang
+      type: term
+      sa: [abhiṣeka]
+      bo: [དབང]
+      zh: [灌頂]
+      exclude: {bo: [དབང་ཕྱུག]}
+    - key: short
+      type: term
+      sa: [vajra]
+      bo: [རྡོ་རྗེ]
+      zh: [金剛]
+    - key: long
+      type: name
+      sa: [vajrasattva]
+      bo: [རྡོ་རྗེ་སེམས་དཔའ]
+      zh: [金剛薩埵]
+    - key: overlap
+      type: term
+      sa: [sattvaguṇa]
+      bo: [སེམས་དཔའ་ཆེན་པོ]
+      zh: [薩埵大]
+  cases:
+    - {why: whole syllables only, lang: bo, text: "ཤེས་རབ", exact: []}
+    - {why: whole syllables only, lang: bo, text: "ཤ་དང་ཆང", exact: [term:sha]}
+    - {why: a shad ends a chunk but the syllable still matches, lang: bo, text: "ཤ།", exact: [term:sha]}
+    - {why: exclusion context, lang: bo, text: "དབང་ཕྱུག", exact: []}
+    - {why: exclusion only masks its own span, lang: bo, text: "དབང་ཕྱུག་དང་དབང", exact: [term:dbang]}
+    - {why: longest form wins, lang: bo, text: "རྡོ་རྗེ་སེམས་དཔའ", exact: [name:long]}
+    - {why: both when apart, lang: bo, text: "རྡོ་རྗེ་དང་རྡོ་རྗེ་སེམས་དཔའ", exact: [name:long, term:short]}
+    - {why: leftmost match consumes its tokens, lang: bo, text: "རྡོ་རྗེ་སེམས་དཔའ་ཆེན་པོ", exact: [name:long]}
+    - {why: zh longest form wins, lang: zh, text: "金剛薩埵", exact: [name:long]}
+    - {why: zh leftmost consumes, lang: zh, text: "金剛薩埵大", exact: [name:long]}
+    - {why: matching never crosses punctuation, lang: zh, text: "金、剛", exact: []}
+    - {why: sa stem is word-initial, lang: sa, text: "vajrasattvaḥ", exact: [name:long]}
+    - {why: sa stem inside a word does not count, lang: sa, text: "mahāvajra", exact: []}
+    - {why: other languages have no anchors, lang: en, text: "vajra", exact: []}
+
+invalid:
+  - error: single-character Chinese
+    records:
+      - {key: sun, type: term, sa: [sūrya], bo: [ཉི་མ], zh: [日]}
+  - error: "non-empty list"
+    records:
+      - {key: nozh, type: term, sa: [sūrya], bo: [ཉི་མ], zh: []}
+  - error: "non-empty list"
+    records:
+      - {key: nobo, type: term, sa: [sūrya], zh: [日輪]}
+  - error: belongs to
+    records:
+      - {key: one, type: term, sa: [one], bo: [ཉི་མ], zh: [日輪]}
+      - {key: two, type: term, sa: [two], bo: [ཉི་མ], zh: [日月]}
+  - error: duplicate key
+    records:
+      - {key: one, type: term, sa: [one], bo: [ཉི་མ], zh: [日輪]}
+      - {key: one, type: term, sa: [two], bo: [ཟླ་བ], zh: [月輪]}
+  - error: unknown field
+    records:
+      - {key: one, type: term, sa: [one], bo: [ཉི་མ], zh: [日輪], zh_transliteration: true}
+  - error: "'type' must be"
+    records:
+      - {key: one, type: number, sa: [one], bo: [ཉི་མ], zh: [日輪]}
+  - error: "'key' must be"
+    records:
+      - {key: "two words", type: term, sa: [one], bo: [ཉི་མ], zh: [日輪]}
+  - error: punctuation
+    records:
+      - {key: one, type: term, sa: [one], bo: [ཉི།མ], zh: [日輪]}
+  - error: exclude
+    records:
+      - {key: one, type: term, sa: [one], bo: [ཉི་མ], zh: [日輪], exclude: {en: [sun]}}

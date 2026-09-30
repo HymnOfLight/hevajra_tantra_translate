@@ -1,261 +1,409 @@
-# 对齐锚点词表：梵 ↔ 藏 ↔ 汉（宋法护译语）
+# Cross-lingual alignment anchors: Sanskrit <-> Tibetan (Derge D417/418) <-> Chinese (T0892).
 #
-# 用途：B0 基线（词典 + 顺序动态规划）的锚点；也是组件抽取时的实体归一化表。
-# 原则：只登记在 T0892 与 Toh 417–418 中实际出现、且语义稳定的对应；
-#       汉文一栏可含多个译语（法护常混用），藏文含常见拼写变体。
-# type: name（专名/尊名）、term（术语）、number（数词，另由程序处理）、mantra（种子字/真言片段）
-# 汉译 transliteration: true 表示该汉文形式是音译而非意译（用于“音译密度”特征）。
+# Read by hevajra_matrix.align.anchors.load_anchor_lexicon. The B0 baseline reduces every
+# segment to its set of anchor keys ("<type>:<key>", e.g. "term:kapāla" for the skull cup,
+# plus "num:<n>" for numerals, which come from numerals.yaml) and aligns by the overlap
+# of these sets. Only correspondences that actually occur in T0892 and D417/418 and whose
+# meaning is stable are listed; a false anchor misleads the aligner more than a missing one.
+#
+# Schema (one record per anchor under "anchors"; unknown fields are rejected):
+#   key      IAST name of the anchor, no spaces or ':'; unique together with type
+#   type     name (deities and persons) | term | mantra | place
+#   sa       Sanskrit forms (IAST); each word matches the beginning of a word, so inflected
+#            forms that keep the whole stem match (a changed final vowel does not)
+#   bo       Tibetan forms; a form matches whole syllables only. Tibetan fuses some case
+#            particles into the last syllable (genitive, agentive, terminative), and those
+#            fused forms are different syllables, so they are listed as forms of their own
+#            where they occur in D417/418 (e.g. the agentive of Vajragarbha, 23 segments).
+#   zh       Chinese forms, at least two characters each: single characters recur inside
+#            transliterations (the loader rejects them). Traditional characters, as in T0892.
+#   exclude  optional, per language: contexts in which no form of this anchor counts
+#            (a form overlapping an occurrence of a context is ignored)
+#   note     optional English remark
+# sa, bo and zh are all required: an anchor that can fire in one witness only lowers the
+# similarity of every correct bead that contains it.
+#
+# Matching is leftmost-longest across the whole lexicon, so a longer form (the name
+# Hevajra) consumes its tokens before a shorter one (vajra) can match inside it.
+# A form may belong to one anchor only.
+#
+# Counts in this file are segments of the real texts (T0892 prose and verse; D417/418 prose,
+# verse and mantra) surveyed on 2026-09-30.
+#
+# Inclusion rule: the forms are translation equivalents AND the anchor fires in comparable
+# numbers of segments in T0892 and D417/418 (within a factor of about 4, small counts
+# aside). An anchor that T0892 systematically renders otherwise could fire in one witness
+# only, and a one-sided anchor lowers the similarity of the correct bead. Removed from the
+# v0.2 list for that reason (segment counts zh / bo with the best available forms):
+#   mamsa (flesh; the Chinese character occurs once, in a list at 0601a14, and the Tibetan
+#     syllable also occurs in mantra transliterations; v0.2 matched it inside other
+#     syllables in 218 Tibetan segments), madya (alcohol; 0 / 9),
+#   vidya (consort; T0892 appends this title to every goddess name; 104 / 5),
+#   jnana (the Chinese character is mostly part of the Hevajra name), samadhi (the Tibetan
+#     term does not occur in D417/418; 9 / 0), yogini (6 / 42), krodha (24 / 5),
+#   heruka (3 / 15), bhaga (1 / 12), om and hum (single characters in Chinese),
+#   pancamrta (merged into amrta; the numeral 5 is an anchor of its own).
 
-terms:
-  - sa: hevajra
-    bo: [ཀྱེའི་རྡོ་རྗེ, ཀྱེ་རྡོ་རྗེ, ཀྱེ་ཡི་རྡོ་རྗེ, ཧེ་བཛྲ]
-    zh: [空智金剛, 大悲空智金剛, 呬嚕迦]
+anchors:
+  # ------------------------------------------------------------------ names
+  - key: hevajra
     type: name
-  - sa: vajragarbha
-    bo: [རྡོ་རྗེ་སྙིང་པོ]
+    sa: [hevajra]
+    bo: [ཀྱེའི་རྡོ་རྗེ, ཀྱེའི་རྡོ་རྗེའི, ཀྱེ་རྡོ་རྗེ, ཀྱེ་རྡོ་རྗེར, ཀྱེ་ཡི་རྡོ་རྗེ, ཧེ་བཛྲ]
+    zh: [空智金剛, 金剛空智]
+  - key: vajragarbha
+    type: name
+    sa: [vajragarbha]
+    bo: [རྡོ་རྗེ་སྙིང་པོ, རྡོ་རྗེ་སྙིང་པོས, རྡོ་རྗེ་སྙིང་པོའི]
     zh: [金剛藏]
+  - key: bhagavān
     type: name
-  - sa: bhagavān
-    bo: [བཅོམ་ལྡན་འདས]
-    zh: [薄伽梵, 世尊]
+    sa: [bhagavān, bhagavat]
+    bo: [བཅོམ་ལྡན་འདས, བཅོམ་ལྡན]
+    zh: [世尊, 薄伽梵, 佛言, 佛告]
+    note: T0892 renders "the Blessed One said" as "the Buddha said"; that formula is this anchor.
+  - key: vajrasattva
     type: name
-  - sa: vajrasattva
-    bo: [རྡོ་རྗེ་སེམས་དཔའ]
+    sa: [vajrasattva]
+    bo: [རྡོ་རྗེ་སེམས་དཔའ, རྡོ་རྗེ་སེམས་དཔས, རྡོ་རྗེ་སེམས་དཔའི]
     zh: [金剛薩埵]
+  - key: nairātmyā
     type: name
-  - sa: mahāsattva
-    bo: [སེམས་དཔའ་ཆེན་པོ]
-    zh: [大薩埵]
-    type: term
-  - sa: samayasattva
-    bo: [དམ་ཚིག་སེམས་དཔའ]
-    zh: [三昧耶薩埵]
-    type: term
-  - sa: tathāgata
-    bo: [དེ་བཞིན་གཤེགས་པ]
-    zh: [如來]
-    type: term
-  - sa: kāyavākcitta
-    bo: [སྐུ་དང་གསུང་དང་ཐུགས, སྐུ་གསུང་ཐུགས]
-    zh: [身語心]
-    type: term
-  - sa: ḍākinī
-    bo: [མཁའ་འགྲོ་མ]
-    zh: [拏吉尼]
+    sa: [nairātmyā]
+    bo: [བདག་མེད་མ, བདག་མེད་མས, བདག་མེད་མའི, བདག་མེད་རྣལ་འབྱོར་མ]
+    zh: [無我]
+    note: T0892 calls the goddess "the Selfless bodhisattva" or "the Selfless consort".
+  - key: akṣobhya
     type: name
-    zh_transliteration: true
-  - sa: yoginī
-    bo: [རྣལ་འབྱོར་མ]
-    zh: [瑜儗尼, 瑜祇尼]
-    type: term
-    zh_transliteration: true
-  - sa: yogin / yoga
-    bo: [རྣལ་འབྱོར་པ, རྣལ་འབྱོར]
-    zh: [瑜伽者, 瑜伽, 相應, 行人]
-    type: term
-  - sa: prajñā
-    bo: [ཤེས་རབ]
-    zh: [勝慧, 慧]
-    type: term
-  - sa: upāya
-    bo: [ཐབས]
-    zh: [方便]
-    type: term
-  - sa: mantra
-    bo: [སྔགས, གསང་སྔགས]
-    zh: [真言, 大明, 明]
-    type: term
-  - sa: maṇḍala
-    bo: [དཀྱིལ་འབོར, དཀྱིལ་འཁོར]
-    zh: [曼拏羅]
-    type: term
-    zh_transliteration: true
-  - sa: samādhi
-    bo: [ཏིང་ངེ་འཛིན]
-    zh: [三摩地]
-    type: term
-    zh_transliteration: true
-  - sa: bodhicitta
-    bo: [བྱང་ཆུབ་སེམས, བྱང་ཆུབ་ཀྱི་སེམས]
-    zh: [菩提心]
-    type: term
-  - sa: abhiṣeka
-    bo: [དབང, དབང་བསྐུར]
-    zh: [灌頂]
-    type: term
-  - sa: mudrā
-    bo: [ཕྱག་རྒྱ]
-    zh: [印, 密印]
-    type: term
-  - sa: nāḍī
-    bo: [རྩ]
-    zh: [血脈, 脈]
-    type: term
-  - sa: lalanā
-    bo: [ལ་ལ་ན, ལ་ལ་ནཱ]
+    sa: [akṣobhya]
+    bo: [མི་བསྐྱོད་པ, མི་བསྐྱོད]
+    zh: [阿閦如來, 阿閦]
+  - key: vairocana
+    type: name
+    sa: [vairocana]
+    bo: [རྣམ་པར་སྣང་མཛད, སྣང་མཛད]
+    zh: [遮那如來, 遮那]
+  - key: ratnasambhava
+    type: name
+    sa: [ratnasambhava, ratnasaṃbhava]
+    bo: [རིན་ཆེན་འབྱུང་ལྡན]
+    zh: [寶生如來, 寶生]
+  - key: amitābha
+    type: name
+    sa: [amitābha, amitāyus]
+    bo: [འོད་དཔག་མེད]
+    zh: [無量壽如來, 無量壽]
+  - key: amoghasiddhi
+    type: name
+    sa: [amoghasiddhi]
+    bo: [དོན་ཡོད་གྲུབ་པ]
+    zh: [不空成就, 成就如來]
+  - key: gaurī
+    type: name
+    sa: [gaurī]
+    bo: [དཀར་མོ, དཀར་མོས, དཀར་མོར, དཀར་མོའི, གཽ་རཱི]
+    zh: [遨哩]
+  - key: caurī
+    type: name
+    sa: [caurī]
+    bo: [ཆོམ་རྐུན་མ, ཆོམ་རྐུན, ཙཽ་རཱི]
+    zh: [陬哩]
+  - key: vetālī
+    type: name
+    sa: [vetālī]
+    bo: [རོ་ལངས་མ, རོ་ལངས, བེ་ཏཱ་ལཱི]
+    zh: [尾多哩, 尾多梨]
+  - key: ghasmarī
+    type: name
+    sa: [ghasmarī]
+    bo: [གྷསྨ་རཱི, གྷསྨ་རཱིས]
+    zh: [三摩哩]
+  - key: pukkasī
+    type: name
+    sa: [pukkasī]
+    bo: [པུཀྐ་སཱི, པུཀྐ་སཱིར, པུཀྐ་སཱིས]
+    zh: [卜葛西, 十葛西]
+    note: The second Chinese form (0592c21, 0593c11) is probably a graphic variant of the first.
+  - key: śavarī
+    type: name
+    sa: [śavarī, śabarī]
+    bo: [རི་ཁྲོད་མ, རི་ཁྲོད་མར, ཤ་བ་རཱི]
+    zh: [設嚩哩]
+  - key: caṇḍālī
+    type: name
+    sa: [caṇḍālī]
+    bo: [གཏུམ་མོ, གཏུམ་མོར, ཙཎྜཱ་ལཱི]
+    zh: [贊拏哩, 贊拏梨]
+  - key: ḍombī
+    type: name
+    sa: [ḍombī, ḍombinī]
+    bo: [གཡུང་མོ, གཡུང་མོར, གཡུང་མོས, ཌོམྦཱི]
+    zh: [弩弭, 努弭]
+  - key: ḍākinī
+    type: name
+    sa: [ḍākinī]
+    bo: [མཁའ་འགྲོ་མ, མཁའ་འགྲོ, མཁའ་འགྲོ་མས, མཁའ་འགྲོ་མའི]
+    zh: [拏吉尼, 空行]
+  - key: lalanā
+    type: name
+    sa: [lalanā]
+    bo: [ལ་ལ་ན, ལ་ལ་ནཱ, བརྐྱང་མ]
     zh: [羅羅拏]
+  - key: rasanā
     type: name
-    zh_transliteration: true
-  - sa: rasanā
-    bo: [ར་ས་ན, ར་ས་ནཱ]
+    sa: [rasanā]
+    bo: [ར་ས་ན, ར་ས་ནཱ, རོ་མ]
     zh: [辣娑拏, 辣娑摩]
+  - key: avadhūtī
     type: name
-    zh_transliteration: true
-  - sa: avadhūtī
+    sa: [avadhūtī]
     bo: [ཀུན་འདར་མ, ཨ་བ་དྷཱུ་ཏཱི, ཨ་ཝ་དྷཱུ་ཏཱི]
     zh: [阿嚩底]
-    type: name
-    zh_transliteration: true
-  - sa: candra
-    bo: [ཟླ་བ]
-    zh: [月]
+
+  # ------------------------------------------------------------------ terms
+  - key: vajra
     type: term
-  - sa: sūrya
-    bo: [ཉི་མ]
-    zh: [日]
+    sa: [vajra]
+    bo: [རྡོ་རྗེ, རྡོ་རྗེའི, རྡོ་རྗེས, རྡོ་རྗེར]
+    zh: [金剛]
+  - key: vajrakula
     type: term
-  - sa: buddha
-    bo: [སངས་རྒྱས]
-    zh: [佛]
-    type: term
-  - sa: jñāna
-    bo: [ཡེ་ཤེས]
-    zh: [智]
-    type: term
-  - sa: mahāsukha
-    bo: [བདེ་བ་ཆེན་པོ, བདེ་ཆེན]
-    zh: [大樂]
-    type: term
-  - sa: krodha
-    bo: [ཁྲོ་བོ]
-    zh: [忿怒]
-    type: term
-  - sa: śmaśāna
-    bo: [དུར་ཁྲོད]
-    zh: [尸林, 屍林]
-    type: term
-  - sa: kapāla
-    bo: [ཐོད་པ]
-    zh: [髑髅, 頭器, 顱器, 迦波羅]
-    type: term
-  - sa: māṃsa
-    bo: [ཤ]
-    zh: [肉]
-    type: term
-  - sa: madya
-    bo: [ཆང]
-    zh: [酒]
-    type: term
-  - sa: pañcāmṛta
-    bo: [བདུད་རྩི་ལྔ]
-    zh: [五甘露]
-    type: term
-  - sa: vidyā (consort)
-    bo: [རིག་མ]
-    zh: [明妃]
-    type: term
-  - sa: padma
-    bo: [པདྨ, པད་མ]
-    zh: [蓮花, 蓮華]
-    type: term
-  - sa: vajra
-    bo: [རྡོ་རྗེ]
-    zh: [金剛, 金剛杵]
-    type: term
-  - sa: gīta
-    bo: [གླུ]
-    zh: [歌]
-    type: term
-  - sa: nṛtya
-    bo: [གར]
-    zh: [舞]
-    type: term
-  - sa: nairātmyā
-    bo: [བདག་མེད་མ]
-    zh: [無我, 無我母]
-    type: name
-  - sa: vajrakula
-    bo: [རྡོ་རྗེ་རིགས]
+    sa: [vajrakula]
+    bo: [རྡོ་རྗེ་རིགས, རྡོ་རྗེའི་རིགས]
     zh: [金剛部]
+  - key: mahāsattva
     type: term
-  - sa: heruka
-    bo: [ཧེ་རུ་ཀ]
-    zh: [呬嚕迦, 嘿嚕迦]
-    type: name
-    zh_transliteration: true
-  - sa: gaurī
-    bo: [གཽ་རཱི, གཽ་རི, དཀར་མོ]
-    zh: [誐哩, 誐嚩哩]
-    type: name
-    zh_transliteration: true
-  - sa: caurī
-    bo: [ཙཽ་རཱི, ཙཽ་རི]
-    zh: [左哩]
-    type: name
-    zh_transliteration: true
-  - sa: vetālī
-    bo: [བེ་ཏཱ་ལཱི, རོ་ལངས་མ]
-    zh: [尾多梨, 尾多羅]
-    type: name
-    zh_transliteration: true
-  - sa: ghasmarī
-    bo: [གྷསྨ་རཱི]
-    zh: [伽娑摩哩]
-    type: name
-    zh_transliteration: true
-  - sa: pukkasī
-    bo: [པུཀྐ་སཱི]
-    zh: [卜迦西]
-    type: name
-    zh_transliteration: true
-  - sa: śavarī
-    bo: [ཤ་བ་རཱི, རི་ཁྲོད་མ]
-    zh: [設嚩哩]
-    type: name
-    zh_transliteration: true
-  - sa: caṇḍālī
-    bo: [ཙཎྜཱ་ལཱི, གཏུམ་མོ]
-    zh: [贊拏梨]
-    type: name
-    zh_transliteration: true
-  - sa: ḍombī
-    bo: [ཌོམྦཱི, གཡུང་མོ]
-    zh: [弩弭]
-    type: name
-    zh_transliteration: true
-  - sa: hūṃ
-    bo: [ཧཱུྃ]
-    zh: [吽]
-    type: mantra
-  - sa: oṃ
-    bo: [ཨོཾ]
-    zh: [唵]
-    type: mantra
-  - sa: phaṭ
-    bo: [ཕཊ]
-    zh: [發吒, 癹吒]
-    type: mantra
-  - sa: svāhā
-    bo: [སྭཱ་ཧཱ]
-    zh: [娑嚩賀, 莎賀]
-    type: mantra
-  - sa: evaṃ mayā śrutam
-    bo: [འདི་སྐད་བདག་གིས་ཐོས་པ]
-    zh: [如是我聞]
+    sa: [mahāsattva]
+    bo: [སེམས་དཔའ་ཆེན་པོ]
+    zh: [大薩埵]
+  - key: samayasattva
     type: term
-  - sa: sattva
+    sa: [samayasattva]
+    bo: [དམ་ཚིག་སེམས་དཔའ, དམ་ཚིག་སེམས་དཔར]
+    zh: [三昧耶薩埵]
+  - key: tathāgata
+    type: term
+    sa: [tathāgata]
+    bo: [དེ་བཞིན་གཤེགས་པ, དེ་བཞིན་གཤེགས་པའི, དེ་བཞིན་གཤེགས་པར, དེ་བཞིན་གཤེགས་པས]
+    zh: [如來]
+  - key: buddha
+    type: term
+    sa: [buddha]
+    bo: [སངས་རྒྱས]
+    zh: [諸佛, 五佛]
+    note: Other Chinese occurrences of the character for Buddha are the "Buddha said" formula (see bhagavān).
+  - key: kāyavākcitta
+    type: term
+    sa: [kāyavākcitta]
+    bo: [སྐུ་དང་གསུང་དང་ཐུགས, སྐུ་གསུང་ཐུགས]
+    zh: [身語心]
+  - key: yogin
+    type: term
+    sa: [yogin, yoga]
+    bo: [རྣལ་འབྱོར་པ, རྣལ་འབྱོར་པས, རྣལ་འབྱོར་པའི, རྣལ་འབྱོར་པར, རྣལ་འབྱོར]
+    zh: [瑜伽]
+    note: The Chinese word for "united with" also renders yoga but is too general to be an anchor.
+  - key: prajñā
+    type: term
+    sa: [prajñā]
+    bo: [ཤེས་རབ]
+    zh: [勝慧, 般若, 智慧]
+  - key: upāya
+    type: term
+    sa: [upāya]
+    bo: [ཐབས]
+    zh: [方便]
+  - key: mantra
+    type: term
+    sa: [mantra]
+    bo: [སྔགས, གསང་སྔགས]
+    zh: [真言, 大明]
+  - key: maṇḍala
+    type: term
+    sa: [maṇḍala]
+    bo: [དཀྱིལ་འཁོར, དཀྱིལ་འབོར]
+    zh: [曼拏羅, 曼荼羅]
+  - key: bodhicitta
+    type: term
+    sa: [bodhicitta]
+    bo: [བྱང་ཆུབ་སེམས, བྱང་ཆུབ་ཀྱི་སེམས]
+    zh: [菩提心]
+  - key: abhiṣeka
+    type: term
+    sa: [abhiṣeka]
+    bo: [དབང་བསྐུར, དབང]
+    zh: [灌頂]
+    exclude:
+      # The same syllable means "power, control" in these words.
+      bo: [དབང་ཕྱུག, དབང་པོ, དབང་པོར, དབང་པོའི, དབང་པོས, དབང་ལྡན, དབང་དུ]
+  - key: mudrā
+    type: term
+    sa: [mudrā]
+    bo: [ཕྱག་རྒྱ, ཕྱག་རྒྱས, ཕྱག་རྒྱར, ཕྱག་རྒྱའི, ཕྱག་རྒྱའོ]
+    zh: [為印, 密印, 印契, 五印]
+  - key: nāḍī
+    type: term
+    sa: [nāḍī]
+    bo: [རྩ]
+    zh: [血脈]
+    exclude:
+      # The syllable also joins tens (and hundreds) to units in numerals (32, 24, 108)
+      # and begins the word for "root".
+      bo: [ཤུ་རྩ, ཅུ་རྩ, བརྒྱ་རྩ, སྟོང་རྩ, རྩ་བ, རྩ་བའི, རྩ་བར, རྩ་བས]
+  - key: candra
+    type: term
+    sa: [candra]
+    bo: [ཟླ་བ, ཟླ་བའི]
+    zh: [月輪, 月色, 月分, 黑月, 白月]
+  - key: sūrya
+    type: term
+    sa: [sūrya]
+    bo: [ཉི་མ, ཉི་མའི, ཉི་མར]
+    zh: [日輪, 日月]
+    note: The Chinese "sun and moon" is counted as sun; the character for sun alone also means "day".
+  - key: mahāsukha
+    type: term
+    sa: [mahāsukha]
+    bo: [བདེ་བ་ཆེན་པོ, བདེ་བ་ཆེན་པོའི, བདེ་བ་ཆེན་པོས, བདེ་ཆེན]
+    zh: [大樂, 大妙樂]
+  - key: śmaśāna
+    type: term
+    sa: [śmaśāna]
+    bo: [དུར་ཁྲོད]
+    zh: [寒林, 尸林, 屍林]
+    note: T0892 says "cold forest"; the other two forms do not occur in T0892.
+  - key: kapāla
+    type: term
+    sa: [kapāla]
+    bo: [ཐོད་པ, ཐོད་པའི, ཐོད་པས, ཐོད་པར]
+    zh: [葛波羅, 髑髏]
+    note: T0892 transliterates kapāla; the second form is the traditional spelling of "skull".
+  - key: amṛta
+    type: term
+    sa: [amṛta]
+    bo: [བདུད་རྩི]
+    zh: [甘露]
+  - key: padma
+    type: term
+    sa: [padma]
+    bo: [པདྨ, པདྨའི, པད་མ]
+    zh: [蓮華, 蓮花]
+  - key: gīta
+    type: term
+    sa: [gīta]
+    bo: [གླུ]
+    zh: [歌詠]
+  - key: nṛtya
+    type: term
+    sa: [nṛtya]
+    bo: [གར]
+    zh: [歌舞, 舞戲, 舞勢]
+    exclude:
+      # "in the heart" and the terminative of bhaga.
+      bo: [སྙིང་གར, བྷ་གར]
+  - key: sattva
+    type: term
+    sa: [sattva]
     bo: [སེམས་ཅན]
     zh: [眾生, 有情]
+  - key: evaṃ-mayā-śrutam
     type: term
-  - sa: bhaga
-    bo: [བྷ་ག]
-    zh: [婆倪]
-    type: term
-    zh_transliteration: true
+    sa: [evaṃ mayā śrutam]
+    bo: [འདི་སྐད་བདག་གིས་ཐོས་པ]
+    zh: [如是我聞]
 
-# 汉文音译常用字集（用于在无词表覆盖时估计“音译密度”）
-# 说明：这些字在法护译文中几乎只用于对音；出现密度高的片段可判为音译串。
-zh_transliteration_chars: >
-  拏吉尼儗祇嚩嚕迦哩囉嚧曩薩埵摩訶吽唵癹發吒娑賀曼羅囕嚂啞阿惹惹拶鉢納麼曩尾嚩里哩覩捺
-  嚩囊薩哩嚩嚩日囉日囉葛哩耶酤嚧沙拽鑁嚂鑁怖吽昧怛哩野酥囉鉢囉底目契誐左尼阿嚩底羅拏辣娑
-  婆倪數呬嚕迦嘿卜設贊弩弭梨嚩喃拽底喇乾底唧多婆銘阿囉迦哩野鉢囉尾捨野沒哩多
+  # ------------------------------------------------------------------ mantra
+  - key: phaṭ
+    type: mantra
+    sa: [phaṭ]
+    bo: [ཕཊ]
+    zh: [發吒, 癹吒]
+  - key: svāhā
+    type: mantra
+    sa: [svāhā]
+    bo: [སྭཱ་ཧཱ]
+    zh: [莎賀, 娑嚩賀, 薩嚩賀, 娑賀]
+
+  # ------------------------------------------------------------------ places (I.7)
+  # The pilgrimage sites of I.7 (D417 8a.4-8b.1, T0892 0592a21-a28). Each occurs about once
+  # per witness, so they are rare and therefore heavily weighted anchors for that list.
+  - key: jālandhara
+    type: place
+    sa: [jālandhara]
+    bo: [ཛཱ་ལན་དྷ་ར, ཛཱ་ལན་དྷ་རར]
+    zh: [惹藍馱囕]
+  - key: kollagiri
+    type: place
+    sa: [kollagiri]
+    bo: [ཀོ་ལ་ལ་གི་རི]
+    zh: [酤羅山]
+  - key: kāmarūpa
+    type: place
+    sa: [kāmarūpa]
+    bo: [ཀཱ་མ་རཱུ]
+    zh: [歌摩嚕]
+  - key: mālava
+    type: place
+    sa: [mālava]
+    bo: [མཱ་ལ་ཝ]
+    zh: [摩羅鑁]
+  - key: sindhu
+    type: place
+    sa: [sindhu]
+    bo: [སི་ན་དྷུ]
+    zh: [信度]
+  - key: mummuni
+    type: place
+    sa: [mummuni]
+    bo: [མུམྨུ་ནི, མུམྨུ་ནིར]
+    zh: [蒙牟尼]
+  - key: devīkoṭa
+    type: place
+    sa: [devīkoṭa]
+    bo: [དེ་ཝཱི་ཀོ་ཊི]
+    zh: [天后城]
+  - key: harikela
+    type: place
+    sa: [harikela]
+    bo: [ཧ་རི་ཀེ་ལ]
+    zh: [訶梨]
+  - key: lampāka
+    type: place
+    sa: [lampāka]
+    bo: [ལ་མ་བ་ཀཱ]
+    zh: [藍婆]
+  - key: kaliṅga
+    type: place
+    sa: [kaliṅga]
+    bo: [ཀ་ལིང་ཀ]
+    zh: [迦陵誐]
+  - key: koṅkaṇa
+    type: place
+    sa: [koṅkaṇa]
+    bo: [ཀོང་ཀ་ཎ]
+    zh: [矜羯那]
+  - key: kośala
+    type: place
+    sa: [kośala]
+    bo: [ཀོ་ས་ལ]
+    zh: [憍薩羅]
+  - key: vindhya
+    type: place
+    sa: [vindhya]
+    bo: [བིན་དྷྱ]
+    zh: [泯陀]
+  - key: kumārapurī
+    type: place
+    sa: [kumārapurī]
+    bo: [གཞོན་ནུའི་གྲོང་ཁྱེར]
+    zh: [俱摩羅布哩]
+  - key: himālaya
+    type: place
+    sa: [himālaya]
+    bo: [ཁ་བའི་རི]
+    zh: [呬末]
+  - key: cāritra
+    type: place
+    sa: [cāritra]
+    bo: [ཙ་རི་ཏྲ]
+    zh: [善行城]

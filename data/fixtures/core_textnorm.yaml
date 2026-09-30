@@ -1,0 +1,83 @@
+# Multilingual cases for tests/unit/test_core_textnorm.py (core.textnorm).
+# Short synthetic strings or excerpts of a few words; values in any script, keys English.
+
+for_quote:
+  - {lang: zh, text: "「善哉，善哉。」", expected: "善哉善哉"}
+  - {lang: zh, text: "爾時 世尊　說此偈言：", expected: "爾時世尊說此偈言"}
+  - {lang: zh, text: "三十二（種）", expected: "三十二種"}
+  - {lang: bo, text: "༄༅༅། །རྡོ་རྗེ་སྙིང་པོ། །", expected: "རྡོ་རྗེ་སྙིང་པོ"}
+  - {lang: bo, text: "རྡོ་རྗེ་ སྙིང་པོ་།", expected: "རྡོ་རྗེ་སྙིང་པོ"}
+  - {lang: bo, text: "རྡོ༌རྗེ", expected: "རྡོ་རྗེ"}                 # non-breaking tsheg
+  - {lang: bo, text: "སྙིང་པོ།། །།བཅོམ་ལྡན", expected: "སྙིང་པོ་བཅོམ་ལྡན"}   # shad runs fold to one tsheg
+  - {lang: sa, text: "Evaṃ mayā śrutam |", expected: "evaṃmayāśrutam"}
+  - {lang: sa, text: "iti || 12 ||", expected: "iti12"}
+  - {lang: en, text: "This is not censorship.", expected: "thisisnotcensorship"}
+
+quote_contained:
+  # quote, text, lang, contained: core.textnorm.quote_in (verbatim after for_quote)
+  - {lang: zh, quote: "善哉善哉", text: "「善哉，善哉。」", contained: true}
+  - {lang: zh, quote: "世尊，說", text: "爾時世尊說此偈言", contained: true}
+  - {lang: zh, quote: "持髑髅器", text: "持髑髏器", contained: false}      # variant form: only after folding
+  - {lang: bo, quote: "སྙིང་པོ་", text: "རྡོ་རྗེ་སྙིང་པོ།", contained: true}
+  - {lang: bo, quote: "སྙིང་པོ། །བཅོམ", text: "རྡོ་རྗེ་སྙིང་པོ། བཅོམ་ལྡན་འདས", contained: true}
+  - {lang: bo, quote: "སྙིང་པོས", text: "རྡོ་རྗེ་སྙིང་པོ།", contained: false}
+  - {lang: bo, quote: "ཉིང་པོ", text: "རྡོ་རྗེ་སྙིང་པོ།", contained: false}             # ends inside a syllable
+  - {lang: bo, quote: "རྗེ་སྙིང", text: "རྡོ་རྗེ་སྙིང་པོ།", contained: true}
+  - {lang: bo, quote: "། །", text: "རྡོ་རྗེ།", contained: false}                     # empty after normalisation
+  - {lang: sa, quote: "mayā śrutam", text: "evaṃ mayā śrutam", contained: true}
+  - {lang: zh, quote: "", text: "善哉", contained: false}
+
+fingerprint_same:
+  - {lang: zh, a: "善哉，善哉。", b: "善哉善哉"}
+  - {lang: zh, a: "「爾時世尊」", b: "爾時 世尊"}
+  - {lang: bo, a: "རྡོ་རྗེ་སྙིང་པོ།", b: "རྡོ་རྗེ་ སྙིང་པོ་ །"}
+  - {lang: bo, a: "༄༅། །རྒྱ་གར་སྐད་དུ།", b: "རྒྱ་གར་སྐད་དུ"}
+  - {lang: sa, a: "Evaṃ mayā śrutam", b: "evaṃ mayā śrutam |"}
+
+fingerprint_differs:
+  - {lang: zh, a: "善哉善哉", b: "善哉善"}
+  - {lang: zh, a: "持髑髏器", b: "持髑髅器"}
+  - {lang: bo, a: "རྡོ་རྗེ་སྙིང་པོ", b: "རྡོ་རྗེ་སྙིང་པོས"}
+  - {lang: bo, a: "བ་ས", b: "བས"}                                          # syllable boundary matters
+  - {lang: sa, a: "evaṃ mayā śrutam", b: "evaṃ mayā śrutaṃ"}
+
+length:
+  - {lang: zh, text: "「善哉，善哉。」", expected: 4}
+  - {lang: zh, text: "唵嚩日囉吽", expected: 5}
+  - {lang: bo, text: "རྡོ་རྗེ་སྙིང་པོས་གསོལ་བ།", expected: 6}
+  - {lang: bo, text: "༄༅༅། །རྒྱ་གར་སྐད་དུ།", expected: 4}                  # head marks are not syllables
+  - {lang: sa, text: "evaṃ mayā śrutam", expected: 6}
+  - {lang: sa, text: "kṛṣṇa", expected: 2}
+  - {lang: en, text: "This is not censorship.", expected: 4}
+
+bo_syllables:
+  - {text: "རྡོ་རྗེ། །སྙིང་པོ", expected: [རྡོ, རྗེ, སྙིང, པོ]}
+  - {text: "༄༅། །ཨེ་མའོ་", expected: [ཨེ, མའོ]}
+
+bo_sanskrit_ratio:
+  - {text: "ཨོཾ་ཧཱུྃ་ཕཊ", low: 0.99, high: 1.0}
+  - {text: "རྡོ་རྗེ་སྙིང་པོ", low: 0.0, high: 0.0}
+  - {text: "ཨོཾ་རྡོ་རྗེ་སྙིང་པོ", low: 0.2, high: 0.2}
+  - {text: "", low: 0.0, high: 0.0}
+
+find_terms:
+  # Whole-token matching with exclusion contexts (the negator and term lists are inline).
+  - {lang: en, text: "This is not censorship.", terms: [not, "no"], exclusions: [], expected: [not]}
+  - {lang: en, text: "No doubt it is so.", terms: ["no"], exclusions: ["no doubt"], expected: []}
+  - {lang: en, text: "Nothing is lost.", terms: [not], exclusions: [], expected: []}
+  - {lang: en, text: "rather, than", terms: ["rather than"], exclusions: [], expected: []}   # never across punctuation
+  - {lang: zh, text: "並非刪略，梵本此處即無。", terms: [非, 無], exclusions: [], expected: [非, 無]}
+  - {lang: zh, text: "南無佛", terms: [無], exclusions: [南無], expected: []}
+  - {lang: zh, text: "南無佛無", terms: [無], exclusions: [南無], expected: [無]}
+  - {lang: bo, text: "ཤེས་རབ་དང་ཐབས", terms: [ཤ], exclusions: [], expected: []}           # sha is not inside shes
+  - {lang: bo, text: "མི་རྣམས་ཐམས་ཅད", terms: [མི], exclusions: [མི་རྣམས], expected: []}
+  - {lang: bo, text: "མི་བསྐྱོད་པ", terms: [མི], exclusions: [མི་རྣམས], expected: [མི]}
+  - {lang: bo, text: "དེ་ལྟར་མ་ཡིན་ནོ།", terms: [མ་ཡིན], exclusions: [], expected: [མ་ཡིན]}
+
+fold_variants:
+  # Uses data/lexicon/variant_forms.yaml.
+  - {lang: zh, text: "持髑髅器", expected: "持髑髏器"}
+  - {lang: zh, text: "持髑髏器", expected: "持髑髏器"}
+  - {lang: sa, text: "saṁskr̥ta", expected: "saṃskṛta"}
+  - {lang: sa, text: "r̥̄", expected: "ṝ"}
+  - {lang: bo, text: "རྡོ་རྗེ", expected: "རྡོ་རྗེ"}

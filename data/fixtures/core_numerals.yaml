@@ -1,0 +1,68 @@
+# Numeral cases for tests/unit/test_core_textnorm.py, checked against the real table in
+# data/lexicon/numerals.yaml. "expected" is the full set of values found.
+# The Sanskrit false positives and the emptiness case are the review's repro check #7
+# (defect #22, critique amendment B11).
+
+cases:
+  # Chinese
+  - {lang: zh, text: "彼血脈相有三十二種", expected: [32]}
+  - {lang: zh, text: "一切如來一時", expected: []}                 # a bare "one" is not a numeral
+  - {lang: zh, text: "一一賢聖", expected: []}
+  - {lang: zh, text: "千", expected: [1000]}
+  - {lang: zh, text: "誦一百八遍", expected: [108]}
+  - {lang: zh, text: "一十六臂", expected: [16]}
+  - {lang: zh, text: "十一者", expected: [11]}
+  - {lang: zh, text: "七百萬遍", expected: [7000000]}
+  - {lang: zh, text: "萬遍", expected: [10000]}
+  - {lang: zh, text: "一十萬遍", expected: [100000]}
+  - {lang: zh, text: "三，十", expected: [3, 10]}                  # punctuation ends a numeral
+  - {lang: zh, text: "五甘露、八明妃", expected: [5, 8]}
+  - {lang: zh, text: "入三昧耶", expected: []}                     # samaya transliteration
+  - {lang: zh, text: "從是三摩地起", expected: []}                 # samadhi transliteration
+  - {lang: zh, text: "渴三摩哩明妃", expected: []}
+  - {lang: zh, text: "以菩提心不二智故", expected: []}             # non-dual
+  - {lang: zh, text: "兩舌", expected: []}                         # slander
+  - {lang: zh, text: "兩足", expected: [2]}
+  - {lang: zh, text: "三昧三十二", expected: [32]}                 # exclusion masks only its own span
+  - {lang: zh, text: "唵嚩日囉吽", expected: []}
+  # Tibetan
+  - {lang: bo, text: "རྩ་ནི་སུམ་ཅུ་རྩ་གཉིས་ཏེ", expected: [32]}
+  - {lang: bo, text: "བཅོ་ལྔ་དང་བརྒྱ", expected: [15, 100]}
+  - {lang: bo, text: "བཅུ་གཅིག་ཆོམ་རྐུན་མ", expected: [11]}
+  - {lang: bo, text: "བཅུ་པའོ", expected: [10]}
+  - {lang: bo, text: "གཅིག", expected: []}
+  - {lang: bo, text: "བརྒྱ་རྩ་བརྒྱད", expected: [108]}
+  - {lang: bo, text: "དབྱུག་གུ་དྲུག་ཅུ་རྩ་བཞི་དང", expected: [64]}
+  - {lang: bo, text: "སྟོང་པ་ཉིད་དུ་བསྒོམ།", expected: []}          # emptiness is not 1000
+  - {lang: bo, text: "སྟོང་ཉིད་སྙིང་རྗེ", expected: []}
+  - {lang: bo, text: "སྟོང་པའི་རང་བཞིན", expected: []}
+  - {lang: bo, text: "སྟོང་པས་མནན་ཅིང་སུམ་འགྱུར་ཉིད", expected: []}
+  - {lang: bo, text: "སྟོང་དང་སྟོང་མིན་ཧེ་རུ་ཀ", expected: []}
+  - {lang: bo, text: "སྟོང་ཕྲག་དུ་མ་སྐྱེས་པ་ཉིད", expected: [1000]}   # genuine "thousands"
+  - {lang: bo, text: "ཕྱག་ནི་སྟོང་པ་བཅུ་དྲུག་ཉིད", expected: [16]}
+  - {lang: bo, text: "དེ་བཞིན་གཤེགས་པ", expected: []}               # bzhin is not bzhi (4)
+  - {lang: bo, text: "ཤྲཱི་ནི་གཉིས་མེད་ཡེ་ཤེས་ཏེ", expected: []}      # non-dual
+  - {lang: bo, text: "གཉིས་དང་གཉིས་སུ་མེད་པའི་ཚུལ", expected: [2]}   # "two" and "non-dual"
+  - {lang: bo, text: "བརྒྱ་བྱིན་ལྟ་བུ", expected: []}                 # Indra
+  - {lang: bo, text: "ཉི་མ་དང་ཟླ་བ", expected: []}                   # sun: nyi alone is not twenty
+  - {lang: bo, text: "སུམ་ཅུ། །རྩ་གཉིས", expected: [30, 2]}         # a shad ends a numeral
+  - {lang: bo, text: "ཁྲི་བཟླས་པས་འགྲུབ་བོ", expected: [10000]}
+  # Sanskrit (IAST)
+  - {lang: sa, text: "dvātriṃśan nāḍyaḥ", expected: [32]}
+  - {lang: sa, text: "lakṣaṇa", expected: []}                     # was 100000 in v0.2
+  - {lang: sa, text: "lakṣaṇāni", expected: []}
+  - {lang: sa, text: "lakṣayet", expected: []}
+  - {lang: sa, text: "advitīya", expected: []}                    # was 2
+  - {lang: sa, text: "kaṣṭa", expected: []}                       # was 8
+  - {lang: sa, text: "rātri", expected: []}                       # was 3
+  - {lang: sa, text: "kṣatriya", expected: []}                    # was 3
+  - {lang: sa, text: "daśana", expected: []}
+  - {lang: sa, text: "lakṣa", expected: [100000]}
+  - {lang: sa, text: "aṣṭau mātaraḥ", expected: [8]}
+  - {lang: sa, text: "catuḥṣaṣṭi", expected: [64]}
+  - {lang: sa, text: "ṣaṣṭi", expected: [60]}
+  - {lang: sa, text: "triṃśat", expected: [30]}
+  - {lang: sa, text: "trayodaśa", expected: [13]}
+  - {lang: sa, text: "Pañca | tri-śūla", expected: [5, 3]}
+  # Languages without a numeral table
+  - {lang: en, text: "thirty-two channels", expected: []}

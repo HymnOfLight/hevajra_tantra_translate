@@ -1,0 +1,62 @@
+# Tibetan marker strings for the Derge ingester (hevajra_matrix.ingest.derge).
+#
+# A "unit" is one shad-delimited stretch of NFC-normalised text with the Esukhia line
+# markers removed (so a phrase broken across two folio lines is matched as one string).
+# Unless a comment says otherwise, a value is a Python regular expression searched in one
+# unit (re.search). The forms were written for the Esukhia Derge Kangyur text of
+# Toh 417-418 and checked on it; another edition may need other forms.
+
+# End of a whole text: rdzogs so ("is complete"). The LAST unit of a Toh that contains it
+# is the text-end colophon; every unit after it in that Toh is paratext (translators'
+# colophons, not part of the work).
+text_end: "རྫོགས་སོ"
+
+# Chapter colophon at the end of a unit: "... le'u [zhes bya ba] ste <ordinal>'o"
+# ("... chapter [called ...], the <ordinal>"). Group "ordinal" is looked up in `ordinals`
+# and cross-checked against the running chapter count.
+chapter_colophon: "ལེའུ་(?:ཞེས་བྱ་བ་)?སྟེ་(?P<ordinal>[^།]+?)འོ།?$"
+
+# Ordinal words of chapter colophons (exact match of the "ordinal" group). The Derge
+# spells the ninth chapter of Toh 417 with the variant ending "ba".
+ordinals:
+  - {form: "དང་པོ", value: 1}
+  - {form: "གཉིས་པ", value: 2}
+  - {form: "གསུམ་པ", value: 3}
+  - {form: "བཞི་པ", value: 4}
+  - {form: "ལྔ་པ", value: 5}
+  - {form: "དྲུག་པ", value: 6}
+  - {form: "བདུན་པ", value: 7}
+  - {form: "བརྒྱད་པ", value: 8}
+  - {form: "དགུ་པ", value: 9}
+  - {form: "དགུ་བ", value: 9}
+  - {form: "བཅུ་པ", value: 10}
+  - {form: "བཅུ་གཅིག་པ", value: 11}
+  - {form: "བཅུ་གཉིས་པ", value: 12}
+
+# Front matter (title in Sanskrit and Tibetan, translator's homage) before the text proper;
+# it becomes kind "meta". It exists when `start` ("in the language of India") occurs in one
+# of the first `start_within_units` units, and ends before the first unit containing `end`
+# ("thus have I heard"), before a colophon, or after `max_units` units.
+front_matter:
+  start: "རྒྱ་གར་སྐད་དུ"
+  end: "འདི་སྐད་བདག་གིས་ཐོས་པ"
+  start_within_units: 4
+  max_units: 12
+
+# Translators' colophons (paratext after the text end). Each pattern is searched in one
+# paratext unit; group "name" is the person's name as written. Role "reviser" marks the
+# revision statement, whose unit is kept verbatim in the witness metadata.
+translator_colophon:
+  # rgya gar [gyi] mkhan po <name>'i zhal snga nas: the Indian scholar who worked with the
+  # translator (Gayadhara); the genitive 'i is fused to the last syllable of the name.
+  - role: indian_preceptor
+    pattern: "རྒྱ་གར་(?:གྱི་)?མཁན་པོ་(?P<name>.+?)འི་ཞལ་སྔ་ནས"
+  # bod kyi lo tsa ba [dge slong] <name> kyis bsgyur: the Tibetan translator ('Brog mi
+  # Shakya ye shes).
+  - role: translator
+    pattern: "བོད་ཀྱི་ལོ་ཙྪ་བ་(?:དགེ་སློང་)?(?P<name>.+?)་ཀྱིས་བསྒྱུར"
+  # slar yang lo tsa ba <name> gyis 'gyur chad pas bas shing dag par bgyis pa'o (Derge
+  # spelling): "later the translator <name> filled the gaps in the translation and
+  # corrected it" (gZhon nu dpal).
+  - role: reviser
+    pattern: "སླར་ཡང་ལོ་ཙྪ་བ་(?P<name>.+?)་གྱིས་འགྱུར་ཆད"

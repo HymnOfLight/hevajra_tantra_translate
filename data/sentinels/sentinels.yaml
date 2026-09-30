@@ -1,0 +1,261 @@
+# Sentinel facts: collation facts established by close reading, checked on every run.
+#
+# A sentinel pins one fact to witness-native coordinates, so it survives re-segmentation.
+# Only `verified` sentinels block a gate (G0 for stage ingest, G2 for proposal, G3 for
+# final); `proposed` ones are evaluated and reported but never block (open question Q1:
+# the researcher confirms or rejects them). The checker is hevajra_matrix.evaluation.sentinels.
+#
+# Fields (all required)
+#   id           stable identifier
+#   status       proposed | verified | retired
+#   verified_by  who verified the fact (required for verified; null otherwise)
+#   source       where the fact was established or argued
+#   stage        ingest | proposal | final: the first stage at which the fact must hold; the
+#                checker also evaluates it at every later stage (ingest < proposal < final)
+#   check        one of the 8 check kinds below
+#   loci         witness line coordinates "<text>:<line>", e.g. "D418:17b.6", "T0892:0592a27"
+#   quotes       short verbatim excerpts, keyed like loci: for human readers, and to pick the
+#                segment when a line holds several (a quote must occur in a segment starting
+#                on the line of the locus with the same key)
+#   expect       the parameters of the check
+#
+# Ranges: `*_from` .. `*_to` covers the segments from the one starting on the `_from` line
+# (the one containing the `_from` quote, if given; else the first on that line) through the
+# one starting on the `_to` line (containing the `_to` quote; else the last on that line).
+# Only content segments count (prose, verse_line, verse, mantra), except for `paratext`.
+#
+# Check kinds (loci keys; expect keys)
+#   note_kind     {note}; {note_class}: the note starting on that line (containing the quote)
+#                 has this class
+#   paratext      {from, to}; {count}: the range holds exactly `count` segments, all of kind
+#                 paratext, and no content segment of that text follows them
+#   adjacent      {first, second}; {max_between}: at most `max_between` content segments lie
+#                 between the two segments
+#   relation_in   {ref_from, ref_to[, wit_from, wit_to]}; {relations[, polarity_flip][, flags]}:
+#                 every reference unit in the range has one of these relations (with this
+#                 polarity flag, and carrying all these flags); links, if any, fall in the
+#                 witness range
+#   status_in     {ref_from, ref_to[, wit_from, wit_to]}; {statuses}: every unit's status is one
+#                 of these
+#   none_status   {ref_from, ref_to[, wit_from, wit_to]}; {status}: no unit has this status
+#   linked_local  {ref_from, ref_to[, wit_from, wit_to]}; {local}: every unit is linked, and
+#                 only to witness segments of this witness chapter (and of the witness range)
+#   witness_only  {wit_from, wit_to}; {kinds}: every witness segment in the range is
+#                 witness-only material of one of these kinds (linked to no reference unit)
+#
+# Facts checked by the code review of 2026-09-30 are verified with verified_by "code review
+# 2026-09-30"; readings first made during the design (S1b, S2b, S7, S8, S9, S10) stay
+# proposed even where the critique re-checked the underlying text.
+
+schema_version: 2
+
+sentinels:
+  # I.7, the twelve places. The Chinese keeps the places of classes 11-12 (charnel grounds:
+  # seashore, orchards, ponds) while dropping the class name; none of them is ABSENT.
+  - id: S1a_I7_places_kept
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 row 1"
+    stage: final
+    check: none_status
+    loci: {ref_from: "D417:8a.7", ref_to: "D417:8b.1", wit_from: "T0892:0592a29", wit_to: "T0892:0592b01"}
+    quotes: {ref_from: "དུར་ཁྲོད་རབ་སོན་དགེ་འདུན་དང", ref_to: "ཉེ་བའི་དུར་ཁྲོད་བརྗོད་པར་བྱ", wit_from: "十一者眾所樂處或大海邊", wit_to: "清淨池沼"}
+    expect: {status: ABSENT}
+
+  # I.7: the Chinese replaces ALL twelve category names with ordinals ("which twelve? first,
+  # ..."), not only the charnel ground: a rendering applied to the whole list (corrects the
+  # review's S1, which named only smasana). The critique re-checked that all 12 are replaced.
+  - id: S1b_I7_category_names_list_wide
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30; all 12 names replaced, re-checked by the critique 2026-09-30"
+    stage: final
+    check: relation_in
+    loci: {ref_from: "D417:8a.3", ref_to: "D417:8a.4", wit_from: "T0892:0592a19", wit_to: "T0892:0592a20"}
+    quotes: {ref_from: "གནས་དང་ཉེ་བའི་གནས་དང་ནི", ref_to: "དུར་ཁྲོད་ཉེ་བའི་དུར་ཁྲོད་ཉིད", wit_from: "當有一十二處遠離魔事", wit_to: "何等十二"}
+    expect: {relations: [category_name_omitted], flags: [scope_list, uniform_across_list]}
+
+  # II.3: the Tibetan enjoins killing, lying, stealing and others' wives; the Chinese gives
+  # four prohibitions. The meaning is reversed as a whole.
+  - id: S2a_II3_vows_reversed
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 row 2"
+    stage: proposal
+    check: relation_in
+    loci: {ref_from: "D418:17b.6", ref_to: "D418:17b.6", wit_from: "T0892:0596b25", wit_to: "T0892:0596b27"}
+    quotes: {ref_from: "ཁྱོད་ཀྱིས་སྲོག་ཆགས་བསད་པ་དང", ref_to: "ཕ་རོལ་བུད་མེད་བསྟེན་པར་གྱིས", wit_from: "一者不應殺害眾生", wit_to: "四者無虛妄語"}
+    expect: {relations: [reversal], polarity_flip: true}
+
+  # II.3: the Chinese also reorders the four acts into the standard precept order (kill,
+  # steal, sexual misconduct, lie against the Tibetan kill, lie, steal, others' wives).
+  - id: S2b_II3_vows_reordered
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30"
+    stage: final
+    check: relation_in
+    loci: {ref_from: "D418:17b.6", ref_to: "D418:17b.6", wit_from: "T0892:0596b25", wit_to: "T0892:0596b27"}
+    quotes: {ref_from: "ཁྱོད་ཀྱིས་སྲོག་ཆགས་བསད་པ་དང", ref_to: "ཕ་རོལ་བུད་མེད་བསྟེན་པར་གྱིས", wit_from: "一者不應殺害眾生", wit_to: "四者無虛妄語"}
+    expect: {relations: [reversal], flags: [reordered]}
+
+  # II.9: its opening (27b.1-28a.1) is the second half of Chinese chapter 18, in the same order.
+  - id: S3a_II9_opening_in_zh18
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 row 3 (0600c28-0601a16)"
+    stage: proposal
+    check: linked_local
+    loci: {ref_from: "D418:27b.1", ref_to: "D418:28a.1", wit_from: "T0892:0600c28", wit_to: "T0892:0601a15"}
+    quotes: {ref_from: "དེ་ནས་ཁ་སྦྱར་འབྱེད་པ་ཡི", ref_to: "རུས་པ་བདེན་པ་བཞི་པོ་ཉིད", wit_from: "欲作降伏法者", wit_to: "七等覺支及四真諦所生"}
+    expect: {local: pin18}
+
+  - id: S3b_II9_opening_present
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 row 3"
+    stage: proposal
+    check: status_in
+    loci: {ref_from: "D418:27b.1", ref_to: "D418:28a.1", wit_from: "T0892:0600c28", wit_to: "T0892:0601a15"}
+    quotes: {ref_from: "དེ་ནས་ཁ་སྦྱར་འབྱེད་པ་ཡི", ref_to: "རུས་པ་བདེན་པ་བཞི་པོ་ཉིད", wit_from: "欲作降伏法者", wit_to: "七等覺支及四真諦所生"}
+    expect: {statuses: [PRESENT, PARTIAL]}
+
+  # II.9: "kills in an instant" is rendered "subdues in an instant".
+  - id: S3c_II9_kill_to_subdue
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 row 3"
+    stage: proposal
+    check: relation_in
+    loci: {ref_from: "D418:27b.4", ref_to: "D418:27b.4", wit_from: "T0892:0601a03", wit_to: "T0892:0601a03"}
+    quotes: {ref_from: "དམིགས་ནས་སྐད་ཅིག་གསོད་པར་བྱེད", ref_to: "དམིགས་ནས་སྐད་ཅིག་གསོད་པར་བྱེད", wit_from: "剎那降伏", wit_to: "剎那降伏"}
+    expect: {relations: [substitution]}
+
+  # Three gathas (12 lines) after the blessing mantra exist in the Chinese only; the Derge
+  # goes from the mantra and the seed-syllable instruction straight to the colophons.
+  - id: S4_zh_final_gathas_witness_only
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 row 4"
+    stage: final
+    check: witness_only
+    loci: {wit_from: "T0892:0601c01", wit_to: "T0892:0601c07"}
+    quotes: {wit_from: "復說伽陀曰", wit_to: "自他俱利樂"}
+    expect: {kinds: [addition]}
+
+  # Translator notes kept by the ingester with their classes (CBETA XML).
+  - id: S5a_note_vorlage_statement
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 2 (aside) and defect table row 5; CBETA XML"
+    stage: ingest
+    check: note_kind
+    loci: {note: "T0892:0592a27"}
+    quotes: {note: "七者、八者，梵本元闕"}
+    expect: {note_class: vorlage_statement}
+
+  - id: S5b_note_substitution_0589a09
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, defect table row 5; CBETA XML"
+    stage: ingest
+    check: note_kind
+    loci: {note: "T0892:0589a09"}
+    quotes: {note: "以石碌代之"}
+    expect: {note_class: substitution_instruction}
+
+  - id: S5c_note_substitution_0589a13
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, defect table row 5; CBETA XML"
+    stage: ingest
+    check: note_kind
+    loci: {note: "T0892:0589a13"}
+    quotes: {note: "或以白蒿汁代之"}
+    expect: {note_class: substitution_instruction}
+
+  # The title note: a traditional statement of the source, not evidence of abridgement.
+  - id: S5d_note_title_0587c06
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, section 4; synthesis 0.2; CBETA XML"
+    stage: ingest
+    check: note_kind
+    loci: {note: "T0892:0587c06"}
+    quotes: {note: "大幻化普通儀軌三十一分中略出二無我法"}
+    expect: {note_class: title}
+
+  # The translators' colophons (Gayadhara, Shakya ye shes, gZhon nu dpal) follow the final
+  # rdzogs so of Toh 418 and are paratext, not alignable content.
+  - id: S6_D418_colophon_is_paratext
+    status: verified
+    verified_by: "code review 2026-09-30"
+    source: "code review 2026-09-30, defect table row 4"
+    stage: ingest
+    check: paratext
+    loci: {from: "D418:30a.2", to: "D418:30a.3"}
+    quotes: {from: "རྒྱ་གར་མཁན་པོ་ག་ཡ་ཧ་དྷ་རའི་ཞལ་སྔ་ནས་དག", to: "སླར་ཡང་ལོ་ཙྪ་བ་གཞོན་ནུ་དཔལ"}
+    expect: {count: 3}
+
+  # I.7: the Derge place lists run from the upacchandoha list (8a.6) straight into the pilava
+  # list (8a.7); only the summary line "to be told in brief" lies between. There is no
+  # melapaka list, so the Chinese gap at "seventh and eighth" (note 0592a27) is shared with
+  # the Tibetan. The Sanskrit manuscripts have not been checked.
+  - id: S7_I7_melapaka_gap_shared
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30; re-checked on the Derge by the critique 2026-09-30"
+    stage: ingest
+    check: adjacent
+    loci: {first: "D417:8a.6", second: "D417:8a.7"}
+    quotes: {first: "ཀོང་ཀ་ཎ་ཡང་ཉེ་ཙན", second: "འཐུང་གཅོད་གྲོང་ཁྱེར་གྱི་དང་ཡང"}
+    expect: {max_between: 1}
+
+  # II.9: the closing bali mantra is the only part of the mantroddhara the Chinese has.
+  - id: S8a_II9_bali_mantra_linked
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30; synthesis 0.2"
+    stage: final
+    check: linked_local
+    loci: {ref_from: "D418:29a.2", ref_to: "D418:29a.2", wit_from: "T0892:0601a15", wit_to: "T0892:0601a17"}
+    quotes: {ref_from: "ཨོཾ་ཨཱཿཧཱུྃ་ཕཊ་སྭཱ་ཧཱ", ref_to: "འབྱུང་པོ་ཐམས་ཅད་ཀྱི་གཏོར་མའི་སྔགས་སོ", wit_from: "諸八部真言曰", wit_to: "唵阿吽發吒薩嚩賀"}
+    expect: {local: pin18}
+
+  - id: S8b_II9_mantroddhara_no_counterpart
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30 (refines code review 2026-09-30 section 2 row 3)"
+    stage: final
+    check: relation_in
+    loci: {ref_from: "D418:28a.1", ref_to: "D418:29a.2"}
+    quotes: {ref_from: "བདག་མེད་མས་གསོལ་བ", ref_to: "བྱིན་ལ་དྲ་ནུ་ཏྤནྣ་ཏྭཱ་ཏ"}
+    expect: {relations: [no_counterpart]}
+
+  # Chinese chapter 11 ends with II.1 (homa material and closing mantras in the same order).
+  # Taisho footnote 0594008 on the chapter 11 heading gives the colophon closing Part I
+  # (vajragarbhabhisambodhi) and footnote 0595012 on the chapter 12 heading the II.1 colophon
+  # of Tokyo ms 335: the Taisho matched headings to that manuscript's colophons by ordinal.
+  # This supersedes the review's reading of 0595012 as a different chapter division.
+  - id: S9_zh11_ends_with_II1
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30; footnotes 0594008 and 0595012 re-checked by the critique 2026-09-30"
+    stage: proposal
+    check: linked_local
+    loci: {ref_from: "D418:14a.3", ref_to: "D418:14a.5", wit_from: "T0892:0595a09", wit_to: "T0892:0595a27"}
+    quotes: {ref_from: "ཞི་ལ་ཏིལ་དང་རྒྱས་ལ་ཞོ", ref_to: "ཨོཾ་དྷྭྃ་དྷྭྃ་ལྷ་བཤོས་ཀྱི་སྔགས་སོ", wit_from: "息災用脂麻", wit_to: "唵探探"}
+    expect: {local: pin11}
+
+  # II.12: the instruction "on the head the form of om, at the heart hum, on the filament ah"
+  # is transliterated as if it were the end of the mantra (sirasi omkaram kiñjalke ahkaram);
+  # the heart/hum slot is missing in the Chinese.
+  - id: S10_II12_instruction_as_mantra
+    status: proposed
+    verified_by: null
+    source: "philology design 2026-09-30"
+    stage: final
+    check: relation_in
+    loci: {ref_from: "D418:30a.1", ref_to: "D418:30a.2", wit_from: "T0892:0601b23", wit_to: "T0892:0601b23"}
+    quotes: {ref_from: "སྤྱི་བོར་ནི་ཨོཾ་གྱི་རྣམ་པ", ref_to: "ཟེ་འབྲུ་ལ་ནི་ཨཱཿའི་རྣམ་པའོ", wit_from: "尸囉細唵歌囕緊拶梨計阿歌犖", wit_to: "尸囉細唵歌囕緊拶梨計阿歌犖"}
+    expect: {relations: [transliterated], flags: [instruction_as_mantra]}

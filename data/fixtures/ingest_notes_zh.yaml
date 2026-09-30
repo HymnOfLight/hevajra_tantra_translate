@@ -1,0 +1,64 @@
+# Every distinct inline-note text of CBETA T0892 (48, from the real XML; short quotes) with
+# its expected class, plus texts that must stay unclassified. Used by
+# tests/unit/test_ingest_notes.py to check data/lexicon/notes_zh.yaml: each classified text
+# matches exactly one rule, and the right one. Line breaks inside a note are kept as in the
+# source (CBETA breaks two notes across lines).
+
+classified:
+  - {text: "大幻化普通儀軌三十一分中略出二無我法", class: title}
+  - {text: "引", class: phonetic}
+  - {text: "一", class: mantra_numbering}
+  - {text: "三", class: mantra_numbering}
+  - {text: "半音", class: phonetic}
+  - {text: "引下同", class: phonetic}
+  - {text: "四", class: mantra_numbering}
+  - {text: "二", class: mantra_numbering}
+  - {text: "二合引", class: phonetic}
+  - {text: "五", class: mantra_numbering}
+  - {text: "二合", class: phonetic}
+  - {text: "六", class: mantra_numbering}
+  - {text: "七", class: mantra_numbering}
+  - {text: "八", class: mantra_numbering}
+  - {text: "九", class: mantra_numbering}
+  - {text: "十", class: mantra_numbering}
+  - {text: "十一", class: mantra_numbering}
+  - {text: "十二", class: mantra_numbering}
+  - {text: "十三", class: mantra_numbering}
+  - {text: "十四", class: mantra_numbering}
+  - {text: "十五", class: mantra_numbering}
+  - {text: "十六", class: mantra_numbering}
+  - {text: "上呂角切下同", class: fanqie}
+  - {text: "以石碌代之", class: substitution_instruction}
+  - {text: "或以白蒿汁代之", class: substitution_instruction}
+  - {text: "女轄切下同", class: fanqie}
+  - {text: "十七", class: mantra_numbering}
+  - {text: "十八", class: mantra_numbering}
+  - {text: "十\n九", class: mantra_numbering}
+  - {text: "二十", class: mantra_numbering}
+  - {text: "二十一", class: mantra_numbering}
+  - {text: "二十二", class: mantra_numbering}
+  - {text: "二十三", class: mantra_numbering}
+  - {text: "二十四", class: mantra_numbering}
+  - {text: "二十五", class: mantra_numbering}
+  - {text: "二十六", class: mantra_numbering}
+  - {text: "第三同卷", class: fascicle}
+  - {text: "七者、八者，梵本元闕", class: vorlage_statement}
+  - {text: "二\n合", class: phonetic}
+  - {text: "三合", class: phonetic}
+  - {text: "第五同卷", class: fascicle}
+  - {text: "切身", class: fanqie}
+  - {text: "卑孕切", class: fanqie}
+  - {text: "二合下尾頴切", class: fanqie}
+  - {text: "尼轄切", class: fanqie}
+  - {text: "仁際切", class: fanqie}
+  - {text: "奴回切", class: fanqie}
+  - {text: "力角切", class: fanqie}
+
+# Near misses: similar strings that are not one of the seven note types.
+unclassified:
+  - "二合下"        # a fusion mark followed by a dangling 'lower'
+  - "引二"          # a phonetic mark and a numeral run together
+  - "第三卷"        # a fascicle number without 'same scroll'
+  - "梵文"          # 'Sanskrit script', not 'Sanskrit manuscript'
+  - "呂角"          # a fanqie pair without the fanqie mark
+  - ""              # empty note

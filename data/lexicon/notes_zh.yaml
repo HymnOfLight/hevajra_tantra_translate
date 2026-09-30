@@ -1,0 +1,59 @@
+# Classes of the CBETA inline notes (note[@place="inline"]) and the source of the Taisho
+# footnotes, read by hevajra_matrix.ingest.notes.
+#
+# Inline notes are the translator's (or the early editors') own words inside the Chinese
+# text: pronunciation marks in mantras, running numbers of mantra phrases, fanqie
+# spellings, ritual substitutions, a statement about the Sanskrit manuscript, the title
+# note and fascicle notes. They are kept as kind="note" segments and never enter the
+# reading text of a content segment.
+#
+# Rules are tried in order and the first match wins. A pattern is a Python regular
+# expression matched against the WHOLE note text after all whitespace is removed
+# (re.fullmatch), so a new kind of note never slips silently into an existing class: it
+# stays "unclassified" and fails the G0 ingest gate. The patterns are written to be
+# mutually exclusive on T0892 (a unit test checks this on every distinct note text).
+#
+# Expected on T0892 (synthesis 3.2, re-checked 2026-09-30): phonetic 344,
+# mantra_numbering 162, fanqie 9, substitution_instruction 2, fascicle 2, title 1,
+# vorlage_statement 1; 521 in total, 0 unclassified.
+
+rules:
+  # Statement about the Sanskrit manuscript the translator worked from, e.g. 0592a27
+  # "items seven and eight are missing in the Sanskrit manuscript". Direct Vorlage evidence.
+  - class: vorlage_statement
+    pattern: ".*梵本.*"
+
+  # Instruction to use another ritual ingredient instead ("[or] use X instead"),
+  # 0589a09 and 0589a13. Translator-side evidence, not evidence about the Vorlage.
+  - class: substitution_instruction
+    pattern: "或?以.+代之"
+
+  # Fascicle note in a fascicle heading ("fascicle N is in the same scroll").
+  - class: fascicle
+    pattern: "第[一二三四五六七八九十]+同卷"
+
+  # Title note under the first fascicle heading (0587c06), the traditional "extracted from
+  # the ... in thirty-one sections" formula. It parallels the uddhrta formula of the Derge
+  # colophon (30a.2) and is not evidence that the translator abridged (synthesis 0.2).
+  - class: title
+    pattern: ".+分中略出.+"
+
+  # Fanqie spelling: two characters + "qie", optionally for the upper character or after a
+  # fusion mark, optionally "same below"; also the "self-fanqie" mark.
+  - class: fanqie
+    pattern: "(?:上|二合下)?(?:..切|切身)(?:下同)?"
+
+  # Pronunciation marks in transliterated mantras: long vowel, two or three syllables
+  # fused, half sound; optionally "same below".
+  - class: phonetic
+    pattern: "(?:引|[二三]合|半音)+(?:下同)?"
+
+  # Running number of a mantra phrase (a Chinese numeral).
+  - class: mantra_numbering
+    pattern: "[一二三四五六七八九十]+"
+
+# A Taisho footnote (note[@type="orig"]) containing this marker reports a reading of the
+# Sanskrit manuscript no. 335 of Tokyo Imperial University, which the Taisho editors
+# collated (16 footnotes on T0892). The base footnote 0587005 names that manuscript but
+# does not carry the marker.
+tokyo335_marker: "（梵本）"

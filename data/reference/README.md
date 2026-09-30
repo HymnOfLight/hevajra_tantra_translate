@@ -21,6 +21,8 @@ I.2.6<TAB><TAB>ABSENT        the edition has no such verse (another edition has 
 ```
 
 Per-manuscript readings for the decomposition go in `data/reference/readings/<chapter>.tsv`
-with columns `unit_id, ms, status, reading, source, note`, where `status` is one of
-`present`, `absent`, `variant`, `illegible`, `not_collated`. Editions are not independent
-witnesses and are never counted as manuscripts.
+(one file per reference chapter, e.g. `I.7.tsv`). The first line is a header row with the
+columns `unit_id, ms, status, reading, source, note`; `status` is one of `present`,
+`absent`, `variant`, `illegible`, `not_collated`. Manuscript ids must exist in
+`data/registry/sa_manuscripts.yaml`. Editions are not independent witnesses and are never
+counted as manuscripts.

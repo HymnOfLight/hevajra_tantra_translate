@@ -1,0 +1,76 @@
+# Orthographic variant forms, read by core.lexicon.load_variant_forms and applied by
+# core.textnorm.fold_variants to BOTH strings of a comparison.
+#
+# Used when a verbatim quote check fails: if the quote matches after folding, the link
+# is kept with the flag quote_variant_form (grade C, reviewed by a human) instead of
+# being rejected. Each record maps a form to the representative of its variant class;
+# a representative must not itself be listed as a form (folding is idempotent).
+#
+# zh: simplified or variant characters -> the form used by CBETA T0892. A simplified
+#     character with two traditional sources (e.g. the one shared by "hair" and "to
+#     send") is left out rather than guessed.
+# sa: transliteration conventions (ISO 15919, anusvara dot above) -> IAST.
+# bo: no folding yet; Esukhia corrections are resolved at ingest.
+
+zh:
+  - {form: 髅, canonical: 髏}   # skull (as in the kapala anchor)
+  - {form: 屍, canonical: 尸}   # corpse (T0892 writes the short form)
+  - {form: 罗, canonical: 羅}
+  - {form: 啰, canonical: 囉}
+  - {form: 萨, canonical: 薩}
+  - {form: 刚, canonical: 剛}
+  - {form: 华, canonical: 華}
+  - {form: 说, canonical: 說}
+  - {form: 时, canonical: 時}
+  - {form: 尔, canonical: 爾}
+  - {form: 无, canonical: 無}
+  - {form: 为, canonical: 為}
+  - {form: 与, canonical: 與}
+  - {form: 语, canonical: 語}
+  - {form: 轮, canonical: 輪}
+  - {form: 门, canonical: 門}
+  - {form: 净, canonical: 淨}
+  - {form: 经, canonical: 經}
+  - {form: 义, canonical: 義}
+  - {form: 实, canonical: 實}
+  - {form: 乐, canonical: 樂}
+  - {form: 声, canonical: 聲}
+  - {form: 观, canonical: 觀}
+  - {form: 灯, canonical: 燈}
+  - {form: 烧, canonical: 燒}
+  - {form: 恶, canonical: 惡}
+  - {form: 养, canonical: 養}
+  - {form: 饮, canonical: 飲}
+  - {form: 脉, canonical: 脈}
+  - {form: 坛, canonical: 壇}
+  - {form: 杀, canonical: 殺}
+  - {form: 业, canonical: 業}
+  - {form: 众, canonical: 眾}
+  - {form: 衆, canonical: 眾}
+  - {form: 摄, canonical: 攝}
+  - {form: 护, canonical: 護}
+  - {form: 赞, canonical: 讚}
+  - {form: 诵, canonical: 誦}
+  - {form: 咒, canonical: 呪}
+  - {form: 画, canonical: 畫}
+  - {form: 体, canonical: 體}
+  - {form: 双, canonical: 雙}
+  - {form: 两, canonical: 兩}
+  - {form: 万, canonical: 萬}
+  - {form: 处, canonical: 處}
+  - {form: 静, canonical: 靜}
+  - {form: 灭, canonical: 滅}
+  - {form: 亲, canonical: 親}
+  - {form: 见, canonical: 見}
+  - {form: 闻, canonical: 聞}
+  - {form: 听, canonical: 聽}
+
+sa:
+  - {form: ṁ, canonical: ṃ}     # anusvara written with dot above
+  - {form: r̥̄, canonical: ṝ}    # ISO 15919 long vocalic r
+  - {form: r̥, canonical: ṛ}     # ISO 15919 vocalic r
+  - {form: l̥, canonical: ḷ}     # ISO 15919 vocalic l
+  - {form: ē, canonical: e}     # ISO 15919 long e
+  - {form: ō, canonical: o}     # ISO 15919 long o
+
+bo: []

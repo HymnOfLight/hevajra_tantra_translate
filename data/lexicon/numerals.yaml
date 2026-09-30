@@ -1,0 +1,143 @@
+# Numeral words read by core.lexicon.load_numerals and used by core.textnorm.numerals.
+#
+# Numerals serve as cross-language anchors, so a false positive (a numeral character or
+# syllable used in a non-numeral word) creates a spurious match with a genuine number in
+# the other witness. Matching is therefore token-bounded (Chinese characters, Tibetan
+# syllables, Sanskrit words), and every language has an exclusion list: a numeral inside
+# an occurrence of an exclusion context is ignored. Values below 2 are never reported
+# (a bare "one" is usually an article or quantifier), so the "one" entries matter only
+# inside compounds such as 11 or 100,000 x 1.
+#
+# Exclusion counts in the comments come from a survey of every numeral hit in the real
+# texts (T0892 body without notes; D417/418), 2026-09-30. Add a form here whenever a new
+# false positive is observed.
+
+zh:
+  digits:
+    - {form: 零, value: 0}
+    - {form: 〇, value: 0}
+    - {form: 一, value: 1}
+    - {form: 二, value: 2}
+    - {form: 兩, value: 2}
+    - {form: 两, value: 2}
+    - {form: 三, value: 3}
+    - {form: 四, value: 4}
+    - {form: 五, value: 5}
+    - {form: 六, value: 6}
+    - {form: 七, value: 7}
+    - {form: 八, value: 8}
+    - {form: 九, value: 9}
+  units:
+    - {form: 十, value: 10}
+    - {form: 百, value: 100}
+    - {form: 千, value: 1000}
+    - {form: 萬, value: 10000}
+    - {form: 万, value: 10000}
+  exclusions:
+    - 三昧         # samadhi / samaya transliteration (T0892 body: 23 hits)
+    - 三摩         # samadhi, samahita, samapatti, Ghasmari transliterations (T0892 body: 26)
+    - 三藐         # samyak- transliteration (standard form; 0 in T0892)
+    - 十葛西       # goddess-name transliteration (T0892 body: 2)
+    - 兩舌         # "double tongue", i.e. slander (T0892 body: 5)
+    - 不二         # non-dual (advaya; T0892 body: 2)
+    - 無二         # non-dual (T0892 body: 1)
+    - 二合         # phonetic gloss "two letters combined" (inline notes, not the body)
+    - 三合         # phonetic gloss "three letters combined" (inline notes)
+
+bo:
+  # Tsheg-joined syllables. The teen prefixes and connectors are syllables, not numbers.
+  words:
+    - {form: གཅིག, value: 1}
+    - {form: གཉིས, value: 2}
+    - {form: གསུམ, value: 3}
+    - {form: བཞི, value: 4}
+    - {form: ལྔ, value: 5}
+    - {form: དྲུག, value: 6}
+    - {form: བདུན, value: 7}
+    - {form: བརྒྱད, value: 8}
+    - {form: དགུ, value: 9}
+    - {form: ཉི་ཤུ, value: 20}
+    - {form: སུམ་ཅུ, value: 30}
+    - {form: བཞི་བཅུ, value: 40}
+    - {form: ལྔ་བཅུ, value: 50}
+    - {form: དྲུག་ཅུ, value: 60}
+    - {form: བདུན་ཅུ, value: 70}
+    - {form: བརྒྱད་ཅུ, value: 80}
+    - {form: དགུ་བཅུ, value: 90}
+    - {form: བརྒྱ, value: 100}
+    - {form: སྟོང, value: 1000}
+    - {form: ཁྲི, value: 10000}
+    - {form: འབུམ, value: 100000}
+  teen_prefixes: [བཅུ, བཅོ]     # "ten"; with a following unit 11-19, alone 10
+  connectors: [རྩ, རྩེ, ར, སོ, ཞེ, ང, རེ, དོན, གྱ, གོ]   # tens connectors (21-29 ... 91-99)
+  exclusions:
+    # The first syllable of "emptiness" / "empty" is spelled like 1000. D417/418 hits:
+    # stong pa 6, stong pas 4, stong pa'i 3, stong ba'i 1, stong nyid 1; with these
+    # exclusions the only 1000 left is the genuine "thousands" form (stong phrag).
+    - སྟོང་པ
+    - སྟོང་པས
+    - སྟོང་པའི
+    - སྟོང་པར
+    - སྟོང་པའོ
+    - སྟོང་བ
+    - སྟོང་བས
+    - སྟོང་བའི
+    - སྟོང་བར
+    - སྟོང་ཉིད
+    - སྟོང་མིན      # "not empty" (D417/418: "empty and not empty")
+    - སྟོང་དང་སྟོང
+    - སྟོང་བཅས      # "with the empty (bindu)" in mantra-coding verses (D417/418: 2)
+    - བརྒྱ་བྱིན      # Indra ("hundred sacrifices"; D417/418: 1)
+    - གཉིས་མེད      # non-dual (D417/418: 2)
+    - གཉིས་སུ་མེད    # non-dual (D417/418: 1)
+
+sa:
+  # Word-initial IAST stems; the longest stem that begins a word wins, so sandhi forms
+  # such as dvatrimsan still match dvatrimsa. No stem for "one" (see the header).
+  stems:
+    - {form: dvi, value: 2}
+    - {form: dvau, value: 2}
+    - {form: dvaya, value: 2}
+    - {form: tri, value: 3}
+    - {form: traya, value: 3}
+    - {form: catur, value: 4}
+    - {form: catvāri, value: 4}
+    - {form: catuḥ, value: 4}
+    - {form: pañca, value: 5}
+    - {form: ṣaṣ, value: 6}
+    - {form: ṣaṭ, value: 6}
+    - {form: ṣaḍ, value: 6}
+    - {form: sapta, value: 7}
+    - {form: aṣṭa, value: 8}
+    - {form: aṣṭau, value: 8}
+    - {form: nava, value: 9}
+    - {form: daśa, value: 10}
+    - {form: ekādaśa, value: 11}
+    - {form: dvādaśa, value: 12}
+    - {form: trayodaśa, value: 13}
+    - {form: caturdaśa, value: 14}
+    - {form: pañcadaśa, value: 15}
+    - {form: ṣoḍaśa, value: 16}
+    - {form: saptadaśa, value: 17}
+    - {form: aṣṭādaśa, value: 18}
+    - {form: viṃśati, value: 20}
+    - {form: caturviṃśati, value: 24}
+    - {form: triṃśat, value: 30}
+    - {form: dvātriṃśa, value: 32}
+    - {form: catvāriṃśat, value: 40}
+    - {form: pañcāśat, value: 50}
+    - {form: ṣaṣṭi, value: 60}
+    - {form: catuḥṣaṣṭi, value: 64}
+    - {form: saptati, value: 70}
+    - {form: aśīti, value: 80}
+    - {form: navati, value: 90}
+    - {form: śata, value: 100}
+    - {form: sahasra, value: 1000}
+    - {form: lakṣa, value: 100000}
+  exclusions:
+    # A word beginning with one of these forms is never a numeral. Word-initial matching
+    # already rules out kaṣṭa, rātri, kṣatriya and advitīya (the numeral stem is inside
+    # the word); these entries cover words that begin like a numeral stem.
+    - lakṣaṇ       # lakṣaṇa "mark", not lakṣa "100,000"
+    - lakṣay       # lakṣayet "should mark"
+    - daśana       # "tooth", not daśa "ten"

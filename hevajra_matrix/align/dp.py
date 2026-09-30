@@ -1,160 +1,209 @@
-"""Chapter-gated monotone alignment with NULL beads (B0 baseline).
+"""Monotone bead alignment with NULL beads: the content-free and lexical baselines.
 
-Dynamic programme over two segment sequences of one reference chapter and
-the corresponding witness chapter. Beads allowed: 1:1, 1:0, 0:1, 1:2, 2:1,
-2:2, 1:3, 3:1. Cost = length term (Gale–Church) + anchor term + bead prior.
+A dynamic programme over the reference and witness segments of one chapter group
+(Gale & Church 1993, extended by a similarity term). Beads: 1:1, 1:0, 0:1, 1:2, 2:1,
+2:2, 1:3, 3:1. The cost of a bead is
 
-The similarity backend is pluggable: the default uses cross-lingual anchors
-(terms, names, numerals) only; an embedding backend can be dropped in
-without touching the DP.
+    prior(shape)
+    + length_weight * 0.5 * ((l_wit - c * l_ref) / sqrt(length_var * l_ref)) ** 2
+    - anchor_weight * similarity.score(ref run, wit run)
+    + anchor_conflict                 if similarity.conflict(ref run, wit run)
+
+where the length and similarity terms apply only to beads with both sides non-empty,
+lengths are ``core.textnorm.length`` (at least 1 per segment) and ``c`` is the ratio of
+total witness length to total reference length within the group. With
+``ZeroSimilarity`` this is the length-only control P1; with ``AnchorSimilarity`` it is
+the baseline B0 (synthesis 5.3).
+
+The DP is monotone by construction, so it cannot represent transpositions: it exists
+only as a baseline for the Claude instrument, never to build the matrix.
+
+Output is one ``Alignment`` of the shared type:
+    n:m bead with n, m >= 1   one link per reference unit, relation ``equivalent``, every
+                              unit of the bead carrying the same ``wit_ids``
+    1:0 bead                  ``no_counterpart`` link with no witness ids
+    0:1 bead                  witness-only link (``ref_id`` None), kind ``addition``
+Links are emitted in bead order, so witness-only links sit between their neighbours.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Any, Collection, Iterator, Mapping, Sequence
 
-from . import normalize
-from .anchors import AnchorLexicon, anchor_similarity
-from .segments import Segment
+from ..config import ConfigError, from_mapping
+from ..core.textnorm import length
+from ..core.types import Alignment, Link, Relation, Segment, WitnessOnlyKind
+from .similarity import Similarity
 
+BEADS: tuple[tuple[int, int], ...] = ((1, 1), (1, 0), (0, 1), (1, 2), (2, 1), (2, 2), (1, 3), (3, 1))
+SOURCE_ZERO = "dp:zero"       # P1: ZeroSimilarity
+SOURCE_ANCHOR = "dp:anchor"   # B0: AnchorSimilarity
 
-class SimilarityBackend(Protocol):
-    def score(self, ref: Sequence[Segment], wit: Sequence[Segment]) -> float:
-        """Return similarity in [0, 1] for a candidate bead."""
-
-
-class AnchorBackend:
-    def __init__(self, lexicon: AnchorLexicon) -> None:
-        self.lex = lexicon
-        self._cache: dict[str, set[str]] = {}
-
-    def anchors(self, s: Segment) -> set[str]:
-        key = f"{s.witness}|{s.seg_id}"
-        if key not in self._cache:
-            self._cache[key] = self.lex.extract(s.text, s.lang)
-        return self._cache[key]
-
-    def score(self, ref: Sequence[Segment], wit: Sequence[Segment]) -> float:
-        a: set[str] = set()
-        b: set[str] = set()
-        for s in ref:
-            a |= self.anchors(s)
-        for s in wit:
-            b |= self.anchors(s)
-        return anchor_similarity(a, b)
-
-    def has_anchors(self, segs: Sequence[Segment]) -> bool:
-        return any(self.anchors(s) for s in segs)
+# A chapter group: reference chapter keys (Segment.chapter) and witness-local chapter keys
+# (Segment.local_chapter) that are aligned as one sequence pair.
+ChapterGroup = tuple[Collection[str], Collection[str]]
 
 
-@dataclass
-class AlignParams:
-    # Gale–Church style priors (negative log probabilities)
-    # Defaults were chosen on a small sweep over four chapters of T0892 ↔ Toh 417–418
-    # (anchor agreement vs. NULL count); they must be re-tuned on the pilot gold
-    # alignment and then frozen in the pre-registration.
+@dataclass(frozen=True)
+class DPParams:
+    """Bead priors (negative log probabilities) and cost weights; ``run.yaml`` section ``align``.
+
+    The defaults are those of v0.2, chosen on a small sweep over four chapters; they are
+    to be re-tuned on dev gold and frozen in the pre-registration.
+    """
+
     prior_11: float = 0.0
-    prior_null: float = 3.0      # 1:0 and 0:1
-    prior_12: float = 2.4        # 1:2 and 2:1
+    prior_null: float = 3.0        # 1:0 and 0:1
+    prior_12: float = 2.4          # 1:2 and 2:1
     prior_22: float = 4.5
-    prior_13: float = 4.0        # 1:3 and 3:1
+    prior_13: float = 4.0          # 1:3 and 3:1
     length_weight: float = 1.0
-    length_var: float = 6.8      # Gale–Church s² (per reference length unit)
-    anchor_weight: float = 8.0   # reward for shared anchors
-    anchor_conflict: float = 2.0 # penalty when both sides carry anchors but share none
-    beads: tuple[tuple[int, int], ...] = ((1, 1), (1, 0), (0, 1), (1, 2), (2, 1), (2, 2), (1, 3), (3, 1))
+    length_var: float = 6.8        # Gale-Church variance per unit of reference length
+    anchor_weight: float = 8.0     # reward per unit of similarity
+    anchor_conflict: float = 2.0   # penalty when the similarity reports a conflict
+
+    def __post_init__(self) -> None:
+        for name, value in vars(self).items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ConfigError(f"align.{name} must be a finite number, got {value!r}")
+        if self.length_var <= 0:
+            raise ConfigError("align.length_var must be positive")
+        if min(self.length_weight, self.anchor_weight, self.anchor_conflict) < 0:
+            raise ConfigError("align weights must be non-negative")
+
+    @classmethod
+    def from_config(cls, run: Mapping[str, Any]) -> "DPParams":
+        """Build from the parsed ``run.yaml`` (``Settings.run``); unknown keys raise."""
+        return from_mapping(cls, run.get("align"), "run.yaml: align")
+
+    def prior(self, shape: tuple[int, int]) -> float:
+        di, dj = shape
+        if (di, dj) == (1, 1):
+            return self.prior_11
+        if di == 0 or dj == 0:
+            return self.prior_null
+        if (di, dj) == (2, 2):
+            return self.prior_22
+        return self.prior_12 if max(di, dj) == 2 else self.prior_13
 
 
-@dataclass
+@dataclass(frozen=True)
 class Bead:
-    ref: list[int]
-    wit: list[int]
-    cost: float
-    similarity: float
+    """Indices of the reference and witness segments joined by one bead."""
 
-    @property
-    def shape(self) -> tuple[int, int]:
-        return len(self.ref), len(self.wit)
+    ref: tuple[int, ...]
+    wit: tuple[int, ...]
 
 
-def _lengths(segs: Sequence[Segment]) -> list[int]:
-    return [max(1, normalize.length(s.text, s.lang)) for s in segs]
+# --------------------------------------------------------------------------- the DP
+def beads(ref: Sequence[Segment], wit: Sequence[Segment], sim: Similarity, params: DPParams) -> list[Bead]:
+    """Minimum-cost bead sequence covering both segment lists in order.
+
+    Ties go to the bead listed first in ``BEADS``, so the result is deterministic.
+    """
+    n, m = len(ref), len(wit)
+    lr = [max(1, length(s.text, s.lang)) for s in ref]
+    lw = [max(1, length(s.text, s.lang)) for s in wit]
+    ratio = sum(lw) / sum(lr) if lr and lw else 1.0
+    pr, pw = _prefix(lr), _prefix(lw)
+    priors = {shape: params.prior(shape) for shape in BEADS}
+    inf = math.inf
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    step: list[list[tuple[int, int] | None]] = [[None] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0.0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            best, best_shape = cost[i][j], step[i][j]
+            for shape in BEADS:
+                di, dj = shape
+                if di > i or dj > j or cost[i - di][j - dj] == inf:
+                    continue
+                total = cost[i - di][j - dj] + priors[shape]
+                if di and dj:
+                    total += params.length_weight * _length_cost(pr[i] - pr[i - di], pw[j] - pw[j - dj],
+                                                                 ratio, params.length_var)
+                    rs, ws = ref[i - di:i], wit[j - dj:j]
+                    total -= params.anchor_weight * sim.score(rs, ws)
+                    if params.anchor_conflict and sim.conflict(rs, ws):
+                        total += params.anchor_conflict
+                if total < best:
+                    best, best_shape = total, shape
+            cost[i][j], step[i][j] = best, best_shape
+    return _backtrace(step, n, m)
 
 
-def expected_ratio(ref: Sequence[Segment], wit: Sequence[Segment]) -> float:
-    lr, lw = sum(_lengths(ref)), sum(_lengths(wit))
-    return (lw / lr) if lr else 1.0
+def _prefix(values: Sequence[int]) -> list[int]:
+    out = [0]
+    for v in values:
+        out.append(out[-1] + v)
+    return out
 
 
-def length_cost(lr: int, lw: int, c: float, s2: float) -> float:
-    if lr == 0 or lw == 0:
-        return 0.0
-    mean = c * lr
-    delta = (lw - mean) / math.sqrt(s2 * lr)
+def _length_cost(l_ref: int, l_wit: int, ratio: float, var: float) -> float:
+    delta = (l_wit - ratio * l_ref) / math.sqrt(var * l_ref)
     return 0.5 * delta * delta
 
 
-def align_chapter(ref: Sequence[Segment], wit: Sequence[Segment], backend: SimilarityBackend,
-                  params: AlignParams | None = None, ratio: float | None = None) -> list[Bead]:
-    """Align one reference chapter to one witness chapter; returns beads in order."""
-    p = params or AlignParams()
-    n, m = len(ref), len(wit)
-    if n == 0 and m == 0:
-        return []
-    c = ratio if ratio is not None else expected_ratio(ref, wit)
-    lr, lw = _lengths(ref), _lengths(wit)
-    pref = [0] + [sum(lr[:i + 1]) for i in range(n)]
-    pwit = [0] + [sum(lw[:j + 1]) for j in range(m)]
-    prior = {(1, 1): p.prior_11, (1, 0): p.prior_null, (0, 1): p.prior_null,
-             (1, 2): p.prior_12, (2, 1): p.prior_12, (2, 2): p.prior_22,
-             (1, 3): p.prior_13, (3, 1): p.prior_13}
-    INF = float("inf")
-    D = [[INF] * (m + 1) for _ in range(n + 1)]
-    back: list[list[tuple[int, int, float] | None]] = [[None] * (m + 1) for _ in range(n + 1)]
-    D[0][0] = 0.0
-    has_anchors = getattr(backend, "has_anchors", None)
-    for i in range(n + 1):
-        for j in range(m + 1):
-            if D[i][j] == INF:
-                continue
-            for di, dj in p.beads:
-                ii, jj = i + di, j + dj
-                if ii > n or jj > m:
-                    continue
-                cost = prior[(di, dj)]
-                sim = 0.0
-                if di and dj:
-                    cost += p.length_weight * length_cost(pref[ii] - pref[i], pwit[jj] - pwit[j], c, p.length_var)
-                    rs, ws = ref[i:ii], wit[j:jj]
-                    sim = backend.score(rs, ws)
-                    cost -= p.anchor_weight * sim
-                    if sim == 0.0 and has_anchors and has_anchors(rs) and has_anchors(ws):
-                        cost += p.anchor_conflict
-                total = D[i][j] + cost
-                if total < D[ii][jj]:
-                    D[ii][jj] = total
-                    back[ii][jj] = (di, dj, sim)
-    beads: list[Bead] = []
+def _backtrace(step: Sequence[Sequence[tuple[int, int] | None]], n: int, m: int) -> list[Bead]:
+    out: list[Bead] = []
     i, j = n, m
     while (i, j) != (0, 0):
-        step = back[i][j]
-        if step is None:
-            raise RuntimeError("alignment backtrace failed")
-        di, dj, sim = step
-        beads.append(Bead(ref=list(range(i - di, i)), wit=list(range(j - dj, j)),
-                          cost=D[i][j] - D[i - di][j - dj], similarity=sim))
+        shape = step[i][j]
+        if shape is None:  # unreachable: 1:0 and 0:1 beads reach every cell
+            raise RuntimeError(f"DP backtrace failed at ({i}, {j})")
+        di, dj = shape
+        out.append(Bead(ref=tuple(range(i - di, i)), wit=tuple(range(j - dj, j))))
         i, j = i - di, j - dj
-    beads.reverse()
-    return beads
+    out.reverse()
+    return out
 
 
-def alignment_summary(beads: list[Bead]) -> dict:
-    shapes: dict[str, int] = {}
-    for b in beads:
-        k = f"{b.shape[0]}:{b.shape[1]}"
-        shapes[k] = shapes.get(k, 0) + 1
-    return {"beads": len(beads), "shapes": shapes,
-            "ref_null": sum(1 for b in beads if b.shape[1] == 0),
-            "wit_null": sum(1 for b in beads if b.shape[0] == 0)}
+# --------------------------------------------------------------------------- to Alignment
+def links(ref: Sequence[Segment], wit: Sequence[Segment], bead_list: Sequence[Bead], source: str) -> Iterator[Link]:
+    """Links of a bead sequence, in bead order (see the module docstring)."""
+    for bead in bead_list:
+        wit_ids = tuple(wit[j].id for j in bead.wit)
+        if not bead.ref:
+            yield Link(ref_id=None, wit_ids=wit_ids, relation=WitnessOnlyKind.ADDITION, source=source)
+            continue
+        relation = Relation.EQUIVALENT if wit_ids else Relation.NO_COUNTERPART
+        for i in bead.ref:
+            yield Link(ref_id=ref[i].id, wit_ids=wit_ids, relation=relation, source=source)
+
+
+def align(ref: Sequence[Segment], wit: Sequence[Segment], sim: Similarity, params: DPParams, *,
+          source: str, reference: str, witness: str) -> Alignment:
+    """Align one pair of segment sequences (one chapter group), in the order given."""
+    return Alignment(source=source, reference=reference, witness=witness,
+                     links=tuple(links(ref, wit, beads(ref, wit, sim, params), source)))
+
+
+def align_groups(ref: Sequence[Segment], wit: Sequence[Segment], groups: Sequence[ChapterGroup],
+                 sim: Similarity, params: DPParams, *, source: str, reference: str, witness: str) -> Alignment:
+    """Align each chapter group independently and concatenate the links in group order.
+
+    A group selects the reference segments whose ``chapter`` and the witness segments whose
+    ``local_chapter`` is among its keys, keeping the input order. Groups are computed by
+    the caller (from the concordance); a key may occur in one group only, so no segment
+    is aligned twice. Segments outside every group get no link. Pass alignable segments
+    only (content kinds; not notes, heads, colophons or paratext).
+    """
+    ref_seen: set[str] = set()
+    wit_seen: set[str] = set()
+    for ref_keys, wit_keys in groups:
+        for keys, seen, side in ((ref_keys, ref_seen, "reference"), (wit_keys, wit_seen, "witness")):
+            if isinstance(keys, str):
+                raise TypeError(f"{side} chapter keys must be a collection of strings, got the string {keys!r}")
+            repeated = seen & set(keys)
+            if repeated:
+                raise ValueError(f"{side} chapter key(s) {sorted(repeated)} occur in more than one group")
+            seen.update(keys)
+    out: list[Link] = []
+    for ref_keys, wit_keys in groups:
+        ref_keys, wit_keys = frozenset(ref_keys), frozenset(wit_keys)
+        rs = [s for s in ref if s.chapter in ref_keys]
+        ws = [s for s in wit if s.local_chapter in wit_keys]
+        out.extend(links(rs, ws, beads(rs, ws, sim, params), source))
+    return Alignment(source=source, reference=reference, witness=witness, links=tuple(out))
