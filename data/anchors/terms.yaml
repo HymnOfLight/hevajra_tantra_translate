@@ -1,0 +1,261 @@
+# 对齐锚点词表：梵 ↔ 藏 ↔ 汉（宋法护译语）
+#
+# 用途：B0 基线（词典 + 顺序动态规划）的锚点；也是组件抽取时的实体归一化表。
+# 原则：只登记在 T0892 与 Toh 417–418 中实际出现、且语义稳定的对应；
+#       汉文一栏可含多个译语（法护常混用），藏文含常见拼写变体。
+# type: name（专名/尊名）、term（术语）、number（数词，另由程序处理）、mantra（种子字/真言片段）
+# 汉译 transliteration: true 表示该汉文形式是音译而非意译（用于“音译密度”特征）。
+
+terms:
+  - sa: hevajra
+    bo: [ཀྱེའི་རྡོ་རྗེ, ཀྱེ་རྡོ་རྗེ, ཀྱེ་ཡི་རྡོ་རྗེ, ཧེ་བཛྲ]
+    zh: [空智金剛, 大悲空智金剛, 呬嚕迦]
+    type: name
+  - sa: vajragarbha
+    bo: [རྡོ་རྗེ་སྙིང་པོ]
+    zh: [金剛藏]
+    type: name
+  - sa: bhagavān
+    bo: [བཅོམ་ལྡན་འདས]
+    zh: [薄伽梵, 世尊]
+    type: name
+  - sa: vajrasattva
+    bo: [རྡོ་རྗེ་སེམས་དཔའ]
+    zh: [金剛薩埵]
+    type: name
+  - sa: mahāsattva
+    bo: [སེམས་དཔའ་ཆེན་པོ]
+    zh: [大薩埵]
+    type: term
+  - sa: samayasattva
+    bo: [དམ་ཚིག་སེམས་དཔའ]
+    zh: [三昧耶薩埵]
+    type: term
+  - sa: tathāgata
+    bo: [དེ་བཞིན་གཤེགས་པ]
+    zh: [如來]
+    type: term
+  - sa: kāyavākcitta
+    bo: [སྐུ་དང་གསུང་དང་ཐུགས, སྐུ་གསུང་ཐུགས]
+    zh: [身語心]
+    type: term
+  - sa: ḍākinī
+    bo: [མཁའ་འགྲོ་མ]
+    zh: [拏吉尼]
+    type: name
+    zh_transliteration: true
+  - sa: yoginī
+    bo: [རྣལ་འབྱོར་མ]
+    zh: [瑜儗尼, 瑜祇尼]
+    type: term
+    zh_transliteration: true
+  - sa: yogin / yoga
+    bo: [རྣལ་འབྱོར་པ, རྣལ་འབྱོར]
+    zh: [瑜伽者, 瑜伽, 相應, 行人]
+    type: term
+  - sa: prajñā
+    bo: [ཤེས་རབ]
+    zh: [勝慧, 慧]
+    type: term
+  - sa: upāya
+    bo: [ཐབས]
+    zh: [方便]
+    type: term
+  - sa: mantra
+    bo: [སྔགས, གསང་སྔགས]
+    zh: [真言, 大明, 明]
+    type: term
+  - sa: maṇḍala
+    bo: [དཀྱིལ་འབོར, དཀྱིལ་འཁོར]
+    zh: [曼拏羅]
+    type: term
+    zh_transliteration: true
+  - sa: samādhi
+    bo: [ཏིང་ངེ་འཛིན]
+    zh: [三摩地]
+    type: term
+    zh_transliteration: true
+  - sa: bodhicitta
+    bo: [བྱང་ཆུབ་སེམས, བྱང་ཆུབ་ཀྱི་སེམས]
+    zh: [菩提心]
+    type: term
+  - sa: abhiṣeka
+    bo: [དབང, དབང་བསྐུར]
+    zh: [灌頂]
+    type: term
+  - sa: mudrā
+    bo: [ཕྱག་རྒྱ]
+    zh: [印, 密印]
+    type: term
+  - sa: nāḍī
+    bo: [རྩ]
+    zh: [血脈, 脈]
+    type: term
+  - sa: lalanā
+    bo: [ལ་ལ་ན, ལ་ལ་ནཱ]
+    zh: [羅羅拏]
+    type: name
+    zh_transliteration: true
+  - sa: rasanā
+    bo: [ར་ས་ན, ར་ས་ནཱ]
+    zh: [辣娑拏, 辣娑摩]
+    type: name
+    zh_transliteration: true
+  - sa: avadhūtī
+    bo: [ཀུན་འདར་མ, ཨ་བ་དྷཱུ་ཏཱི, ཨ་ཝ་དྷཱུ་ཏཱི]
+    zh: [阿嚩底]
+    type: name
+    zh_transliteration: true
+  - sa: candra
+    bo: [ཟླ་བ]
+    zh: [月]
+    type: term
+  - sa: sūrya
+    bo: [ཉི་མ]
+    zh: [日]
+    type: term
+  - sa: buddha
+    bo: [སངས་རྒྱས]
+    zh: [佛]
+    type: term
+  - sa: jñāna
+    bo: [ཡེ་ཤེས]
+    zh: [智]
+    type: term
+  - sa: mahāsukha
+    bo: [བདེ་བ་ཆེན་པོ, བདེ་ཆེན]
+    zh: [大樂]
+    type: term
+  - sa: krodha
+    bo: [ཁྲོ་བོ]
+    zh: [忿怒]
+    type: term
+  - sa: śmaśāna
+    bo: [དུར་ཁྲོད]
+    zh: [尸林, 屍林]
+    type: term
+  - sa: kapāla
+    bo: [ཐོད་པ]
+    zh: [髑髅, 頭器, 顱器, 迦波羅]
+    type: term
+  - sa: māṃsa
+    bo: [ཤ]
+    zh: [肉]
+    type: term
+  - sa: madya
+    bo: [ཆང]
+    zh: [酒]
+    type: term
+  - sa: pañcāmṛta
+    bo: [བདུད་རྩི་ལྔ]
+    zh: [五甘露]
+    type: term
+  - sa: vidyā (consort)
+    bo: [རིག་མ]
+    zh: [明妃]
+    type: term
+  - sa: padma
+    bo: [པདྨ, པད་མ]
+    zh: [蓮花, 蓮華]
+    type: term
+  - sa: vajra
+    bo: [རྡོ་རྗེ]
+    zh: [金剛, 金剛杵]
+    type: term
+  - sa: gīta
+    bo: [གླུ]
+    zh: [歌]
+    type: term
+  - sa: nṛtya
+    bo: [གར]
+    zh: [舞]
+    type: term
+  - sa: nairātmyā
+    bo: [བདག་མེད་མ]
+    zh: [無我, 無我母]
+    type: name
+  - sa: vajrakula
+    bo: [རྡོ་རྗེ་རིགས]
+    zh: [金剛部]
+    type: term
+  - sa: heruka
+    bo: [ཧེ་རུ་ཀ]
+    zh: [呬嚕迦, 嘿嚕迦]
+    type: name
+    zh_transliteration: true
+  - sa: gaurī
+    bo: [གཽ་རཱི, གཽ་རི, དཀར་མོ]
+    zh: [誐哩, 誐嚩哩]
+    type: name
+    zh_transliteration: true
+  - sa: caurī
+    bo: [ཙཽ་རཱི, ཙཽ་རི]
+    zh: [左哩]
+    type: name
+    zh_transliteration: true
+  - sa: vetālī
+    bo: [བེ་ཏཱ་ལཱི, རོ་ལངས་མ]
+    zh: [尾多梨, 尾多羅]
+    type: name
+    zh_transliteration: true
+  - sa: ghasmarī
+    bo: [གྷསྨ་རཱི]
+    zh: [伽娑摩哩]
+    type: name
+    zh_transliteration: true
+  - sa: pukkasī
+    bo: [པུཀྐ་སཱི]
+    zh: [卜迦西]
+    type: name
+    zh_transliteration: true
+  - sa: śavarī
+    bo: [ཤ་བ་རཱི, རི་ཁྲོད་མ]
+    zh: [設嚩哩]
+    type: name
+    zh_transliteration: true
+  - sa: caṇḍālī
+    bo: [ཙཎྜཱ་ལཱི, གཏུམ་མོ]
+    zh: [贊拏梨]
+    type: name
+    zh_transliteration: true
+  - sa: ḍombī
+    bo: [ཌོམྦཱི, གཡུང་མོ]
+    zh: [弩弭]
+    type: name
+    zh_transliteration: true
+  - sa: hūṃ
+    bo: [ཧཱུྃ]
+    zh: [吽]
+    type: mantra
+  - sa: oṃ
+    bo: [ཨོཾ]
+    zh: [唵]
+    type: mantra
+  - sa: phaṭ
+    bo: [ཕཊ]
+    zh: [發吒, 癹吒]
+    type: mantra
+  - sa: svāhā
+    bo: [སྭཱ་ཧཱ]
+    zh: [娑嚩賀, 莎賀]
+    type: mantra
+  - sa: evaṃ mayā śrutam
+    bo: [འདི་སྐད་བདག་གིས་ཐོས་པ]
+    zh: [如是我聞]
+    type: term
+  - sa: sattva
+    bo: [སེམས་ཅན]
+    zh: [眾生, 有情]
+    type: term
+  - sa: bhaga
+    bo: [བྷ་ག]
+    zh: [婆倪]
+    type: term
+    zh_transliteration: true
+
+# 汉文音译常用字集（用于在无词表覆盖时估计“音译密度”）
+# 说明：这些字在法护译文中几乎只用于对音；出现密度高的片段可判为音译串。
+zh_transliteration_chars: >
+  拏吉尼儗祇嚩嚕迦哩囉嚧曩薩埵摩訶吽唵癹發吒娑賀曼羅囕嚂啞阿惹惹拶鉢納麼曩尾嚩里哩覩捺
+  嚩囊薩哩嚩嚩日囉日囉葛哩耶酤嚧沙拽鑁嚂鑁怖吽昧怛哩野酥囉鉢囉底目契誐左尼阿嚩底羅拏辣娑
+  婆倪數呬嚕迦嘿卜設贊弩弭梨嚩喃拽底喇乾底唧多婆銘阿囉迦哩野鉢囉尾捨野沒哩多

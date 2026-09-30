@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hevajra-matrix"
+version = "0.1.0"
+description = "Witness-matrix pipeline for measuring translation/transmission deviation of the Hevajratantra against its Sanskrit reference distribution"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+embeddings = ["sentence-transformers>=2.2"]
+
+[project.scripts]
+hevajra-matrix = "hevajra_matrix.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["hevajra_matrix*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

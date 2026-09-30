@@ -1,0 +1,10 @@
+# downloaded / licence-restricted source texts never enter the repository
+data/raw/
+data/reference/*.tsv
+out/
+*.pyc
+__pycache__/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
