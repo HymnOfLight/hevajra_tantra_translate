@@ -4,17 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hevajra-matrix"
-version = "0.2.0"
-description = "Witness-matrix pipeline for measuring translation/transmission deviation of the Hevajratantra against its Sanskrit reference distribution, with local open-weight LLM roles and transfer to same-language multi-witness texts (Laozi)"
+version = "0.3.0"
+description = "Validated, evidence-graded collation of the Hevajratantra witnesses (Tibetan, Chinese, Sanskrit) with Claude Opus 5.5 as a verified proposal instrument"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = ["PyYAML>=6.0"]
 
 [project.optional-dependencies]
+claude = ["anthropic>=1,<2"]
 dev = ["pytest>=7"]
-embeddings = ["sentence-transformers>=2.2"]
-llm-local = ["torch>=2.7", "transformers>=4.51", "accelerate>=1.0", "bitsandbytes>=0.45"]  # in-process loading on the 5090; vLLM serving needs no extra here
 
 [project.scripts]
 hevajra-matrix = "hevajra_matrix.cli:main"
@@ -22,5 +21,12 @@ hevajra-matrix = "hevajra_matrix.cli:main"
 [tool.setuptools.packages.find]
 include = ["hevajra_matrix*"]
 
+[tool.setuptools.package-data]
+hevajra_matrix = ["prompts/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "realdata: needs the fetched source texts (set HEVAJRA_RAW_DIR)",
+    "live: calls the Anthropic API (set ANTHROPIC_API_KEY); never run in CI",
+]

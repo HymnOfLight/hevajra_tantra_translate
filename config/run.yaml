@@ -1,0 +1,39 @@
+# Run configuration. English only; values that are paths are relative to the repository root.
+# Each section is read by the module named in its comment, which rejects unknown keys.
+
+paths:
+  data: data
+  raw: data/raw
+  reference: data/reference          # researcher-supplied Sanskrit TSVs (not committed)
+  runs: runs                          # one sub-directory per run (not committed)
+  cache: runs/llm-cache               # LLM response cache; contains licensed text, never commit
+
+sources:                              # ingest stage
+  cbeta_file: T18n0892.xml
+  derge_file: derge_rgyud_bum_nga.txt
+
+witnesses:                            # pipeline
+  reference: bo_derge_D417_418        # provisional reference until a Sanskrit TSV is present
+  target: zh_T0892_song
+  derge_toh: [D417, D418]
+
+windows:                              # collate.windows
+  max_ref_units: 150
+  overlap: 10
+  neighbours: 1                       # soft gate: mapped witness chapter(s) +/- this many
+
+align:                                # align.dp baselines (Gale-Church priors as negative log probabilities)
+  prior_11: 0.0
+  prior_null: 3.0
+  prior_12: 2.4
+  prior_22: 4.5
+  prior_13: 4.0
+  length_weight: 1.0
+  length_var: 6.8
+  anchor_weight: 8.0
+  anchor_conflict: 2.0
+
+review:                               # review.sampling and review.sheets
+  minutes: {gold: 2.5, verify: 2.5, audit: 2.0, resolve: 3.0, topics: 0.15}
+  competence: {gold: [bo, zh], verify: [bo, zh], audit: [bo, zh], resolve: [bo, zh], topics: [bo]}
+  quote_max_chars: {zh: 30, bo: 60, sa: 60}

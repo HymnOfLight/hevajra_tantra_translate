@@ -1,0 +1,21 @@
+# Claude Opus 5.5 settings. English only.
+# Opus 5.5 always thinks (adaptive) and accepts no sampling parameters, so there is no
+# temperature here; reproducibility comes from the response cache and replicates.
+
+model: claude-opus-5-5
+max_retries: 4                         # SDK retries on 408/409/429/5xx and connection errors
+timeout_s: 900
+workers: 4                             # thread pool size for independent requests
+budget_usd: 300                        # hard cap: new uncached calls are refused beyond this
+pricing_usd_per_mtok: {input: 4.0, output: 20.0, cache_read: 0.20, cache_write: 5.0}
+
+# fallback: server-side fallback to another model on a refusal. Researcher decision:
+# on for pipeline proposal tasks, off for the experiment. Substituted output is always
+# marked and never enters a measurement (see docs/llm-tasks.md).
+tasks:
+  collate:    {effort: high,   max_tokens: 64000, replicates: 3, fallback: true}
+  components: {effort: high,   max_tokens: 32000, replicates: 1, fallback: true, pairs_per_call: 12}
+  topics:     {effort: medium, max_tokens: 16000, replicates: 1, fallback: true, units_per_call: 40}
+  subject:    {effort: medium, max_tokens: 16000, replicates: 3, fallback: false}
+  scorer:     {effort: high,   max_tokens: 8000,  replicates: 1, fallback: false, double_score_fraction: 0.2}
+  check:      {effort: low,    max_tokens: 1024,  replicates: 1, fallback: false}

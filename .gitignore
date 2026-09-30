@@ -1,7 +1,9 @@
-# downloaded / licence-restricted source texts never enter the repository
+# downloaded or licence-restricted source texts never enter the repository
 data/raw/
-data/reference/*.tsv
-data/transfer/*/texts/
+data/reference/*
+!data/reference/README.md
+# run outputs and the LLM response cache (contains licensed text)
+runs/
 out/
 *.pyc
 __pycache__/

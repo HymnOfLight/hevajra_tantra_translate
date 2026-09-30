@@ -1,7 +1,14 @@
-"""hevajra_matrix: witness-matrix pipeline for the Hevajratantra.
+"""hevajra_matrix: validated, evidence-graded collation of the Hevajratantra witnesses.
 
-Rows are reference (Sanskrit) units, columns are witnesses, cells carry a
-motive-free deviation vector. See docs/02 for the formal definitions.
+Rows are reference units, columns are witnesses, and each cell records how a witness
+renders a unit, graded by the evidence behind it. Claude Opus 5.5 proposes, code
+verifies, humans decide, and no rate is reported before the instrument is validated.
+See docs/architecture.md for the module map.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("hevajra-matrix")
+except PackageNotFoundError:  # running from a source tree without installation
+    __version__ = "0.0.0+unknown"

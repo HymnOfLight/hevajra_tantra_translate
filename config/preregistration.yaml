@@ -1,0 +1,83 @@
+# Pre-registration. Freeze (`hevajra-matrix prereg freeze`) BEFORE the test gold is scored.
+# After freezing, every change must be appended to `amendments` with a date and a reason.
+# The sha256 of this file is written into every run manifest.
+
+schema_version: 1
+frozen: false
+instrument_digests: {}                 # written by `prereg freeze`: task -> InstrumentId digest
+
+primary_outcome: any                   # any = omission + rewriting + prose transliteration; cov = omission only
+
+scope:                                 # printed beside every number
+  - "relative to Derge D417-418 (revised by gZhon nu dpal), not to the Sanskrit"
+  - "Chinese = Ming-based Taisho T0892; transmission changes are included"
+  - "units = provisional Derge pada/clause segments"
+
+gold:
+  dev_regions:                         # purposive development gold; never used by a gate
+    - {chapter: I.7}
+    - {chapter: II.3, around: "D418:17b.6", radius_units: 20}
+    - {chapter: II.9, first_units: 56}
+    - {chapter: II.12}
+  test_windows:                        # probability sample for gate G1
+    n_windows: 12
+    width: 25
+    second_annotator_windows: 4
+    seed: 20260930
+
+gates:
+  g1:
+    min_link_f1: 0.80
+    min_status_kappa: 0.70
+    min_kappa_ratio_to_human: 0.80
+    min_witness_only_gold: 10
+    min_witness_only_recall: 0.70
+    min_null_gold: 20
+    min_null_precision: 0.70
+    min_null_recall: 0.70
+    beat_controls: true                # CI low of Claude must exceed CI high of every control
+    n_boot: 2000
+  g2:
+    min_replicate_kappa: 0.80
+    max_quote_failure_rate: 0.02
+    max_missing_rate: 0.01
+    max_wrong_window_false_link_rate: 0.10
+    min_deletion_recall: 0.70
+  g3:
+    min_audit_per_stratum: 40
+    max_manski_width: 0.05
+  g4:
+    min_manuscripts_per_unit: 2
+    min_topic_kappa: 0.70
+    max_mde: 0.10
+    min_scorer_kappa: 0.80
+
+verification:                          # two-phase design, phase 2 for machine positives
+  census_classes: [absent, reversal, substitution, category_name_omitted, relocated, witness_only, grade_x]
+  sampled_classes: [abridged, generalised, transliterated_prose]
+  cap_units: 450
+  sampled_fraction: 0.5
+  seed: 20260931
+
+audit:                                 # stratified blind audit of machine negatives
+  total: 300
+  min_per_stratum: 40
+  grade_c_oversample: 2.0
+  seed: 20261001
+
+stats:
+  n_draws: 500
+  n_permutations: 2000
+  seed: 20260930
+  mde: 0.10                            # replace with the value computed on human topic labels before freezing
+  tost_margin: 0.10
+
+experiment:
+  items_per_arm: 60
+  pilot_items_per_arm: 10
+  replicates: 3
+  conditions: [E0, EP, EW]
+  seed: 20261002
+  human_coded_responses: 150
+
+amendments: []
