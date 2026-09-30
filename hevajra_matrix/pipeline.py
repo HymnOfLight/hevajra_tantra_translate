@@ -111,8 +111,25 @@ def load_sanskrit_references(ref_dir: Path) -> dict[str, list[Segment]]:
     return out
 
 
+def make_similarity_backend(kind: str, lexicon, embedding_model: str = "BAAI/bge-m3", weight: float = 0.8,
+                            encode=None):
+    """``anchors`` (B0, default) | ``embedding`` (B1) | ``hybrid`` (anchors ∨ w·embedding)."""
+    anchors = AnchorBackend(lexicon)
+    if kind == "anchors":
+        return anchors
+    from .llm.embeddings import EmbeddingSimilarityBackend, HybridSimilarityBackend
+
+    emb = EmbeddingSimilarityBackend(model_id=embedding_model, encode=encode)
+    if kind == "embedding":
+        return emb
+    if kind == "hybrid":
+        return HybridSimilarityBackend(anchors, emb, weight=weight)
+    raise ValueError(f"unknown similarity backend {kind!r}")
+
+
 def run(raw_dir: Path, out_dir: Path, data_dir: Path = DATA_DIR, params: AlignParams | None = None,
-        cbeta_file: str = "T18n0892.xml", derge_file: str = "derge_rgyud_bum_nga.txt") -> WitnessMatrix:
+        cbeta_file: str = "T18n0892.xml", derge_file: str = "derge_rgyud_bum_nga.txt",
+        similarity: str = "anchors", embedding_model: str = "BAAI/bge-m3", encode=None) -> WitnessMatrix:
     params = params or AlignParams()
     lexicon = load_lexicon(data_dir / "anchors" / "terms.yaml")
     registry = load_witnesses(data_dir / "witnesses.yaml")
@@ -153,7 +170,13 @@ def run(raw_dir: Path, out_dir: Path, data_dir: Path = DATA_DIR, params: AlignPa
         if s.chapter:
             ref_by_ch.setdefault(s.chapter, []).append(s)
 
-    backend = AnchorBackend(lexicon)
+    backend = make_similarity_backend(similarity, lexicon, embedding_model, encode=encode)
+    if hasattr(backend, "warm") or hasattr(getattr(backend, "embeddings", None), "warm"):
+        emb = backend if hasattr(backend, "warm") else backend.embeddings
+        emb.warm(ref_segments)
+        emb.warm([s for s in zh_doc.segments if s.kind in ALIGNABLE_KINDS])
+        if grade == "gold":
+            emb.warm([s for s in bo_segments if s.kind in ALIGNABLE_KINDS])
     log: dict[str, dict] = {}
 
     # ------------------------------------------------------------------ other Sanskrit witnesses: id-matched
@@ -243,6 +266,7 @@ def run(raw_dir: Path, out_dir: Path, data_dir: Path = DATA_DIR, params: AlignPa
     # ------------------------------------------------------------------ export
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = matrix.export(out_dir, params=asdict(params))
+    manifest["similarity_backend"] = {"kind": similarity, "embedding_model": embedding_model if similarity != "anchors" else None}
     manifest["alignment_log"] = log
     manifest["zh_title_note"] = zh_doc.title_note
     manifest["bo_colophons"] = {t.toh: t.colophon for t in bo_texts}

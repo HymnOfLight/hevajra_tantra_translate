@@ -54,3 +54,38 @@ def test_pipeline_gold_reference_with_two_editions(tmp_path, fixtures):
     assert any(r["merged_group"] == "I.11+II.1" for r in lengths)
     review = list(csv.DictReader((out / "alignment_review.csv").open(encoding="utf-8")))
     assert review and {"ref_units", "wit_text", "review_status"} <= set(review[0])
+
+
+def test_pipeline_with_hybrid_similarity_toy_encoder(tmp_path, fixtures):
+    raw, data, out = _stage(tmp_path, fixtures, with_sanskrit=True)
+
+    def toy(texts):
+        return [[float("金剛" in t or "vajra" in t or "རྡོ་རྗེ" in t), 1.0] for t in texts]
+
+    m = run(raw, out, data_dir=data, similarity="hybrid", embedding_model="toy", encode=toy)
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["similarity_backend"] == {"kind": "hybrid", "embedding_model": "toy"}
+    assert m.cells
+
+
+def test_llm_subcommands_dry_run_on_pipeline_output(tmp_path, fixtures):
+    from hevajra_matrix.cli import main
+
+    raw, data, out = _stage(tmp_path, fixtures, with_sanskrit=True)
+    run(raw, out, data_dir=data)
+    d = tmp_path / "derived"
+    assert main(["llm-judge", "--llm", "mock", "--review", str(out / "alignment_review.csv"), "--out", str(d / "review_llm.csv"),
+                 "--ref-lang", "sa", "--wit-lang", "zh"]) == 0
+    assert main(["llm-extract", "--llm", "mock", "--cells", str(out / "cells.csv"), "--data", str(data),
+                 "--witness", "zh_T0892_song", "--out", str(d / "components.jsonl"), "--limit", "3"]) == 0
+    assert len((d / "components.jsonl").read_text(encoding="utf-8").splitlines()) <= 3
+    assert main(["llm-attribute", "--llm", "mock", "--cells", str(out / "cells.csv"), "--witness", "zh_T0892_song",
+                 "--out", str(d / "attr.csv")]) == 0
+    assert main(["llm-probe", "--llm", "mock", "--passages", str(out / "cells.csv"), "--out", str(d / "probe.json"),
+                 "--min-chars", "10", "--prefix-chars", "4"]) == 0
+    probe = json.loads((d / "probe.json").read_text(encoding="utf-8"))
+    assert probe["model_id"] == "mock" and probe["memorised_rate"] == 0.0
+    items = d / "items.csv"
+    items.write_text("unit,sa_witness,sa_text,zh_span,zh_text,cowitness_fact\nI.1.1,sa,x,0587c,y,the Tibetan also lacks this unit\n", encoding="utf-8")
+    assert main(["llm-counterfactual", "--llm", "mock,mock", "--items", str(items), "--out", str(d / "cf.csv")]) == 0
+    assert (d / "cf.csv").exists()
