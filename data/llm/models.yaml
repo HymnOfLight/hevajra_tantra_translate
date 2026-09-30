@@ -1,0 +1,109 @@
+# 开源大模型部署配置（单卡 RTX 5090，32 GB GDDR7，Blackwell sm_120）
+#
+# 使用方式：
+#   python -m hevajra_matrix llm-extract --llm qwen3-32b-awq ...
+#   python -m hevajra_matrix run --similarity hybrid --embedding-model bge-m3 ...
+#
+# 原则（docs/04 §3）：
+#   * 模型只在"派生层"产出候选（对齐建议、组件抽取、归因分布），进入矩阵前一律过证据门；
+#   * 每次调用记录 prompt/response 的 SHA-256、模型 id、温度、seed（llm/backends.py CallLog）；
+#   * temperature=0，seed 固定；同一任务至少两个不同家族的模型互为复核（Qwen 与 Gemma）。
+#
+# 显存预算（经验值，bf16 = 2 B/参数，4-bit ≈ 0.55–0.65 B/参数 + KV cache）：
+#   Qwen3-32B  AWQ/GPTQ-Int4  ≈ 19–20 GB 权重 + 8k 上下文 KV ≈ 24 GB      ← 主力
+#   Gemma-3-27B-it 4-bit      ≈ 16–17 GB + KV                             ← 异家族复核
+#   Qwen3-14B  bf16           ≈ 28 GB（勉强）；建议 8-bit 或 AWQ
+#   Qwen3-8B   bf16           ≈ 16 GB                                      ← 快速迭代 / 批量抽取
+#   Qwen3-Embedding-8B bf16   ≈ 16 GB；bge-m3 ≈ 2.3 GB；MITRA-E 与 bge-m3 同量级
+# 注意：5090 需要 CUDA 12.8+ 与支持 sm_120 的 PyTorch (≥2.7) / vLLM (≥0.8.5)。bitsandbytes 对 Blackwell 的支持
+#   需 ≥0.45；若报 "no kernel image"，改用 vLLM 加载 AWQ 权重（推荐路径）。
+# 许可：Qwen3 = Apache-2.0；Gemma-3 = Gemma Terms of Use（允许研究，需接受条款）；
+#   MITRA 系列（Dharmamitra，基于 Qwen 微调，梵藏汉佛典翻译）= 以其 HF 卡片为准，使用前核对。
+
+serving:
+  # 推荐：vLLM 以 OpenAI 兼容 API 独占 GPU，流水线通过 HTTP 调用，可随时换模型而不改代码。
+  vllm_example: >
+    vllm serve Qwen/Qwen3-32B-AWQ --served-model-name qwen3-32b-awq
+    --max-model-len 8192 --gpu-memory-utilization 0.92 --enable-prefix-caching
+    --guided-decoding-backend xgrammar --port 8000
+  ollama_example: "ollama run qwen3:32b   # 使用 Ollama 时 base_url 改为 http://localhost:11434/v1"
+  llama_cpp_example: >
+    llama-server -m Qwen3-32B-Q4_K_M.gguf -ngl 99 -c 8192 --port 8000
+    # llama.cpp 的 /v1/chat/completions 同样兼容；json_schema 通过 response_format 传入
+
+generation:
+  - name: qwen3-32b-awq
+    model_id: Qwen/Qwen3-32B-AWQ
+    served_name: qwen3-32b-awq
+    serve: vllm
+    base_url: http://localhost:8000/v1
+    quant: awq-int4
+    context: 8192
+    role: [component_extraction, alignment_judge, attribution_judge, topic_labels, rationale, counterfactual]
+    note: 主力模型；中文/藏文/梵文转写理解均可用。Qwen3 默认开启 thinking，可在 system prompt 加 /no_think 加速。
+  - name: gemma3-27b
+    model_id: google/gemma-3-27b-it
+    served_name: gemma3-27b
+    serve: vllm
+    base_url: http://localhost:8000/v1
+    quant: bnb-4bit            # vLLM 也可加载 GPTQ/AWQ 社区量化版
+    context: 8192
+    role: [alignment_judge, attribution_judge, counterfactual]
+    note: 异家族复核模型；反事实过度归因实验必须至少含一个非 Qwen 家族模型。
+  - name: qwen3-8b
+    model_id: Qwen/Qwen3-8B
+    serve: transformers
+    dtype: bfloat16
+    context: 8192
+    role: [component_extraction, topic_labels]
+    note: 进程内加载，适合 notebook 与批量组件抽取；结果须与 32B 抽样对比。
+  - name: qwen3-14b-awq
+    model_id: Qwen/Qwen3-14B-AWQ
+    served_name: qwen3-14b-awq
+    serve: vllm
+    quant: awq-int4
+    context: 16384
+    role: [component_extraction, alignment_judge]
+  - name: mitra-qwen3.5
+    model_id: dharmamitra/mitra-qwen3.5   # 待核：以 Dharmamitra 发布的确切 repo id 与许可为准
+    served_name: mitra
+    serve: vllm
+    context: 8192
+    role: [alignment_judge, contamination_probe]
+    note: 佛典领域微调模型；同时是"记忆污染"探针的重点对象（其训练集可能含 84000 英译与 Snellgrove）。
+  - name: mock
+    model_id: mock
+    serve: mock
+    note: 测试与 --dry-run；不需要 GPU。
+
+embeddings:
+  - name: bge-m3
+    model_id: BAAI/bge-m3
+    dim: 1024
+    langs: [zh, bo, sa-translit, en]
+    vram_gb: 2.3
+    note: 通用多语；藏文覆盖弱，须以锚点混合（hybrid）而非单独使用。
+  - name: mitra-e
+    model_id: dharmamitra/mitra-e            # 待核 repo id
+    dim: 1024
+    langs: [sa, bo, zh, pa, en]
+    note: 佛典专用嵌入（BuddhaNexus/Dharmamitra 谱系），梵–藏–汉平行句检索的首选。
+  - name: qwen3-embedding-8b
+    model_id: Qwen/Qwen3-Embedding-8B
+    dim: 4096
+    langs: [zh, en, multilingual]
+    vram_gb: 16
+    note: 与生成模型不能同时驻留 5090；先离线算好嵌入缓存再启动生成服务。
+  - name: qwen3-embedding-0.6b
+    model_id: Qwen/Qwen3-Embedding-0.6B
+    dim: 1024
+    vram_gb: 1.5
+    note: 快速基线。
+
+# 各任务默认模型（cli 未指定 --llm 时读取）
+defaults:
+  component_extraction: qwen3-32b-awq
+  alignment_judge: qwen3-32b-awq
+  attribution_judge: qwen3-32b-awq
+  counterfactual: [qwen3-32b-awq, gemma3-27b]
+  embedding: bge-m3

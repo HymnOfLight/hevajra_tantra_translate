@@ -16,7 +16,17 @@ from dataclasses import dataclass
 PART_CHAPTERS = {"I": 11, "II": 12}
 REF_CHAPTERS: list[str] = [f"I.{i}" for i in range(1, 12)] + [f"II.{i}" for i in range(1, 13)]
 
-_UNIT_RE = re.compile(r"^(I|II)\.(\d{1,2})\.(?:(\d{1,3})([ab])?|p(\d{1,3})|t(\d{1,4}))$")
+# Part token: Hevajra uses I / II (range-checked). Transfer studies register their own
+# scheme (e.g. "L" for the 81 received chapters of the Laozi) via ``register_scheme``.
+_UNIT_RE = re.compile(r"^([A-Z][A-Za-z0-9]*)\.(\d{1,3})\.(?:(\d{1,3})([ab])?|p(\d{1,3})|t(\d{1,4}))$")
+_PART_RANK = {"I": 0, "II": 1}
+
+
+def register_scheme(part: str, n_chapters: int) -> list[str]:
+    """Declare a new part token with ``n_chapters`` chapters; returns its chapter keys."""
+    PART_CHAPTERS[part] = n_chapters
+    _PART_RANK.setdefault(part, 10 + len(_PART_RANK))
+    return [f"{part}.{i}" for i in range(1, n_chapters + 1)]
 _ORPHAN_RE = re.compile(r"^\+([A-Za-z0-9_]+):(.+)$")
 
 
@@ -52,6 +62,8 @@ def parse_unit_id(s: str) -> UnitId:
     if not m:
         raise ValueError(f"bad unit id: {s!r}")
     part, chap = m.group(1), int(m.group(2))
+    if part not in PART_CHAPTERS:
+        raise ValueError(f"unknown part {part!r} in unit id {s!r}; register_scheme() first")
     if chap < 1 or chap > PART_CHAPTERS[part]:
         raise ValueError(f"chapter out of range for part {part}: {s!r}")
     if m.group(5) is not None:
@@ -74,6 +86,6 @@ def sort_key(unit_id: str) -> tuple:
     u = parse_unit_id(unit_id)
     if u.kind == "orphan":
         return (9, 0, 0, 0, u.witness or "", u.coords or "")
-    part_rank = 0 if u.part == "I" else 1
+    part_rank = _PART_RANK.get(u.part, 5)
     kind_rank = {"verse": 0, "prose": 1, "provisional": 2}[u.kind]
     return (part_rank, u.chapter, kind_rank, u.index, u.sub or "", "")

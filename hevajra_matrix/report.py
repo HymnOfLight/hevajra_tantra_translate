@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from .ids import REF_CHAPTERS
 from .matrix import DIMS, WitnessMatrix
 from .metrics import Decomposition, summarize_dim
 
@@ -22,14 +21,14 @@ def structure_heatmap_svg(matrix: WitnessMatrix, path: Path, metric: str = "cove
     rows = matrix.structure()
     ws = matrix.witnesses
     cell, left, top = 34, 70, 120
-    width, height = max(460, left + cell * len(ws) + 20), top + cell * len(REF_CHAPTERS) + 20
+    width, height = max(460, left + cell * len(ws) + 20), top + cell * len(matrix.chapters) + 20
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" font-family="sans-serif" font-size="11">']
     out.append(f'<text x="{left}" y="20" font-size="14">{_esc(metric)} — reference: {_esc(matrix.reference)} ({matrix.reference_grade})</text>')
     for j, w in enumerate(ws):
         x = left + j * cell + cell / 2
         out.append(f'<text x="{x}" y="{top - 6}" transform="rotate(-60 {x} {top - 6})" text-anchor="start">{_esc(w)}</text>')
     lookup = {(r["chapter"], r["witness"]): r for r in rows}
-    for i, ch in enumerate(REF_CHAPTERS):
+    for i, ch in enumerate(matrix.chapters):
         y = top + i * cell
         out.append(f'<text x="{left - 6}" y="{y + cell * 0.65}" text-anchor="end">{ch}</text>')
         for j, w in enumerate(ws):
@@ -93,12 +92,12 @@ def markdown_summary(matrix: WitnessMatrix, decompositions: Sequence[Decompositi
     lines.append("")
     lines.append("## L1 结构层（品 × 见证）")
     lines.append("")
-    lines.append("| 品 | 见证 | 单元 | 计数 | 存在 | 缺失 | 孤儿 | 覆盖 | d_len 均值 | d_lit 均值 | d_ord 均值 |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| 品/章 | 见证 | 单元 | 计数 | 存在 | 缺失 | 孤儿 | 覆盖 | d_len 均值 | d_lit 均值 | d_ord 均值 | d_lex 均值 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in matrix.structure():
         if r["n_units"] == 0 and r["n_orphan"] == 0:
             continue
-        lines.append(f"| {r['chapter']} | {r['witness']} | {r['n_units']} | {r['n_counted']} | {r['n_present']} | {r['n_absent']} | {r['n_orphan']} | {r['coverage']} | {r['mean_d_len']} | {r['mean_d_lit']} | {r['mean_d_ord']} |")
+        lines.append(f"| {r['chapter']} | {r['witness']} | {r['n_units']} | {r['n_counted']} | {r['n_present']} | {r['n_absent']} | {r['n_orphan']} | {r['coverage']} | {r['mean_d_len']} | {r['mean_d_lit']} | {r['mean_d_ord']} | {r['mean_d_lex']} |")
     lines.append("")
     lines.append("## 各维度分布（PRESENT/PARTIAL 单元）")
     lines.append("")
@@ -120,7 +119,7 @@ def markdown_summary(matrix: WitnessMatrix, decompositions: Sequence[Decompositi
             lines.append(f"| {d.witness} | {d.cowitness or '—'} | {d.n_counted} | {d.n_deviating} | {d.counts['vorlage_explained']} ({r['vorlage_explained']:.3f}) | {d.counts['shared_with_cowitness']} ({r['shared_with_cowitness']:.3f}) | {d.counts['residual']} ({r['residual']:.3f}) |")
         if any(not d.sanskrit_witnesses or d.sanskrit_witnesses == [matrix.reference] for d in decompositions):
             lines.append("")
-            lines.append("只有一列梵文参照时，“Vorlage 可解释”恒为 0，分解退化为两项；见 docs/03 §3。")
+            lines.append("没有参照以外的源文本见证时，“Vorlage 可解释”恒为 0，分解退化为两项；见 docs/03 §3。")
     if distances:
         ws, D = distances
         lines.append("")
