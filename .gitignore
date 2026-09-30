@@ -1,6 +1,7 @@
 # downloaded / licence-restricted source texts never enter the repository
 data/raw/
 data/reference/*.tsv
+data/transfer/*/texts/
 out/
 *.pyc
 __pycache__/

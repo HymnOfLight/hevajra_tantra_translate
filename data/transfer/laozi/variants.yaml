@@ -1,0 +1,112 @@
+# 异文归一表（只用于对齐相似度与 d_lex 的"归一后"值；原始字形保留在 d_lex_raw 与 variants_explained 列）
+#
+# category:
+#   taboo      避讳改字（汉代帝讳：恆→常〔文帝刘恆〕、邦→國〔高祖刘邦〕、盈→滿〔惠帝刘盈〕、啓→開〔景帝刘啓〕、徹→通〔武帝刘彻〕）
+#   phonetic   通假字（出土文献常见）
+#   graphic    异体字 / 古今字 / 简繁
+#   particle   虚词层面的替换（默认 normalize: false —— 虚词差异是可测的信号，不是噪声）
+#
+# 原则：归一只做"多数学者认为读法相同"的对应；有争议的（如 絕偽棄詐 / 絕為棄慮）不归一，让它们进入 d_lex。
+
+groups:
+  - canonical: 常
+    variants: [恆, 恒]
+    category: taboo
+    note: 马王堆、北大简作恆；通行本作常（避文帝讳）。归一后两者相等 → 避讳差异被记入 variants_explained 而不计入 d_lex。
+  - canonical: 國
+    variants: [邦, 国]
+    category: taboo
+  - canonical: 滿
+    variants: [盈, 满]
+    category: taboo
+    normalize: false
+    note: 盈/滿 是否为避讳改字有争议，默认不归一。
+  - canonical: 無
+    variants: [无, 亡]
+    category: phonetic
+    note: 郭店多作亡；马王堆作无。
+  - canonical: 有
+    variants: [又]
+    category: phonetic
+  - canonical: 倍
+    variants: [伓]
+    category: phonetic
+  - canonical: 辯
+    variants: [卞, 辨]
+    category: phonetic
+  - canonical: 巧
+    variants: [攷]
+    category: phonetic
+  - canonical: 盜
+    variants: [覜, 盗]
+    category: phonetic
+  - canonical: 賊
+    variants: [惻, 贼]
+    category: phonetic
+  - canonical: 智
+    variants: [知]
+    category: phonetic
+    normalize: false
+    note: 知/智 在"絕聖棄智"与"知者不言"中读法不同，不宜全局归一。
+  - canonical: 妙
+    variants: [眇]
+    category: phonetic
+  - canonical: 徼
+    variants: [噭, 曒]
+    category: phonetic
+  - canonical: 物
+    variants: [勿]
+    category: phonetic
+  - canonical: 樸
+    variants: [朴]
+    category: graphic
+  - canonical: 衆
+    variants: [眾, 众]
+    category: graphic
+  - canonical: 於
+    variants: [于]
+    category: particle
+    normalize: false
+  - canonical: 不
+    variants: [弗]
+    category: particle
+    normalize: false
+    note: 弗/不 的分布是汉语史信号（郭店多用弗），不归一。
+  - canonical: 也
+    variants: []
+    category: particle
+    normalize: false
+    note: 马王堆本句末多"也"字；不删不归一，由 d_len 与 d_lex 共同承载。
+  - canonical: 為
+    variants: [爲, 为]
+    category: graphic
+  - canonical: 棄
+    variants: [弃]
+    category: graphic
+  - canonical: 絕
+    variants: [绝]
+    category: graphic
+  - canonical: 復
+    variants: [复]
+    category: graphic
+  - canonical: 萬
+    variants: [万]
+    category: graphic
+  - canonical: 貨
+    variants: [货]
+    category: graphic
+  - canonical: 難
+    variants: [难]
+    category: graphic
+  - canonical: 學
+    variants: [学, 斈]
+    category: graphic
+  - canonical: 敗
+    variants: [败]
+    category: graphic
+  - canonical: 執
+    variants: [执]
+    category: graphic
+  - canonical: 觀
+    variants: [观]
+    category: graphic
