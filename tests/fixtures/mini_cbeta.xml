@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0" xmlns:cb="http://www.cbeta.org/ns/1.0" xml:id="T18n0892">
+<teiHeader><fileDesc><titleStmt><title>mini</title></titleStmt></fileDesc></teiHeader>
+<text>
+<body>
+<milestone n="1" unit="juan"/>
+<pb n="0587c" ed="T" xml:id="T18.0892.0587c"/>
+<lb n="0587c05" ed="T"/><cb:juan n="001" fun="open"><cb:mulu n="001" type="卷"></cb:mulu><cb:jhead>佛說大悲空智金剛大教王儀軌
+<lb n="0587c06" ed="T"/>經卷第一<note place="inline">大幻化普通儀軌三十一分中略出二無我法</note></cb:jhead></cb:juan>
+<lb n="0587c10" ed="T"/><cb:div type="pin"><cb:mulu n="1" level="1" type="品">1 金剛部序品</cb:mulu><head>金剛部序品第一</head>
+<lb n="0587c11" ed="T"/><p xml:id="p1">如是我聞：</p><p xml:id="p2" cb:place="inline">一時薄伽梵住<anchor xml:id="beg1"/>一切如來身語
+<lb n="0587c12" ed="T"/>心金剛喻施婆倪數<anchor xml:id="end1"/>祕密中祕密出生妙三摩
+<lb n="0587c13" ed="T"/>地。時彼世尊從是三摩地起，讚言：「善哉，善哉。
+<lb n="0587c14" ed="T"/>金剛藏菩薩摩訶薩！」</p>
+<lb n="0587c15" ed="T"/><lg type="regular" xml:id="lg1"><l>「最初觀於慈，<caesura/>次即觀於悲，</l>
+<lb n="0587c16" ed="T"/><l>第三當觀喜，<caesura/>一切處學捨。」</l></lg>
+<lb n="0587c17" ed="T"/><p xml:id="p3">彼血脈相有三十二種<note place="inline">引</note>。</p>
+</cb:div>
+<lb n="0587c18" ed="T"/><cb:div type="pin"><cb:mulu n="2" level="1" type="品">2 真言品</cb:mulu><head>真言品第二</head>
+<lb n="0587c19" ed="T"/><p xml:id="p4">唵吽發吒。</p>
+</cb:div>
+</body>
+<back>
+<cb:div type="apparatus"><head>校注</head><p>
+<app from="#beg0588b0801" to="#end0588b0801"><lem resp="#resp1" wit="#wit.cbeta">晝</lem><rdg wit="#wit.orig">畫</rdg></app>
+</p></cb:div>
+<cb:div type="tt"><head>多語詞條對照</head><p>
+<cb:tt type="app" from="#beg1" to="#end1">
+	<cb:t resp="#resp2" xml:lang="zh-Hant">一切如來身語心金剛喻施婆倪數</cb:t>
+	<cb:t resp="#resp2" xml:lang="sa" place="foot">Sarvatathāgata-kāya-vāk-citta-vajra-yogirbhageṣu.</cb:t>
+</cb:tt>
+</p></cb:div>
+</back>
+</text>
+</TEI>
