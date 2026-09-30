@@ -1,0 +1,123 @@
+# 章级同本系概表（G0 关口的输入，不是结论）
+#
+# 行 = 梵文金标准的品（Snellgrove 1959 编号：I.1–I.11, II.1–II.12）
+# 列 = 各见证中的对应品及其定位
+# status:
+#   proposed   仅据品名/题记推定，未经逐偈对齐核实
+#   verified   已由逐偈对齐与两位文献学者签署确认
+#   absent     经逐偈对齐确认该见证无对应品（整品缺失）
+#   merged     该见证将本品与相邻品合并（在 merged_into 注明）
+#   uncertain  品名不对应，需逐偈对齐后判定
+#
+# 重要：汉译 20 品 vs 梵/藏 23 品的差额（3 品）来自何处，只能由逐偈对齐决定。
+# 不得依据卷一夹注「三十一分中略出」反推“摘出边界”（见 docs/01 §3.1）。
+
+reference_scheme: sa_snellgrove1959
+
+chapters:
+  # ---------------------------------------------------------------- Part I（藏 Toh 417 / 前分 brtag pa dang po）
+  - ref: I.1
+    sa_title: Vajrakulapaṭala
+    bo: {chapter: 1, title: "རྡོ་རྗེ་རིགས་ཀྱི་ལེའུ", colophon_at: "3a.5", status: proposed}
+    zh: {pin: 1, title: "金剛部序品第一", start: "0587c10", status: proposed}
+  - ref: I.2
+    sa_title: Mantrapaṭala
+    bo: {chapter: 2, title: "སྔགས་ཀྱི་ལེའུ", colophon_at: "4b.6", status: proposed}
+    zh: {pin: 2, title: "拏吉尼熾盛威儀真言品第二", status: proposed}
+  - ref: I.3
+    sa_title: Devatāpaṭala
+    bo: {chapter: 3, title: "ལྷའི་ལེའུ", colophon_at: "5b.4", status: proposed}
+    zh: {pin: 3, title: "一切如來身語心聖賢品第三", status: proposed}
+  - ref: I.4
+    sa_title: Abhiṣekapaṭala (devatābhiṣeka)
+    bo: {chapter: 4, title: "དབང་གི་ལེའུ", colophon_at: "6a.1", status: proposed}
+    zh: {pin: 4, title: "賢聖灌頂部品第四", status: proposed}
+  - ref: I.5
+    sa_title: Tattvapaṭala
+    bo: {chapter: 5, title: "དེ་ཁོ་ན་ཉིད་ཀྱི་ལེའུ", colophon_at: "6b.6", status: proposed}
+    zh: {pin: 5, title: "大真實品第五", status: proposed}
+  - ref: I.6
+    sa_title: Caryāpaṭala
+    bo: {chapter: 6, title: "སྤྱོད་པའི་ལེའུ", colophon_at: "7b.5", status: proposed}
+    zh: {pin: 6, title: "行品第六", status: proposed}
+  - ref: I.7
+    sa_title: Chomāpaṭala
+    bo: {chapter: 7, title: "བརྡ་དང་གནས་གཏན་ལ་ཕབ་པའི་ལེའུ", colophon_at: "8b.6", status: proposed}
+    zh: {pin: 7, title: "說密印品第七", status: proposed}
+  - ref: I.8
+    sa_title: Yoginīcakrapaṭala
+    bo: {chapter: 8, title: "རྣལ་འབྱོར་མའི་འཁོར་ལོ་ཞེས་བྱ་བ་འདུ་བའི་ལེའུ", colophon_at: "10b.6", status: proposed}
+    zh: {pin: 8, title: "大相應輪品第八", status: proposed}
+  - ref: I.9
+    sa_title: Viśuddhipaṭala
+    bo: {chapter: 9, title: "རྣམ་པར་དག་པའི་ལེའུ", colophon_at: "11b.3", status: proposed}
+    zh: {pin: 9, title: "清淨品第九", status: proposed}
+  - ref: I.10
+    sa_title: Abhiṣekapaṭala (maṇḍala / abhiṣeka)
+    bo: {chapter: 10, title: "དབང་གི་ལེའུ་ཞེས་བྱ་བ", colophon_at: "13a.5", status: proposed}
+    zh: {pin: 10, title: "灌頂品第十", status: proposed}
+  - ref: I.11
+    sa_title: Vajragarbhābhisambodhipaṭala
+    bo: {chapter: 11, title: "རྡོ་རྗེ་སྙིང་པོ་མངོན་པར་བྱང་ཆུབ་པ", colophon_at: "13b.5（Toh 417 卷末题记）", status: proposed}
+    zh: {pin: 11, title: "金剛藏菩薩現證儀軌王品第十一", status: proposed,
+         note: "篇幅比异常（汉 773 字 / 藏 406 音节 = 1.9，全经均值 0.74）；若并入 II.1（418 音节）则比值 0.94。见 II.1"}
+
+  # ---------------------------------------------------------------- Part II（藏 Toh 418 / 后分 brtag pa gnyis pa）
+  - ref: II.1
+    sa_title: Pratiṣṭhāpaṭala
+    bo: {chapter: 1, title: "རབ་གནས་ཀྱི་ལེའུ", colophon_at: "14a.6", status: proposed}
+    zh: {pin: 11, title: "（并入第十一品）", status: proposed,
+         note: "L1 篇幅比证据：汉第 11 品远长于藏 I.11，恰可容纳 II.1；汉译不分前后二分，合并合理。待逐偈对齐核实后改 merged"}
+  - ref: II.2
+    sa_title: Siddhinirṇayapaṭala
+    bo: {chapter: 2, title: "དངོས་གྲུབ་གཏན་ལ་ཕབ་པ", status: proposed}
+    zh: {pin: 12, title: "熾盛拏吉尼所說成就品第十二", status: proposed}
+  - ref: II.3
+    sa_title: Sarvatantranidānasandhyābhāṣāpaṭala
+    bo: {chapter: 3, title: "རྒྱུད་ཐམས་ཅད་ཀྱི་གླེང་གཞི་དང་གསང་བའི་སྐད", colophon_at: "19b.1", status: proposed}
+    zh: {pin: 13, title: "說方便品第十三", status: uncertain,
+         note: "品名不直接对应（sandhyābhāṣā 密语 ≠ 方便）；按顺序推定"}
+  - ref: II.4
+    sa_title: Sarvatantramudrāpiṇḍārthapaṭala
+    bo: {chapter: 4, title: "རྒྱུད་ཐམས་ཅད་ཀྱི་ཕྱག་རྒྱ་བསྡུས་པའི་དོན", colophon_at: "23b.1", status: proposed}
+    zh: {pin: 14, title: "集一切儀軌部品第十四", status: proposed}
+  - ref: II.5
+    sa_title: Hevajrābhyudayapaṭala
+    bo: {chapter: 5, title: "ཀྱེ་རྡོ་རྗེ་མངོན་པར་འབྱུང་བ", status: proposed}
+    zh: {pin: 15, title: "金剛王出現品第十五", status: proposed}
+  - ref: II.6
+    sa_title: Paṭavidhānapaṭala
+    bo: {chapter: 6, title: "བྲིས་སྐུའི་ཆོ་གའི་ལེའུ", colophon_at: "26b.2", status: proposed}
+    zh: {pin: 16, title: "金剛空智熾盛拏吉尼畫像儀式品第十六", status: proposed}
+  - ref: II.7
+    sa_title: Bhojanapaṭala
+    bo: {chapter: 7, title: "བཟའ་བའི་ལེའུ", colophon_at: "27a.2", status: proposed}
+    zh: {pin: 17, title: "飲食品第十七", status: proposed}
+  - ref: II.8
+    sa_title: Vineyapaṭala
+    bo: {chapter: 8, title: "འདུལ་བའི་ལེའུ", colophon_at: "27b.1", status: proposed}
+    zh: {pin: 18, title: "教授品第十八", status: proposed}
+  - ref: II.9
+    sa_title: Mantroddhārapaṭala
+    bo: {chapter: 9, title: "སྔགས་བཏུ་བའི་ལེའུ", status: proposed}
+    zh:
+      pin: null
+      status: uncertain
+      note: >
+        藏 II.9 有 1,251 音节，是后分第三长的品；汉第 19 品仅 128 字、与 II.10（149 音节）相当，
+        汉第 18 品 527 字 vs 藏 II.8 345 音节（比 1.53）。两种假说：(a) II.9 整品缺失，
+        (b) II.9 大幅压缩并入第 18 品。抽字法（mantroddhāra）依赖梵文字母表，汉译无法直译。须逐偈核
+  - ref: II.10
+    sa_title: Japapaṭala
+    bo: {chapter: 10, title: "བཟླས་པའི་ལེའུ", colophon_at: "29a.5", status: proposed}
+    zh: {pin: 19, title: "持念品第十九", status: proposed}
+  - ref: II.11
+    sa_title: Sahajārthapaṭala
+    bo: {chapter: 11, title: "ལྷན་ཅིག་སྐྱེས་པའི་སྦྱོར་བ་དོན་གྱི་ལེའུ", colophon_at: "29b.6", status: proposed}
+    zh: {pin: 20, title: "俱生義品第二十", status: proposed,
+         note: "篇幅比 1.22（汉 512 / 藏 420）；若并入 II.12（262 音节）则 0.75。见 II.12"}
+  - ref: II.12
+    sa_title: "（Snellgrove 末品；品名待据校勘本填入）"
+    bo: {chapter: 12, title: "（德格本无独立题记；29b.6–30a.2，以全经卷末题记结束）", status: proposed}
+    zh: {pin: 20, title: "（并入第二十品）", status: proposed,
+         note: "L1 篇幅比证据支持并入第 20 品。Isaacson 2022 讨论的 T0892 末尾三偈问题在此处；须逐偈判定后改 merged"}
