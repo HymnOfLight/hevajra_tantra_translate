@@ -24,7 +24,7 @@ from .segments import Segment
 
 STATUSES = ("PRESENT", "PARTIAL", "ABSENT", "LACUNA", "UNALIGNED", "NA")
 COUNTED = {"PRESENT", "PARTIAL", "ABSENT"}
-DIMS = ("d_cov", "d_len", "d_lit", "d_ord", "d_split")
+DIMS = ("d_cov", "d_len", "d_lit", "d_ord", "d_split", "d_lex")
 
 
 @dataclass
@@ -40,6 +40,7 @@ class Cell:
     d_lit: float | None = None
     d_ord: float | None = None
     d_split: float | None = None
+    d_lex: float | None = None    # same-language witnesses only: lexical distance after variant normalisation
     similarity: float | None = None
     evidence: str = "C"
     prior: bool = False
@@ -76,6 +77,7 @@ class WitnessMatrix:
     witnesses: list[str] = field(default_factory=list)
     cells: dict[tuple[str, str], Cell] = field(default_factory=dict)
     inputs: dict[str, str] = field(default_factory=dict)   # path → sha256
+    chapters: list[str] = field(default_factory=lambda: list(REF_CHAPTERS))  # L1 row order
 
     # ------------------------------------------------------------------ mutation
     def add_units(self, units: Iterable[Unit]) -> None:
@@ -116,8 +118,9 @@ class WitnessMatrix:
     def structure(self) -> list[dict]:
         """L1: chapter × witness coverage summary."""
         rows = []
-        for ch in REF_CHAPTERS:
-            units = [u for u in self.ordered_units() if self.units[u].chapter == ch and not u.startswith("+")]
+        ordered = self.ordered_units()
+        for ch in self.chapters:
+            units = [u for u in ordered if self.units[u].chapter == ch and not u.startswith("+")]
             for w in self.witnesses:
                 cells = [self.cells[(u, w)] for u in units if (u, w) in self.cells]
                 counted = [c for c in cells if c.status in COUNTED]
@@ -131,6 +134,7 @@ class WitnessMatrix:
                     "mean_d_len": round(statistics.fmean([c.d_len for c in present if c.d_len is not None]), 4) if any(c.d_len is not None for c in present) else "",
                     "mean_d_lit": round(statistics.fmean([c.d_lit for c in present if c.d_lit is not None]), 4) if any(c.d_lit is not None for c in present) else "",
                     "mean_d_ord": round(statistics.fmean([c.d_ord for c in present if c.d_ord is not None]), 4) if any(c.d_ord is not None for c in present) else "",
+                    "mean_d_lex": round(statistics.fmean([c.d_lex for c in present if c.d_lex is not None]), 4) if any(c.d_lex is not None for c in present) else "",
                 })
         return rows
 
@@ -150,6 +154,7 @@ class WitnessMatrix:
             "reference": self.reference,
             "reference_grade": self.reference_grade,
             "witnesses": self.witnesses,
+            "chapters": self.chapters,
             "n_units": len(self.units),
             "n_cells": len(self.cells),
             "inputs": self.inputs,
