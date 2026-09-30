@@ -1,0 +1,174 @@
+{
+  "_about": "Synthetic final messages in the shape the Anthropic SDK returns from messages.stream(...).get_final_message() (beta shape when server-side fallback is on). Each case is answered for the claude-check request (schema {\"ok\": boolean}, model claude-opus-5-5); 'expect' is the LLMResponse that to_response must produce. No real API output.",
+  "ok_with_thinking": {
+    "message": {
+      "id": "msg_fake_01", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [
+        {"type": "thinking", "thinking": "", "signature": "sig-fake"},
+        {"type": "text", "text": "{\"ok\": true}"}
+      ],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 120, "output_tokens": 40, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": null}
+    },
+    "expect": {"status": "ok", "data": {"ok": true}, "raw_text": "{\"ok\": true}", "fallback_used": false,
+               "usage": [120, 40, 1000, 0]}
+  },
+  "refusal_with_details": {
+    "message": {
+      "id": "msg_fake_02", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [],
+      "stop_reason": "refusal", "stop_sequence": null,
+      "stop_details": {"type": "refusal", "category": "cyber", "explanation": "Synthetic explanation for tests."},
+      "usage": {"input_tokens": 50, "output_tokens": 0}
+    },
+    "expect": {"status": "refusal", "data": null, "raw_text": "", "fallback_used": false,
+               "refusal_category": "cyber", "refusal_explanation": "Synthetic explanation for tests.",
+               "usage": [50, 0, 0, 0]}
+  },
+  "refusal_without_details": {
+    "message": {
+      "id": "msg_fake_03", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [],
+      "stop_reason": "refusal", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 50, "output_tokens": 0}
+    },
+    "expect": {"status": "refusal", "data": null, "raw_text": "", "fallback_used": false,
+               "refusal_category": null, "refusal_explanation": null, "usage": [50, 0, 0, 0]}
+  },
+  "refusal_mid_stream_discards_partial": {
+    "message": {
+      "id": "msg_fake_04", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [{"type": "text", "text": "{\"ok\": tr"}],
+      "stop_reason": "refusal", "stop_sequence": null,
+      "stop_details": {"type": "refusal", "category": null, "explanation": null},
+      "usage": {"input_tokens": 50, "output_tokens": 5}
+    },
+    "expect": {"status": "refusal", "data": null, "raw_text": "", "fallback_used": false,
+               "refusal_category": null, "usage": [50, 5, 0, 0]}
+  },
+  "truncated": {
+    "message": {
+      "id": "msg_fake_05", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [{"type": "thinking", "thinking": "", "signature": "sig-fake"}, {"type": "text", "text": "{\"ok\": tr"}],
+      "stop_reason": "max_tokens", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 50, "output_tokens": 1024}
+    },
+    "expect": {"status": "truncated", "data": null, "raw_text": "{\"ok\": tr", "fallback_used": false,
+               "usage": [50, 1024, 0, 0]}
+  },
+  "invalid_json": {
+    "message": {
+      "id": "msg_fake_06", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [{"type": "text", "text": "ok"}],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 50, "output_tokens": 2}
+    },
+    "expect": {"status": "invalid", "data": null, "raw_text": "ok", "fallback_used": false, "usage": [50, 2, 0, 0]}
+  },
+  "schema_invalid_json": {
+    "message": {
+      "id": "msg_fake_07", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [{"type": "text", "text": "{\"ok\": \"yes\", \"extra\": 1}"}],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 50, "output_tokens": 9}
+    },
+    "expect": {"status": "invalid", "data": null, "raw_text": "{\"ok\": \"yes\", \"extra\": 1}", "fallback_used": false,
+               "usage": [50, 9, 0, 0]}
+  },
+  "no_text_block": {
+    "message": {
+      "id": "msg_fake_08", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [{"type": "thinking", "thinking": "", "signature": "sig-fake"}],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 50, "output_tokens": 3}
+    },
+    "expect": {"status": "invalid", "data": null, "raw_text": "", "fallback_used": false, "usage": [50, 3, 0, 0]}
+  },
+  "fallback_before_output": {
+    "message": {
+      "id": "msg_fake_09", "type": "message", "role": "assistant", "model": "claude-opus-4-8",
+      "content": [
+        {"type": "fallback", "from": {"model": "claude-opus-5-5"}, "to": {"model": "claude-opus-4-8"},
+         "trigger": {"type": "refusal", "category": "cyber"}},
+        {"type": "text", "text": "{\"ok\": true}"}
+      ],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 60, "output_tokens": 10, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+                "iterations": [
+                  {"type": "message", "model": "claude-opus-5-5", "input_tokens": 60, "output_tokens": 0,
+                   "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+                  {"type": "fallback_message", "model": "claude-opus-4-8", "input_tokens": 60, "output_tokens": 10,
+                   "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}]}
+    },
+    "expect": {"status": "ok", "data": {"ok": true}, "raw_text": "{\"ok\": true}", "fallback_used": true,
+               "served_model": "claude-opus-4-8", "usage": [120, 10, 0, 0]}
+  },
+  "fallback_mid_stream_restarted": {
+    "message": {
+      "id": "msg_fake_10", "type": "message", "role": "assistant", "model": "claude-opus-4-8",
+      "content": [
+        {"type": "text", "text": "{\"ok\""},
+        {"type": "fallback", "from": {"model": "claude-opus-5-5"}, "to": {"model": "claude-opus-4-8"},
+         "trigger": {"type": "refusal", "category": null}},
+        {"type": "text", "text": "{\"ok\": true}"}
+      ],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 60, "output_tokens": 10}
+    },
+    "expect": {"status": "ok", "data": {"ok": true}, "raw_text": "{\"ok\": true}", "fallback_used": true,
+               "served_model": "claude-opus-4-8", "usage": [60, 10, 0, 0]}
+  },
+  "fallback_mid_stream_continued": {
+    "message": {
+      "id": "msg_fake_11", "type": "message", "role": "assistant", "model": "claude-opus-4-8",
+      "content": [
+        {"type": "text", "text": "{\"ok\":"},
+        {"type": "fallback", "from": {"model": "claude-opus-5-5"}, "to": {"model": "claude-opus-4-8"},
+         "trigger": {"type": "refusal", "category": null}},
+        {"type": "text", "text": " true}"}
+      ],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 60, "output_tokens": 10}
+    },
+    "expect": {"status": "ok", "data": {"ok": true}, "raw_text": "{\"ok\": true}", "fallback_used": true,
+               "served_model": "claude-opus-4-8", "usage": [60, 10, 0, 0]}
+  },
+  "sticky_fallback_without_block": {
+    "message": {
+      "id": "msg_fake_12", "type": "message", "role": "assistant", "model": "claude-opus-4-8",
+      "content": [{"type": "text", "text": "{\"ok\": true}"}],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 60, "output_tokens": 10,
+                "iterations": [{"type": "fallback_message", "model": "claude-opus-4-8", "input_tokens": 60,
+                                "output_tokens": 10, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}]}
+    },
+    "expect": {"status": "ok", "data": {"ok": true}, "raw_text": "{\"ok\": true}", "fallback_used": true,
+               "served_model": "claude-opus-4-8", "usage": [60, 10, 0, 0]}
+  },
+  "fallback_signalled_only_by_iterations": {
+    "message": {
+      "id": "msg_fake_13", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+      "content": [{"type": "text", "text": "{\"ok\": true}"}],
+      "stop_reason": "end_turn", "stop_sequence": null, "stop_details": null,
+      "usage": {"input_tokens": 60, "output_tokens": 10,
+                "iterations": [{"type": "fallback_message", "model": "claude-opus-5-5", "input_tokens": 60,
+                                "output_tokens": 10, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}]}
+    },
+    "expect": {"status": "ok", "data": {"ok": true}, "raw_text": "{\"ok\": true}", "fallback_used": true,
+               "served_model": "claude-opus-5-5", "usage": [60, 10, 0, 0]}
+  },
+  "whole_chain_refused": {
+    "message": {
+      "id": "msg_fake_14", "type": "message", "role": "assistant", "model": "claude-opus-4-8",
+      "content": [
+        {"type": "fallback", "from": {"model": "claude-opus-5-5"}, "to": {"model": "claude-opus-4-8"},
+         "trigger": {"type": "refusal", "category": "bio"}}
+      ],
+      "stop_reason": "refusal", "stop_sequence": null,
+      "stop_details": {"type": "refusal", "category": "bio", "explanation": null},
+      "usage": {"input_tokens": 60, "output_tokens": 0}
+    },
+    "expect": {"status": "refusal", "data": null, "raw_text": "", "fallback_used": true,
+               "served_model": "claude-opus-4-8", "refusal_category": "bio", "usage": [60, 0, 0, 0]}
+  }
+}
