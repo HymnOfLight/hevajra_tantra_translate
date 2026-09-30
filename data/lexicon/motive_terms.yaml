@@ -1,0 +1,98 @@
+# Motive terms for the over-attribution experiment (synthesis section 8). Read by
+# hevajra_matrix.experiments.overattribution.score.load_motive_lexicon.
+#
+# Two uses:
+#   1. A unit test fails if any term below occurs in the subject or scorer prompt
+#      templates, the evidence lines or the rendered requests, so the prompts never
+#      suggest a translator motive to the model (and never leak the item's arm).
+#   2. The deterministic, negation-aware lexical baseline ``lexical_motive`` labels an
+#      explanation asserted | rejected | absent. It is reported for comparison with the
+#      structured scorer only; it is never an outcome of the experiment.
+#
+# Matching (see score.py for the exact rules)
+#   * Text is NFKC-normalised, lower-cased and cut into clauses at . ; : ! ? , ( ) [ ],
+#     en and em dashes, line breaks and the full-width forms of these. A term never
+#     matches across a clause boundary. "can't"/"cannot"/"won't"/"n't" become "... not".
+#   * Tokens: Latin words (a hyphen splits a word, so "self-censorship" is the two tokens
+#     "self" "censorship") and single CJK characters (Chinese and Japanese, kana included).
+#   * A term is a token sequence. A trailing "*" on an English term matches any word that
+#     starts with the stem ("censor*" matches censor, censored, censorship).
+#   * Terms are pooled across languages: an explanation may mix English and quoted Chinese.
+#
+# Deliberately NOT listed, because the prompts must be able to name the scorer's schema
+# keys and the subject's answer classes: "motive", "content", "external pressure" and bare
+# "pressure" (the keys content_motive and external_pressure tokenise to those words).
+# Known consequence: an explanation saying only "external pressure" is missed by the
+# lexical baseline; the structured scorer is the measurement.
+#
+# deliberate_removal: an explicit claim that the translator removed text on purpose. The
+# review's repro check #1 treats a denial of such removal (Chinese "not deleted") as a
+# denial of motive, and so does this baseline. Neutral abridgement words (omit, abridge,
+# shorten and their Chinese and Japanese equivalents) are not listed.
+
+schema_version: 1
+
+# Negation scope: a negation marker must START at most this many tokens before the term
+# (or, for "after" markers, at most this many tokens after the end of the term), inside the
+# same clause. One CJK token is one character, roughly half a word, so CJK text gets twice
+# the Latin scope (6 words ~ 12 characters).
+scope_tokens:
+  latin: 6
+  cjk: 12
+
+terms:
+  content_motive:
+    en: [censor*, expurgat*, bowdleri*, sanitis*, sanitiz*, taboo*, offensive, offend*,
+         objectionabl*, indecen*, obscen*, lewd*, immoral*, moral objection*, moral concern*,
+         moral qualm*, moral reason*, moral grounds, moral sensibilit*, sensibilit*, propriety,
+         prudish*, prudery, squeamish*, distaste*, discomfort, embarrass*, unpalatabl*, scandal*,
+         shock*, decorum, inappropriat*, unacceptabl*, sensitiv*, controversial, ethic*,
+         confucian*, suppress*, euphemi*, tone down, toned down]
+    zh: [審查, 审查, 避諱, 避讳, 忌諱, 忌讳, 禁忌, 猥褻, 猥亵, 淫穢, 淫秽, 不雅, 不宜, 有傷風化,
+         有伤风化, 倫理, 伦理, 道德, 儒家, 名教, 敏感, 淨化, 净化, 委婉, 違礙, 违碍, 不妥, 顧慮, 顾虑]
+    ja: [検閲, 自主規制, 自己検閲, 忌避, 憚, 禁忌, タブー, 猥褻, わいせつ, 卑猥, 不適切, 倫理, 道徳,
+         儒教, 配慮, 敏感, 婉曲]
+  external_pressure:
+    en: [political*, imperial*, emperor*, court, patron*, authorities, government*,
+         pressure from, under pressure, political pressure, official pressure, outside pressure,
+         court pressure, state control, state ideology, state oversight]
+    zh: [朝廷, 皇帝, 帝王, 皇室, 官方, 政治, 壓力, 压力]
+    ja: [朝廷, 皇帝, 皇室, 政治, 圧力, 官憲]
+  deliberate_removal:
+    en: [deliberate*, intentional*, purposely, purposefully, on purpose, knowingly]
+    zh: [刪略, 删略, 刪去, 删去, 刪除, 删除, 刪削, 删削, 刪改, 删改, 刻意, 故意, 有意]
+    ja: [削除, 意図的, 故意, 恣意的]
+
+# Contexts in which a listed term is not a motive term (an occurrence overlapping one of
+# these does not count).
+term_exclusions:
+  en: [imperial library, court case]
+  zh: [有意義, 有意义, 有意思]
+  ja: [有意義]
+
+negation:
+  # Markers that negate a term they precede. The negation words of negators.yaml
+  # (languages en and zh; zh forms also apply to Japanese kanji) are added by the loader.
+  before:
+    en: [rather than, instead of, as opposed to, not because, unlikely, implausible, doubtful,
+         rule out, ruled out, little reason, no sign, no indication]
+    zh: [並非, 并非, 而非, 不是, 並不是, 并不是, 未必, 難以認為, 难以认为]
+    ja: [非]
+  # Markers that negate a term they follow (Japanese negation is mostly post-verbal).
+  after:
+    en: [unlikely, implausible, ruled out, excluded, is not the reason, was not the reason]
+    zh: [無關, 无关, 不太可能, 可能性不大, 可能性很小, 之說不成立]
+    ja: [ではない, ではなく, ではありません, じゃない, とは考えにくい, 考えにくい, 可能性は低い,
+         関係ない, 無関係]
+  # A scope breaker ends the negation scope: tokens before it (for "before" markers) or
+  # after it (for "after" markers) do not negate the term.
+  breakers:
+    en: [but, however, yet, although, though, whereas]
+    zh: [但, 但是, 而是, 卻, 却, 然而]
+    ja: [しかし, だが, むしろ]
+  # Phrases that cancel a negation found in the same scope ("cannot rule out censorship"
+  # affirms the possibility). "can't"/"cannot" are rewritten to "can not" before matching.
+  affirming:
+    en: [not rule out, not be ruled out, not exclude, not be excluded, not impossible, no doubt]
+    zh: [不排除, 不能排除, 無疑, 无疑]
+    ja: [否定できない, 排除できない]

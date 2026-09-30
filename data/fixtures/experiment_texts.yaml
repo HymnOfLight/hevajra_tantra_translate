@@ -1,0 +1,17 @@
+# Mini witnesses for the over-attribution experiment's text resolver
+# (tests/unit/test_experiment_run.py). Synthetic text in the two scripts; ids follow the
+# real coordinate scheme but point at nothing real.
+
+reference:
+  - {id: "D418:1a.1.1", kind: verse_line, text: "ཀྱེ་རྡོ་རྗེ་ཡི་དམ་ཚིག་ནི། །"}
+  - {id: "D418:1a.1.2", kind: verse_line, text: "སྔགས་ཀྱི་ཚུལ་དུ་བཤད་པ་ཡིན། །"}
+witness:
+  - {id: "T0892:0590a01.1", kind: verse_line, text: "一句初說法，"}
+  - {id: "T0892:0590a01.2", kind: verse_line, text: "二句次第說，"}
+  - {id: "T0892:0590a02.1", kind: note, text: "此處有注"}
+  - {id: "T0892:0590a02.2", kind: verse_line, text: "三句如是說，"}
+  - {id: "T0892:0590a03.1", kind: verse_line, text: "四句應當知。"}
+  - {id: "T0892:0590a03.2", kind: verse_line, text: "五句所除者，"}
+  - {id: "T0892:0590a04.1", kind: verse_line, text: "六句復次說，"}
+  - {id: "T0892:0590a04.2", kind: verse_line, text: "七句如是知，"}
+  - {id: "T0892:0590a05.1", kind: verse_line, text: "八句最後說。"}

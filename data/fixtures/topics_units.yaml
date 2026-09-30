@@ -1,0 +1,39 @@
+# Multilingual inputs for tests/unit/test_topics_prelabel.py (hevajra_matrix.topics).
+# Short synthetic Tibetan clauses in the style of the Hevajratantra, and two Chinese
+# witness clauses that must never reach a topic pre-labelling request.
+
+reference_witness: bo_derge_D417_418
+witness: zh_T0892_song
+
+# Reference units in document order (lang bo). `topic` and `cue` are what a correct
+# pre-labeller would answer: the cue is a verbatim excerpt of that unit's text.
+reference_units:
+  - {id: "D418:9a.1.1", kind: prose, text: "བཅོམ་ལྡན་འདས་ཀྱིས་བཀའ་སྩལ་པ།", topic: frame, cue: "བཀའ་སྩལ་པ"}
+  - {id: "D418:9a.1.2", kind: verse_line, text: "དུར་ཁྲོད་དུ་ནི་ཐོད་པ་བཟུང་།", topic: bone_corpse, cue: "ཐོད་པ"}
+  - {id: "D418:9a.2.1", kind: verse_line, text: "སྲོག་ཆགས་རྣམས་ནི་གསོད་པར་བྱ།", topic: harm, cue: "གསོད་པར་བྱ"}
+  - {id: "D418:9a.2.2", kind: verse_line, text: "རྣལ་འབྱོར་མ་དང་ལྷན་ཅིག་ཏུ།", topic: female_agent, cue: "རྣལ་འབྱོར་མ"}
+  - {id: "D418:9a.3.1", kind: verse_line, text: "སྟོང་པ་ཉིད་ལ་རབ་ཏུ་སྒོམ།", topic: neutral, cue: ""}
+  - {id: "D418:9a.3.2", kind: mantra, text: "ཨོཾ་ཨཱཿཧཱུྃ་ཕཊ་སྭཱ་ཧཱ།", topic: mantra_control, cue: "ཨོཾ་ཨཱཿཧཱུྃ"}
+  - {id: "D418:9a.4.1", kind: verse_line, text: "ཤ་ཆེན་ཟ་བར་བྱ་བ་ཡིན།", topic: flesh_food, cue: "ཤ་ཆེན་ཟ"}
+
+# Cues used by individual tests, relative to the unit D418:9a.1.2 (index 1 above).
+cues:
+  skull: "ཐོད་པ"                 # in D418:9a.1.2
+  charnel_ground: "དུར་ཁྲོད"      # in D418:9a.1.2
+  kill: "གསོད་པར་བྱ"              # in the next unit, D418:9a.2.1, only
+
+# Cue checks against the unit D418:9a.1.2 (index 1 above).
+cue_cases:
+  - {cue: "ཐོད་པ", verified: true}
+  - {cue: "ཐོད་པ་བཟུང།", verified: true}          # shad and tsheg differences fold away
+  - {cue: "དུར་ཁྲོད", verified: true}
+  - {cue: "ཐོ", verified: false}                  # ends inside a syllable
+  - {cue: "གསོད་པར", verified: false}             # from the next unit, not from this one
+  - {cue: "thod pa", verified: false}             # transliterated, not copied
+  - {cue: "skull", verified: false}               # translated
+  - {cue: "", verified: false}                    # an empty cue proves nothing
+
+# Chinese witness segments (lang zh): the pre-labeller must never see them.
+witness_units:
+  - {id: "T0892:0596b25.1", kind: prose, text: "於尸林中持髑髏器"}
+  - {id: "T0892:0596b25.2", kind: prose, text: "佛言如是"}

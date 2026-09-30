@@ -1,0 +1,89 @@
+# Few-shot examples of the T1 collator (collate.v1), read by
+# hevajra_matrix.collate.collator.load_examples and appended to the system prompt.
+#
+# All three examples are SYNTHETIC: short sentences written for this file, not taken from
+# the Hevajratantra, its sentinel passages (data/sentinels/sentinels.yaml) or the dev and
+# test gold regions, so the instrument is never taught the answers it is evaluated on.
+# They illustrate the three behaviours the synthesis asks for: a list whose member names
+# become ordinals, a reversal, and witness-only material (an addition and a translator
+# note), with the other relations shown along the way.
+#
+# Format: each example has a title and a comment (English, shown to the model), the
+# witness lines and reference lines ({kind, text}; handles z0001.. and r001.. are
+# assigned in order when rendered, and the core window is the whole example witness),
+# and the answer exactly as the schema requires. A unit test checks that every answer
+# passes the code checks V1-V11 against its own example.
+
+schema_version: 1
+reference_lang: bo
+witness_lang: zh
+
+examples:
+  - title: a list whose member names become ordinals
+    comment: >-
+      The reference names the four gates; the witness keeps the list but counts the
+      gates instead of naming them, so each named member is category_name_omitted. The
+      opening line is rendered in other words (paraphrase).
+    witness:
+      - {kind: prose, text: "門有四種，"}
+      - {kind: prose, text: "謂第一門、"}
+      - {kind: prose, text: "第二門、"}
+      - {kind: prose, text: "第三門、"}
+      - {kind: prose, text: "第四門。"}
+    reference:
+      - {kind: prose, text: "སྒོ་བཞི་ནི་འདི་ལྟ་སྟེ།"}
+      - {kind: prose, text: "ཤར་གྱི་སྒོ་དང་།"}
+      - {kind: prose, text: "ལྷོའི་སྒོ་དང་།"}
+      - {kind: prose, text: "ནུབ་ཀྱི་སྒོ་དང་།"}
+      - {kind: prose, text: "བྱང་གི་སྒོའོ།"}
+    answer:
+      units:
+        - {ref: r001, wit: [z0001], relation: paraphrase, polarity_flip: false, confidence: high, ref_quote: "", wit_quote: "門有四種"}
+        - {ref: r002, wit: [z0002], relation: category_name_omitted, polarity_flip: false, confidence: high, ref_quote: "ཤར་གྱི་སྒོ", wit_quote: "第一門"}
+        - {ref: r003, wit: [z0003], relation: category_name_omitted, polarity_flip: false, confidence: high, ref_quote: "ལྷོའི་སྒོ", wit_quote: "第二門"}
+        - {ref: r004, wit: [z0004], relation: category_name_omitted, polarity_flip: false, confidence: high, ref_quote: "ནུབ་ཀྱི་སྒོ", wit_quote: "第三門"}
+        - {ref: r005, wit: [z0005], relation: category_name_omitted, polarity_flip: false, confidence: high, ref_quote: "བྱང་གི་སྒོའོ", wit_quote: "第四門"}
+      witness_only: []
+
+  - title: a reversal and a unit without counterpart
+    comment: >-
+      The reference prescribes lighting a lamp at night; the witness forbids it, so the
+      relation is reversal with polarity_flip true. The last reference unit is rendered
+      nowhere in the witness, so it has an empty wit list and quotes only the reference.
+    witness:
+      - {kind: prose, text: "次阿闍梨作供養。"}
+      - {kind: prose, text: "於夜分中不應燃燈。"}
+    reference:
+      - {kind: prose, text: "དེ་ནས་སློབ་དཔོན་གྱིས་མཆོད་པ་བྱ།"}
+      - {kind: prose, text: "མཚན་མོ་མར་མེ་སྦར་བར་བྱ།"}
+      - {kind: prose, text: "དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ།"}
+    answer:
+      units:
+        - {ref: r001, wit: [z0001], relation: equivalent, polarity_flip: false, confidence: high, ref_quote: "", wit_quote: "次阿闍梨作供養"}
+        - {ref: r002, wit: [z0002], relation: reversal, polarity_flip: true, confidence: high, ref_quote: "མར་མེ་སྦར་བར་བྱ", wit_quote: "不應燃燈"}
+        - {ref: r003, wit: [], relation: no_counterpart, polarity_flip: false, confidence: medium, ref_quote: "དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ", wit_quote: ""}
+      witness_only: []
+
+  - title: witness-only material, an abridgement and a mantra rendered by sound
+    comment: >-
+      The first unit loses its "three days" (abridged). The mantra is transcribed by
+      sound (transliterated); the note after it is the translator's own and is listed
+      as translator_note, not linked. The last witness sentence renders nothing in the
+      reference and is an addition. The heading is paratext.
+    witness:
+      - {kind: head, text: "修習品"}
+      - {kind: prose, text: "行人於山頂修習。"}
+      - {kind: mantra, text: "唵娑攞吽娑嚩賀"}
+      - {kind: note, text: "二合"}
+      - {kind: prose, text: "如是修者，速得成就。"}
+    reference:
+      - {kind: prose, text: "རྣལ་འབྱོར་པས་རི་བོའི་རྩེར་ཉི་མ་གསུམ་བསྒོམ་པར་བྱ།"}
+      - {kind: mantra, text: "ཨོཾ་ས་ལ་ཧཱུྃ་སྭཱ་ཧཱ།"}
+    answer:
+      units:
+        - {ref: r001, wit: [z0002], relation: abridged, polarity_flip: false, confidence: high, ref_quote: "ཉི་མ་གསུམ", wit_quote: "行人於山頂修習"}
+        - {ref: r002, wit: [z0003], relation: transliterated, polarity_flip: false, confidence: high, ref_quote: "ཨོཾ་ས་ལ་ཧཱུྃ", wit_quote: "唵娑攞吽"}
+      witness_only:
+        - {wit: [z0001], kind: paratext, wit_quote: "修習品"}
+        - {wit: [z0004], kind: translator_note, wit_quote: "二合"}
+        - {wit: [z0005], kind: addition, wit_quote: "如是修者，速得成就"}

@@ -1,0 +1,72 @@
+# Multilingual inputs for tests/unit/test_components*.py (hevajra_matrix.collate.components).
+# Short SYNTHETIC Tibetan clauses in the style of the Hevajratantra and Chinese renderings
+# written for this file; ids imitate Derge and Taisho coordinates only so that they sort.
+
+reference_witness: bo_derge_D417_418
+witness: zh_T0892_song
+
+# Reference units (lang bo), in document order.
+reference_units:
+  - {id: "D418:9a.1.1", kind: prose, text: "མཚན་མོ་མར་མེ་སྦར་བར་བྱ།"}
+  - {id: "D418:9a.1.2", kind: prose, text: "རྣལ་འབྱོར་པས་རི་བོའི་རྩེར་ཉི་མ་གསུམ་བསྒོམ་པར་བྱ།"}
+  - {id: "D418:9a.2.1", kind: verse_line, text: "དུར་ཁྲོད་དུ་ནི་ཐོད་པ་བཟུང་།"}
+  - {id: "D418:9a.2.2", kind: prose, text: "ཧེ་རུ་ཀ་ལ་ཕྱག་འཚལ་ལོ།"}
+  # A long unit: the request must carry all of it, not the first 80 characters (defect #16).
+  - {id: "D418:9a.3.1", kind: prose, text: "རྣལ་འབྱོར་པས་རི་བོའི་རྩེར་ཉི་མ་གསུམ་བསྒོམ་པར་བྱ། དེ་ནས་སློབ་དཔོན་གྱིས་མཆོད་པ་བྱ། མཚན་མོ་མར་མེ་སྦར་བར་བྱ། དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ། སྟོང་པ་ཉིད་ལ་རབ་ཏུ་སྒོམ། མཐར་ནི་དངོས་གྲུབ་ཐོབ་པར་འགྱུར།"}
+  - {id: "D418:9a.3.2", kind: mantra, text: "ཨོཾ་ཧེ་རུ་ཀ་ཧཱུྃ་ཕཊ།"}
+  - {id: "D418:9a.4.1", kind: prose, text: "དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ།"}
+
+# Witness segments (lang zh), in document order.
+witness_units:
+  - {id: "T0892:0596b25.1", kind: prose, text: "於夜分中不應燃燈。"}
+  - {id: "T0892:0596b25.2", kind: prose, text: "行人於山頂修習。"}
+  - {id: "T0892:0596b26.1", kind: prose, text: "於尸林中持髑髏器"}
+  - {id: "T0892:0596b26.2", kind: prose, text: "敬禮"}
+  - {id: "T0892:0596b26.3", kind: prose, text: "呬嚕迦尊。"}
+  - {id: "T0892:0596b27.1", kind: prose, text: "行人於山頂修習三日。次阿闍梨作供養。於夜分中不應燃燈。復以妙香而為供養。觀想空性。如是修者，速得成就。於尸林中持髑髏器。佛言如是。門有四種，謂第一門、第二門、第三門、第四門。"}
+  - {id: "T0892:0596b28.1", kind: mantra, text: "唵呬嚕迦吽發吒"}
+
+# A correct answer for each pair, keyed by reference unit id (all pass the checks).
+answers:
+  "D418:9a.1.1":
+    polarity_flip: true
+    slots:
+      - {slot: condition, code: ret, ref_quote: "མཚན་མོ", wit_quote: "夜分"}
+      - {slot: patient, code: ret, ref_quote: "མར་མེ", wit_quote: "燈"}
+      - {slot: action, code: ret, ref_quote: "སྦར", wit_quote: "燃"}
+      - {slot: negation_modality, code: sub, ref_quote: "བར་བྱ", wit_quote: "不應"}
+  "D418:9a.1.2":
+    polarity_flip: false
+    slots:
+      - {slot: agent, code: gen, ref_quote: "རྣལ་འབྱོར་པས", wit_quote: "行人"}
+      - {slot: place, code: ret, ref_quote: "རི་བོའི་རྩེར", wit_quote: "山頂"}
+      - {slot: quantity, code: om, ref_quote: "ཉི་མ་གསུམ", wit_quote: ""}
+      - {slot: action, code: ret, ref_quote: "བསྒོམ", wit_quote: "修習"}
+  "D418:9a.2.1":
+    polarity_flip: false
+    slots:
+      - {slot: place, code: ret, ref_quote: "དུར་ཁྲོད", wit_quote: "尸林"}
+      - {slot: patient, code: ret, ref_quote: "ཐོད་པ", wit_quote: "髑髏器"}
+      - {slot: action, code: ret, ref_quote: "བཟུང", wit_quote: "持"}
+  "D418:9a.2.2":
+    polarity_flip: false
+    slots:
+      - {slot: patient, code: lit, ref_quote: "ཧེ་རུ་ཀ", wit_quote: "呬嚕迦"}
+      - {slot: action, code: ret, ref_quote: "ཕྱག་འཚལ", wit_quote: "敬禮"}
+  "D418:9a.3.1":
+    polarity_flip: false
+    slots:
+      - {slot: result, code: ret, ref_quote: "དངོས་གྲུབ་ཐོབ་པར་འགྱུར", wit_quote: "速得成就"}
+      - {slot: patient, code: sub, ref_quote: "དྲི་ཞིམ་པོ", wit_quote: "妙香"}
+
+# Named quotes used by individual tests.
+quotes:
+  bo_inside_syllable: "ཐོ"            # ends inside the syllable of the skull word in D418:9a.2.1
+  bo_negator: "མི་བྱ"                 # "do not": a Tibetan negator phrase, in no unit
+  zh_elsewhere: "佛言"                # occurs in the long witness segment, not in T0892:0596b26.1
+  zh_skull_simplified: "髑髅器"        # simplified skull form: matches only after variant folding
+  zh_not_transcription: "敬禮"         # ordinary words, not phonetic transcription
+  zh_affirmative: "燃燈"               # no negator
+
+# The Tibetan shad (end-of-clause mark): quotes that differ only by it are the same quote.
+shad: "།"

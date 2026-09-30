@@ -1,0 +1,28 @@
+# Evidence lines of the over-attribution experiment (synthesis section 8), read by
+# hevajra_matrix.experiments.overattribution.design.load_evidence. English only.
+#
+# Condition E0 shows no evidence line. EP is a length-matched placebo. EW shows one of two
+# witness facts, assigned per item and balanced within each arm (design.ew_versions).
+# The EW facts are GENERIC and SYNTHETIC: they are not claims about the real manuscripts,
+# and the experiment's outputs are never used as philological evidence.
+#
+# implies: the scorer classes (score.SCORER_CLASSES) that the line points to. Y_uptake is
+# 1 when the scorer's "primary" class is one of them. Both EW facts say that the passage is
+# missing on the Sanskrit side, which supports a source-side explanation: either the
+# translator's own source lacked it (source_text) or a wider line of transmission did
+# (shared_tradition). The placebo implies nothing.
+#
+# Editing a line changes every subject prompt and therefore every cache key; after the
+# pre-registration freeze it requires an amendment.
+
+schema_version: 1
+lines:
+  EP:
+    text: "In the printed edition used here, this passage falls in the third fascicle of the Chinese text."
+    implies: []
+  EW-V:
+    text: "A collation of Sanskrit manuscripts shows that two manuscripts also lack this passage."
+    implies: [source_text, shared_tradition]
+  EW-S:
+    text: "Another translation of this scripture, made independently from a Sanskrit manuscript, also lacks this passage."
+    implies: [source_text, shared_tradition]

@@ -1,0 +1,85 @@
+# Synthetic mini texts for the collate unit tests (tests/unit/test_collate_*.py).
+#
+# A Tibetan "reference" with two chapters (I.1: 6 alignable units and a colophon; I.2: 4
+# units) and a Chinese "witness" with three chapters (pin1..pin3). The sentences are
+# invented for the tests. Intended relations (the "gold" the tests use):
+#
+#   BT:1a.1.1  <-> ZT:0001a03.1   equivalent
+#   BT:1a.1.2  <-> ZT:0001a03.2   equivalent
+#   BT:1a.2.1  <-> ZT:0001a04.1   equivalent, both sides negated (negation perturbation)
+#   BT:1a.2.2  <-> ZT:0001a05.1   transliterated (mantra); ZT:0001a05.n1 is a translator note
+#   BT:1a.3.1  <-> ZT:0001a06.1   substitution (red flowers -> white flowers)
+#   BT:1a.3.2  <-> ZT:0001a07.1   reversal (there are three white horses -> there are none)
+#   ZT:0001a08.1                  witness-only addition
+#   BT:1b.*    <-> ZT:0001b02.1 .. ZT:0001b05.1, one to one, equivalent
+#   pin3 (ZT:0001c*) renders nothing: material outside every core window.
+#
+# Fields: id, kind, text, local (Segment.local_chapter), chapter (reference chapter of a
+# reference unit), host (the content segment a witness note comments on).
+
+reference:
+  witness: bo_test
+  lang: bo
+  segments:
+    - {id: "BT:1a.1.1", kind: prose, local: "BT:1", chapter: I.1, text: "དེ་ནས་བཅོམ་ལྡན་འདས་ཀྱིས་བཀའ་སྩལ་པ།"}
+    - {id: "BT:1a.1.2", kind: verse_line, local: "BT:1", chapter: I.1, text: "རི་བོ་ལ་ནི་ཤིང་མང་པོ།"}
+    - {id: "BT:1a.2.1", kind: verse_line, local: "BT:1", chapter: I.1, text: "ཆུ་བོ་ལ་ནི་ཉ་མེད་དོ།"}
+    - {id: "BT:1a.2.2", kind: mantra, local: "BT:1", chapter: I.1, text: "ཨོཾ་ཨཱཿཧཱུྃ།"}
+    - {id: "BT:1a.3.1", kind: prose, local: "BT:1", chapter: I.1, text: "མེ་ཏོག་དམར་པོ་དབུལ་བར་བྱ།"}
+    - {id: "BT:1a.3.2", kind: prose, local: "BT:1", chapter: I.1, text: "རྟ་དཀར་པོ་གསུམ་ཡོད།"}
+    - {id: "BT:1a.4.1", kind: colophon, local: "BT:1", chapter: I.1, text: "ལེའུ་དང་པོའོ།"}
+    - {id: "BT:1b.1.1", kind: prose, local: "BT:2", chapter: I.2, text: "སློབ་མ་ལ་ནི་བསྟན་པར་བྱ།"}
+    - {id: "BT:1b.1.2", kind: prose, local: "BT:2", chapter: I.2, text: "ཟླ་བ་དང་ཉི་མ་འཆར།"}
+    - {id: "BT:1b.2.1", kind: prose, local: "BT:2", chapter: I.2, text: "ཕྱོགས་བཞི་རུ་བལྟ་བར་བྱ།"}
+    - {id: "BT:1b.2.2", kind: prose, local: "BT:2", chapter: I.2, text: "སྐུ་གསུང་ཐུགས་ལ་ཕྱག་འཚལ་ལོ།"}
+
+witness:
+  witness: zh_test
+  lang: zh
+  segments:
+    - {id: "ZT:0001a01.1", kind: meta, local: null, text: "測試經卷第一"}
+    - {id: "ZT:0001a02.1", kind: head, local: pin1, text: "第一品"}
+    - {id: "ZT:0001a03.1", kind: prose, local: pin1, text: "爾時世尊說。"}
+    - {id: "ZT:0001a03.2", kind: verse_line, local: pin1, text: "山上多樹木，"}
+    - {id: "ZT:0001a04.1", kind: verse_line, local: pin1, text: "河中無魚。"}
+    - {id: "ZT:0001a05.1", kind: mantra, local: pin1, text: "唵阿吽"}
+    - {id: "ZT:0001a05.n1", kind: note, local: pin1, host: "ZT:0001a05.1", text: "引"}
+    - {id: "ZT:0001a06.1", kind: prose, local: pin1, text: "應供白花。"}
+    - {id: "ZT:0001a07.1", kind: prose, local: pin1, text: "無三白馬。"}
+    - {id: "ZT:0001a08.1", kind: prose, local: pin1, text: "復有童子歡喜。"}
+    - {id: "ZT:0001b01.1", kind: head, local: pin2, text: "第二品"}
+    - {id: "ZT:0001b02.1", kind: prose, local: pin2, text: "應教弟子。"}
+    - {id: "ZT:0001b03.1", kind: prose, local: pin2, text: "月及日出。"}
+    - {id: "ZT:0001b04.1", kind: prose, local: pin2, text: "觀四方。"}
+    - {id: "ZT:0001b05.1", kind: prose, local: pin2, text: "敬禮身語心。"}
+    - {id: "ZT:0001c01.1", kind: head, local: pin3, text: "第三品"}
+    - {id: "ZT:0001c02.1", kind: prose, local: pin3, text: "樹下坐禪。"}
+    - {id: "ZT:0001c03.1", kind: prose, local: pin3, text: "敬禮三寶。"}
+    - {id: "ZT:0001c04.1", kind: paratext, local: null, text: "譯者題記"}
+
+# Gold links (reference unit -> witness segments and relation), used by the echo collator
+# of the end-to-end test and by the perturbation tests.
+gold:
+  - {ref: "BT:1a.1.1", wit: ["ZT:0001a03.1"], relation: equivalent}
+  - {ref: "BT:1a.1.2", wit: ["ZT:0001a03.2"], relation: equivalent}
+  - {ref: "BT:1a.2.1", wit: ["ZT:0001a04.1"], relation: equivalent}
+  - {ref: "BT:1a.2.2", wit: ["ZT:0001a05.1"], relation: transliterated}
+  - {ref: "BT:1a.3.1", wit: ["ZT:0001a06.1"], relation: substitution}
+  - {ref: "BT:1a.3.2", wit: ["ZT:0001a07.1"], relation: reversal}
+  - {ref: "BT:1b.1.1", wit: ["ZT:0001b02.1"], relation: equivalent}
+  - {ref: "BT:1b.1.2", wit: ["ZT:0001b03.1"], relation: equivalent}
+  - {ref: "BT:1b.2.1", wit: ["ZT:0001b04.1"], relation: equivalent}
+  - {ref: "BT:1b.2.2", wit: ["ZT:0001b05.1"], relation: equivalent}
+
+# Witness-only gold: segment id -> kind.
+gold_witness_only:
+  "ZT:0001a02.1": paratext
+  "ZT:0001a05.n1": translator_note
+  "ZT:0001a08.1": addition
+  "ZT:0001b01.1": paratext
+
+# Quotes in a script the tests cannot write in .py files.
+quotes:
+  variant_form: "爾時世尊说"     # simplified form of the last character: matches only after folding
+  not_verbatim: "爾時佛說"
+  bo_partial_syllable: "དེ་ནས་བཅོམ་ལྡ"   # ends inside a syllable: not verbatim

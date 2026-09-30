@@ -239,6 +239,7 @@ class Verdict:
     instrument_digest: str = ""
     machine_relation: str = ""
     machine_status: str = ""
+    machine_polarity_flip: bool = False
     blind_relation: str = ""
     blind_wit_ids: tuple[str, ...] = ()
     final_relation: str = ""
@@ -249,6 +250,9 @@ class Verdict:
     blind_date: str = ""
     final_date: str = ""
     note: str = ""
+    quote_ref: str = ""               # short reference-side quote (licence-capped)
+    quote_zh: str = ""                # short witness-side quote (licence-capped)
+    minutes: float | None = None      # annotator time, to measure the real review cost
 
 
 @dataclass(frozen=True)

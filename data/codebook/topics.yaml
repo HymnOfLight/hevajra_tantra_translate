@@ -1,0 +1,217 @@
+# Topic codebook: the single vocabulary for the T3 pre-labeller prompt, the human topic
+# labels (data/annotations/topics/<reference>.csv), the exposure of the sensitive-vs-neutral
+# contrast (E4) and the over-attribution experiment. Read by hevajra_matrix.topics.load_codebook.
+#
+# The topic names, their groups and the group precedence are pre-registered research
+# constructs, so they are ALSO fixed in hevajra_matrix/topics/codebook.py; the loader refuses a file
+# that disagrees with the code. Change both together, and record the change as a
+# pre-registration amendment. Definitions, include and exclude notes may be refined freely
+# before labelling starts; they enter the pre-labeller prompt, so editing them changes the
+# instrument digest and every cache key.
+#
+# Fields
+#   status            draft | verified: the operational definitions are this project's own
+#                     reading of Tokushige 2026's eight categories and must be confirmed by
+#                     the researcher (verified_by) before human labelling starts
+#   group_precedence  a unit's group is the FIRST group in this list that contains one of
+#                     its topics; no topics means "unlabelled". Sensitive comes first
+#                     because the exposure of E4 is "any of the eight categories".
+#   rules             general coding rules, rendered into the pre-labeller prompt
+#   topics            one record per topic, in the order shown to coders and to the model:
+#     name                     identifier used in every file (ASCII)
+#     group                    sensitive | neutral | frame | mantra_control
+#     tokushige_2026_verses    Tokushige 2026 (IBK 74(2), pp. 838-843): verses in this
+#                              category among the 261 of 1,100 verses with self-censorship
+#                              (243 of the 261 fall in the eight categories; a verse may
+#                              count in several, so the counts sum to 271); counts as
+#                              checked against the paper in the v0.2 review; null for our
+#                              own topics
+#     definition               operational definition
+#     include / exclude        boundary notes
+#
+# Transliterations are IAST (Sanskrit) or Wylie (Tibetan).
+
+schema_version: 1
+status: draft
+verified_by: null
+source: >-
+  Category names follow Tokushige 2026 (IBK 74(2), pp. 838-843), eight categories of
+  self-censored verses; neutral, frame and mantra_control are this project's own
+  (v0.2 docs 02 section 6; v0.3 synthesis 3.3 and 6.3).
+
+group_precedence: [sensitive, mantra_control, frame, neutral]
+
+rules:
+  - >-
+    Code what the unit's own text mentions, whatever its mood: prescription, description,
+    prohibition, question, simile and symbolic reinterpretation all count.
+  - >-
+    Neighbouring units only resolve pronouns and ellipsis (a "she" that refers to the
+    consort counts); never give a unit a topic that only its neighbours mention.
+  - >-
+    A unit may carry several topics. neutral means that no other topic applies and is
+    always alone.
+  - >-
+    Code words of the "intentional language" (sandhābhāṣā, e.g. Hevajratantra II.3) are
+    coded by what they stand for (madana = liquor, bala = flesh, bola = vajra, kakkola = padma).
+  - >-
+    Label from the text shown only, never from how a translation of the passage reads.
+
+topics:
+  - name: sexual
+    group: sensitive
+    tokushige_2026_verses: 55
+    definition: >-
+      Sexual union, sexual desire or the sexual organs are mentioned as practice or subject.
+    include:
+      - union with the consort, embracing, kissing, intercourse (kunduru in the code language)
+      - the sexual organs, including vajra and padma (lotus) in their sexual sense, bola and kakkola
+      - bliss described as arising from physical union
+      - desire (kāma, rāga) when it means sexual desire; taking other men's wives
+    exclude:
+      - vajra as a ritual implement or doctrinal symbol, padma as a flower or seat
+      - great bliss (mahāsukha) as a doctrinal term with no physical union described
+      - semen and menstrual blood as substances without union (code impure_substance)
+
+  - name: female_agent
+    group: sensitive
+    tokushige_2026_verses: 54
+    definition: >-
+      A woman or female being is present as an actor, partner, object of worship or object
+      of the practice.
+    include:
+      - the consort (mudrā, vidyā, prajñā as the female partner; phyag rgya ma, rig ma)
+      - yoginīs, ḍākinīs and the goddesses of the maṇḍala (e.g. Gaurī, Caurī, Ḍombī)
+      - female relatives named as partners or recipients (mother, sister, daughter)
+      - women named by caste or occupation (ḍombī, caṇḍālī, rajakī, brāhmaṇī)
+    exclude:
+      - feminine abstract nouns used doctrinally when no female being is meant (prajñā as
+        insight, śūnyatā, nairātmya as the doctrine of no-self)
+      - grammatical gender alone
+
+  - name: flesh_food
+    group: sensitive
+    tokushige_2026_verses: 19
+    definition: >-
+      Eating, offering or preparing meat, including human flesh.
+    include:
+      - the five meats; great flesh (mahāmāṃsa, sha chen, i.e. human flesh)
+      - meat as sacramental food, as a feast or bali offering, or in the code language (bala)
+      - prescriptions and prohibitions about eating meat
+    exclude:
+      - flesh as a part of the body when nothing is eaten, offered or prepared
+      - ordinary food with no meat
+
+  - name: harm
+    group: sensitive
+    tokushige_2026_verses: 33
+    definition: >-
+      Killing, wounding, subjugating, expelling, paralysing or otherwise harming living
+      beings, by ritual, magic or direct action.
+    include:
+      - fierce rites (māraṇa, uccāṭana, stambhana; vaśīkaraṇa when coercive)
+      - the injunction to kill, and its symbolic reinterpretation; prohibitions of killing
+      - weapons used against beings; curses; causing illness or madness
+    exclude:
+      - wrathful appearance or weapons held as a deity's attributes (iconography alone)
+      - destroying defilements, ignorance or Māra as a doctrinal metaphor
+      - a harmful word inside the mantra syllables themselves (māraya, hana), which is
+        mantra_control, not harm
+
+  - name: theft
+    group: sensitive
+    tokushige_2026_verses: 5
+    definition: >-
+      Stealing or taking what is not given.
+    include:
+      - the injunction to take others' property, and its symbolic reinterpretation
+      - robbery; taking what is not given (ma byin par len pa)
+    exclude:
+      - taking other men's wives (code sexual and female_agent)
+      - receiving gifts or offerings that are given
+
+  - name: impure_substance
+    group: sensitive
+    tokushige_2026_verses: 45
+    definition: >-
+      Bodily excretions and ritually polluting substances, as sacrament, offering, food or
+      subject.
+    include:
+      - urine, faeces, semen, menstrual blood (rajas), blood, marrow (dri chu, dri chen, khu ba, rdul, khrag)
+      - the five nectars (pañcāmṛta) and other impure sacraments
+      # Liquor is a codebook decision, to be confirmed against Tokushige 2026.
+      - intoxicating liquor (madya; madana in the code language; chang)
+      - bodhicitta when the unit treats it as a bodily fluid
+    exclude:
+      - ordinary food and water
+      - bodhicitta as a purely doctrinal term
+
+  - name: bone_corpse
+    group: sensitive
+    tokushige_2026_verses: 8
+    definition: >-
+      Human remains and the cremation ground. Broader than Tokushige's "human bone"
+      category, which it contains.
+    include:
+      - bones, skulls, skull cups (kapāla, thod pa), bone ornaments (rus rgyan)
+      - corpses (ro, śava), ash from the pyre
+      - the cremation ground (śmaśāna, dur khrod)
+    exclude:
+      - Tibetan ro meaning "taste" (ro gcig, "one taste"; ro drug, "six tastes")
+
+  - name: ritual
+    group: sensitive
+    tokushige_2026_verses: 52
+    definition: >-
+      Prescribed ritual procedure: what is done, with what, in which order.
+    include:
+      - consecration (abhiṣeka), fire offering (homa), bali (gtor ma) and other offerings
+      - the feast (gaṇacakra), ritual song and dance
+      - drawing, installing and worshipping the maṇḍala; preparing or using ritual implements
+      - rites for worldly aims (pacifying, enriching, subjugating, ...), together with harm
+        where it applies
+    exclude:
+      - meditation or visualisation instructions with no external ritual act
+      - doctrinal statements; iconographic description of deities
+      - a bare mantra (code mantra_control)
+
+  - name: neutral
+    group: neutral
+    tokushige_2026_verses: null
+    definition: >-
+      None of the other ten topics applies. Always alone.
+    include:
+      - doctrine, meditation and visualisation, praise, similes
+      - iconography with no sensitive element; lists of names and attributes
+    exclude:
+      - any unit with a sensitive, frame or mantra_control element
+
+  - name: frame
+    group: frame
+    tokushige_2026_verses: null
+    definition: >-
+      Narrative framing with no content of its own.
+    include:
+      - the opening formula ("thus have I heard, at one time")
+      - speaker attributions ("the Lord said", "Vajragarbha asked") and announcements that a
+        teaching follows
+      - chapter titles, chapter colophons and questions that name no topic
+    exclude:
+      - a unit that also states content, which is coded by its content only (a question
+        that names a sensitive matter is coded with that topic)
+
+  # A negative control: mantras are transliterated rather than translated as a matter of
+  # course, so d_lit on these units should be high and Delta should not apply to them.
+  # Definitions never mention the witness: the prompt must stay blind to the Chinese.
+  - name: mantra_control
+    group: mantra_control
+    tokushige_2026_verses: null
+    definition: >-
+      Mantra text.
+    include:
+      - mantra syllables (oṃ, hūṃ, phaṭ, svāhā, seed syllables) and dhāraṇī strings
+      - a formulaic label in the same unit ("this is the mantra of ...")
+      - harmful or sensitive words inside the mantra syllables themselves (māraya, hana, khāda)
+    exclude:
+      - instructions about reciting a mantra without mantra syllables (code ritual or neutral)
+      - sensitive non-mantra text in the same unit, which gets its own topic in addition

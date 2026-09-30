@@ -1,0 +1,48 @@
+# Cases for the negation-aware lexical motive baseline
+# (hevajra_matrix.experiments.overattribution.score.lexical_motive), read by
+# tests/unit/test_experiment_score.py. expected: asserted | rejected | absent.
+# The first three are the failure cases of the v0.2 review, repro check #1: the old
+# regex counted each of these denials as a motive assertion.
+
+cases:
+  # repro check #1
+  - {text: "This is not censorship; the Vorlage probably lacked the verse.", expected: rejected}
+  - {text: "No evidence of self-censorship here; the Tibetan also lacks it.", expected: rejected}
+  - {text: "並非刪略，梵本此處即無。", expected: rejected}
+  # English assertions and denials
+  - {text: "The translator probably censored this verse because of its sexual imagery.", expected: asserted}
+  - {text: "Self-censorship by the translator is the most likely reason.", expected: asserted}
+  - {text: "The omission reflects the translator's discomfort with the ritual described.", expected: asserted}
+  - {text: "It was likely left out under pressure from the imperial court.", expected: asserted}
+  - {text: "The Sanskrit manuscript used by the translator probably lacked this verse.", expected: absent}
+  - {text: "A copying error in the Chinese transmission is most likely.", expected: absent}
+  - {text: "The verse was dropped because the source lacked it rather than for reasons of propriety.", expected: rejected}
+  - {text: "This reflects a different recension, not a deliberate cut.", expected: rejected}
+  - {text: "Censorship is unlikely, since other manuscripts also lack the passage.", expected: rejected}
+  - {text: "It is unlikely that the translator censored it.", expected: rejected}
+  - {text: "The translator didn't censor anything here; the source differed.", expected: rejected}
+  # a contrast breaker ends the negation scope
+  - {text: "This is not a scribal slip but censorship of the content.", expected: asserted}
+  - {text: "This is not a scribal slip, it is censorship.", expected: asserted}
+  # double negation affirms the motive
+  - {text: "We cannot rule out censorship.", expected: asserted}
+  - {text: "Censorship can't be ruled out entirely.", expected: asserted}
+  - {text: "There is no doubt that this is censorship.", expected: asserted}
+  # a negated and an un-negated mention: the un-negated one wins
+  - {text: "Not censorship in the strict sense; yet the translator was clearly squeamish about the passage.", expected: asserted}
+  # the negator is too far away (more than 6 tokens before the term)
+  - {text: "The translator did not keep the verse in the text of the printed canon because of censorship.", expected: asserted}
+  # exclusion context: not a motive use of the term
+  - {text: "The imperial library copy was used as the base text.", expected: absent}
+  # Chinese
+  - {text: "譯者因內容涉及性而自我審查，刪去此句。", expected: asserted}
+  - {text: "此處缺文當係梵本不同，並非譯者刻意刪除。", expected: rejected}
+  - {text: "此偈之缺與倫理顧慮無關，乃梵本所無。", expected: rejected}
+  - {text: "不排除譯者出於倫理顧慮而刪略。", expected: asserted}
+  - {text: "此句在梵本中本來就沒有。", expected: absent}
+  - {text: "這句話很有意義，但梵本無之。", expected: absent}
+  # Japanese
+  - {text: "訳者が内容を憚って削除した可能性が高い。", expected: asserted}
+  - {text: "これは検閲ではなく、底本の相違による。", expected: rejected}
+  - {text: "検閲による削除とは考えにくい。", expected: rejected}
+  - {text: "梵本の系統にこの句がなかったと考えられる。", expected: absent}

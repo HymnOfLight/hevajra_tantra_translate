@@ -13,7 +13,7 @@ pricing_usd_per_mtok: {input: 4.0, output: 20.0, cache_read: 0.20, cache_write: 
 # on for pipeline proposal tasks, off for the experiment. Substituted output is always
 # marked and never enters a measurement (see docs/llm-tasks.md).
 tasks:
-  collate:    {effort: high,   max_tokens: 64000, replicates: 3, fallback: true}
+  collate:    {effort: high,   max_tokens: 128000, replicates: 3, fallback: true}
   components: {effort: high,   max_tokens: 32000, replicates: 1, fallback: true, pairs_per_call: 12}
   topics:     {effort: medium, max_tokens: 16000, replicates: 1, fallback: true, units_per_call: 40}
   subject:    {effort: medium, max_tokens: 16000, replicates: 3, fallback: false}

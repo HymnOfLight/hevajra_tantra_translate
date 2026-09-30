@@ -1,0 +1,79 @@
+# Few-shot examples of the T2 component coder (components.v1), read by
+# hevajra_matrix.collate.components.load_examples and appended to the system prompt.
+#
+# All examples are SYNTHETIC: short clauses written for this file, not taken from the
+# Hevajratantra, its sentinel passages (data/sentinels/sentinels.yaml) or the dev and
+# test gold regions. Between them they show every code (ret, gen, sub, lit, om, add), a
+# polarity flip with its required negation_modality slot, and a pair whose witness side
+# spans two segments.
+#
+# Format: each example has a title and a comment (English, shown to the model), the pairs
+# (a reference segment and one or more witness segments, each {kind, text}; handles
+# p01.. are assigned in order when rendered) and the answer exactly as the schema
+# requires. A unit test checks that every answer passes the code checks C1-C5 against its
+# own example (tests/unit/test_components.py).
+
+schema_version: 1
+reference_lang: bo
+witness_lang: zh
+
+examples:
+  - title: a prohibition for a prescription, and an omitted quantity
+    comment: >-
+      In p01 the reference prescribes lighting a lamp at night and the witness forbids
+      it: polarity_flip is true and the obligative expression is substituted by a
+      prohibition (negation_modality, sub). In p02 the witness renders the yogin by a
+      more general word for a practitioner (gen) and has nothing for the three days
+      (quantity, om, with an empty wit_quote).
+    pairs:
+      - reference: {kind: prose, text: "མཚན་མོ་མར་མེ་སྦར་བར་བྱ།"}
+        witness:
+          - {kind: prose, text: "於夜分中不應燃燈。"}
+      - reference: {kind: prose, text: "རྣལ་འབྱོར་པས་རི་བོའི་རྩེར་ཉི་མ་གསུམ་བསྒོམ་པར་བྱ།"}
+        witness:
+          - {kind: prose, text: "行人於山頂修習。"}
+    answer:
+      pairs:
+        - pair: p01
+          polarity_flip: true
+          slots:
+            - {slot: condition, code: ret, ref_quote: "མཚན་མོ", wit_quote: "夜分"}
+            - {slot: patient, code: ret, ref_quote: "མར་མེ", wit_quote: "燈"}
+            - {slot: action, code: ret, ref_quote: "སྦར", wit_quote: "燃"}
+            - {slot: negation_modality, code: sub, ref_quote: "བར་བྱ", wit_quote: "不應"}
+        - pair: p02
+          polarity_flip: false
+          slots:
+            - {slot: agent, code: gen, ref_quote: "རྣལ་འབྱོར་པས", wit_quote: "行人"}
+            - {slot: place, code: ret, ref_quote: "རི་བོའི་རྩེར", wit_quote: "山頂"}
+            - {slot: quantity, code: om, ref_quote: "ཉི་མ་གསུམ", wit_quote: ""}
+            - {slot: action, code: ret, ref_quote: "བསྒོམ", wit_quote: "修習"}
+
+  - title: an added place, a substituted instrument and a name rendered by sound
+    comment: >-
+      In p01 the witness adds where the offering is made (place, add, with an empty
+      ref_quote) and offers flowers where the reference offers incense (instrument,
+      sub). In p02 the witness passage spans two segments; the deity's name is
+      transcribed by sound (lit) and the salutation is retained.
+    pairs:
+      - reference: {kind: prose, text: "དེ་ནས་རྣལ་འབྱོར་པས་སྤོས་ཀྱིས་མཆོད་པ་བྱ།"}
+        witness:
+          - {kind: prose, text: "次行者於壇中以花作供養。"}
+      - reference: {kind: prose, text: "ཧེ་རུ་ཀ་ལ་ཕྱག་འཚལ་ལོ།"}
+        witness:
+          - {kind: prose, text: "敬禮"}
+          - {kind: prose, text: "呬嚕迦尊。"}
+    answer:
+      pairs:
+        - pair: p01
+          polarity_flip: false
+          slots:
+            - {slot: agent, code: gen, ref_quote: "རྣལ་འབྱོར་པས", wit_quote: "行者"}
+            - {slot: place, code: add, ref_quote: "", wit_quote: "於壇中"}
+            - {slot: instrument, code: sub, ref_quote: "སྤོས", wit_quote: "以花"}
+            - {slot: action, code: ret, ref_quote: "མཆོད་པ་བྱ", wit_quote: "作供養"}
+        - pair: p02
+          polarity_flip: false
+          slots:
+            - {slot: patient, code: lit, ref_quote: "ཧེ་རུ་ཀ", wit_quote: "呬嚕迦"}
+            - {slot: action, code: ret, ref_quote: "ཕྱག་འཚལ", wit_quote: "敬禮"}
