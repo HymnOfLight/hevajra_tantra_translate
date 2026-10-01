@@ -37,7 +37,7 @@ gates:
     min_null_gold: 20
     min_null_precision: 0.70
     min_null_recall: 0.70
-    beat_controls: true                # CI low of Claude must exceed CI high of every control
+    beat_controls: true                # A7: paired window-cluster bootstrap CI_low of F1/kappa (Claude - best control) > 0
     n_boot: 2000
   g2:
     min_replicate_kappa: 0.80

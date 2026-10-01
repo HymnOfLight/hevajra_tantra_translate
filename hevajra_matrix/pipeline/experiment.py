@@ -5,8 +5,10 @@
     score   analysis: H1/H2 with Holm, exploratory H3, refusal bounds, scorer agreement
             with the human codes, and the blind human coding sheet (results.json)
 
-Outputs live under ``<run_dir>/experiments/overattribution/``; they hold model output and
-are never committed. The item bank and human codes are committed under
+Outputs live under ``<run_dir>/experiments/overattribution/`` for the main phase and under
+``.../overattribution/pilot/`` for the pilot, so the phases never overwrite each other and
+the pilot (excluded from the main analysis) is never scored as confirmatory. They hold
+model output and are never committed. The item bank and human codes are committed under
 ``data/experiments/overattribution/``.
 """
 
@@ -22,6 +24,13 @@ from ..experiments.overattribution import analysis, design, lexical, run, score
 from .context import RunContext, StageError, has_api_key, load_texts, make_client, record_stage, require
 
 EXPERIMENT = ("experiments", "overattribution")
+
+
+def phase_dir(phase: str) -> tuple[str, ...]:
+    """Run-directory parts of a phase's outputs (main at the experiment root)."""
+    if phase not in design.PHASES:
+        raise StageError(f"experiment: phase must be one of {design.PHASES}, not {phase!r}")
+    return EXPERIMENT if phase == "main" else (*EXPERIMENT, phase)
 
 
 def _bank(ctx: RunContext) -> Path:
@@ -41,7 +50,7 @@ def experiment_plan(ctx: RunContext, phase: str = "main") -> int:
     params = design.ExperimentParams.from_prereg(ctx.settings.prereg)
     shortfalls = design.bank_shortfalls(design.load_items(_bank(ctx) / "items.csv"), params)
     schedule = _schedule(ctx, phase)
-    write_jsonl(ctx.path(*EXPERIMENT, "trials.jsonl"),
+    write_jsonl(ctx.path(*phase_dir(phase), "trials.jsonl"),
                 ({"trial_id": t.trial_id, "item_id": t.item_id, "arm": t.arm, "condition": t.condition,
                   "evidence": t.evidence, "replicate": t.replicate, "order": t.order} for t in schedule))
     record_stage(ctx, "experiment-plan")
@@ -64,7 +73,7 @@ def experiment_run(ctx: RunContext, phase: str = "main") -> int:
     outcomes = run.run_trials(schedule, run.segment_resolver(texts.units, texts.witness), make_client(ctx), subject_s,
                               scorer_s, design.load_evidence(_bank(ctx) / "evidence.yaml"),
                               lexical.load_motive_lexicon(ctx.data_dir), double)
-    write_jsonl(ctx.path(*EXPERIMENT, "responses.jsonl"), (score.outcome_record(o) for o in outcomes))
+    write_jsonl(ctx.path(*phase_dir(phase), "responses.jsonl"), (score.outcome_record(o) for o in outcomes))
     record_stage(ctx, "experiment-run")
     print(f"experiment run: {len(outcomes)} trials, {sum(1 for o in outcomes if o.measured)} measured")
     return len(outcomes)
@@ -79,23 +88,32 @@ def outcome_from_record(record: dict[str, Any]) -> score.TrialOutcome:
     return score.TrialOutcome(**values)
 
 
-def experiment_score(ctx: RunContext, n_boot: int = 10000) -> dict[str, Any]:
-    """Analyse the responses; write results.json and the blind human coding sheet."""
-    outcomes = [outcome_from_record(r) for r in read_jsonl(require(ctx.path(*EXPERIMENT, "responses.jsonl"),
-                                                                   "experiment overattribution run"))]
+def experiment_score(ctx: RunContext, n_boot: int = 10000, phase: str = "main") -> dict[str, Any]:
+    """Analyse the responses of ``phase``; write results.json, the blind human coding sheet
+    (opaque ids) and its private key ``human_sample.json`` (sheet id -> trial id, stratum,
+    inclusion). A pilot analysis is labelled as such and never confirmatory."""
+    where = phase_dir(phase)
+    outcomes = [outcome_from_record(r) for r in read_jsonl(require(ctx.path(*where, "responses.jsonl"),
+                                                                   f"experiment overattribution run --phase {phase}"))]
     params = analysis.AnalysisParams.from_prereg(ctx.settings.prereg, n_boot=n_boot)
     codes_path = _bank(ctx) / "human_codes.csv"
     human = analysis.load_human_codes(codes_path) if codes_path.is_file() and read_csv(codes_path) else None
     results = analysis.analyse(outcomes, params, human)
     exp = ctx.settings.prereg.get("experiment") or {}
     sample = analysis.human_sample(outcomes, int(exp.get("human_coded_responses", 150)), params.seed)
-    analysis.write_coding_sheet(ctx.path(*EXPERIMENT, "human_coding_sheet.csv"), outcomes, sample)
-    payload = asdict(results)
-    path = ctx.path(*EXPERIMENT, "results.json")
+    analysis.write_coding_sheet(ctx.path(*where, "human_coding_sheet.csv"), outcomes, sample, params.seed)
+    analysis.write_sample(ctx.path(*where, "human_sample.json"), sample, params.seed)   # private key
+    payload = {**asdict(results), "phase": phase}
+    path = ctx.path(*where, "results.json")
     path.write_text(json.dumps(payload, indent=1, sort_keys=True, default=list) + "\n", encoding="utf-8")
     record_stage(ctx, "experiment-score")
+    basis = results.outcome_basis
+    caveat = {"unvalidated": "; unvalidated scorer labels (no human codes): not final (G4)",
+              "two_phase": "; two-phase corrected (scorer kappa below the floor)"}.get(basis, "")
+    print(f"experiment score ({phase}): outcome basis {basis}{caveat}")
     for t in results.tests:
         if t.role in ("confirmatory", "exploratory"):
-            print(f"experiment {t.name} ({t.role}): estimate {t.estimate} [{t.ci_low}, {t.ci_high}], "
+            role = t.role if phase == "main" else f"pilot, {t.role} test not interpreted"
+            print(f"experiment {t.name} ({role}): estimate {t.estimate} [{t.ci_low}, {t.ci_high}], "
                   f"p {t.p_value}, Holm {t.p_holm}")
     return payload

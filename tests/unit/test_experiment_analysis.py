@@ -3,6 +3,7 @@ of planted H1/H2 effects from synthetic FakeClient responses."""
 
 from __future__ import annotations
 
+import json
 import random
 import re
 from pathlib import Path
@@ -24,9 +25,12 @@ from hevajra_matrix.experiments.overattribution.analysis import (
     load_human_codes,
     paired_test,
     scorer_agreement,
+    sheet_id,
     two_sample_test,
     write_coding_sheet,
+    write_sample,
 )
+from hevajra_matrix.experiments.overattribution.human import allocate
 from hevajra_matrix.experiments.overattribution.design import CONDITIONS, Item, load_evidence, trials
 from hevajra_matrix.experiments.overattribution.run import ExperimentTaskSettings, ItemText, run_trials
 from hevajra_matrix.experiments.overattribution.score import (
@@ -109,11 +113,29 @@ def test_refusal_bounds_and_cell_rates():
             rows.append(outcome(item, arm, "EW", "r2", y=None if status == "refused" else False, status=status))
     results = analyse(rows, PARAMS)
     assert results.test("H1").estimate == pytest.approx(1.0)
-    assert results.refusal_bounds["H1"] == (pytest.approx(1.0), pytest.approx(0.5))
+    # Manski: EW refusals coded 1 (lower) or 0 (upper); E0 has none
+    assert results.refusal_bounds["H1"] == (pytest.approx(0.5), pytest.approx(1.0))
+    assert results.refusal_uniform["H1"] == (pytest.approx(1.0), pytest.approx(0.5))
     cell = next(c for c in results.cells if (c.arm, c.condition) == ("sensitive", "EW"))
     assert cell.counts["refused"] == 6 and cell.counts["measured"] == 6 and cell.rates["refused"] == 0.5
     neutral = next(c for c in results.cells if (c.arm, c.condition) == ("neutral", "EW"))
     assert neutral.rates["refused"] == 0.0
+
+
+def test_refusal_bounds_use_opposite_codings_on_the_two_sides_of_a_contrast():
+    """The review's example: half of E0 and of EW refused in the sensitive arm. Uniform
+    codings give (0.20, 0.20); the real range is -0.30 .. 0.70."""
+    rows = []
+    for k in range(10):
+        s, n = f"s{k}", f"n{k}"
+        rows += [outcome(s, "sensitive", "E0", "r1", y=k < 6), outcome(s, "sensitive", "E0", "r2", None, status="refused"),
+                 outcome(s, "sensitive", "EW", "r1", y=k < 2), outcome(s, "sensitive", "EW", "r2", None, status="refused"),
+                 outcome(n, "neutral", "E0", y=False), outcome(n, "neutral", "EW", y=False)]
+    results = analyse(rows, AnalysisParams(n_boot=0, n_perm=10, seed=1))
+    assert results.refusal_uniform["H1"] == (pytest.approx(0.2), pytest.approx(0.2))
+    assert results.refusal_bounds["H1"] == (pytest.approx(-0.3), pytest.approx(0.7))
+    lo, hi = results.refusal_bounds["H2"]                  # E0 sensitive 0.3..0.8 minus neutral 0
+    assert (lo, hi) == (pytest.approx(0.3), pytest.approx(0.8))
 
 
 def test_not_estimable_with_too_few_items():
@@ -185,11 +207,43 @@ def test_human_sample_is_stratified_blind_and_seeded(tmp_path):
     assert human_sample(rows, 36, seed=4) == sample
     assert all(0 < f <= 1 for f in sample.inclusion.values())
     path = tmp_path / "sheet.csv"
-    write_coding_sheet(path, rows, sample)
+    write_coding_sheet(path, rows, sample, seed=4)
     sheet = read_csv(path)
-    assert [r["response_id"] for r in sheet] == list(sample.response_ids)
+    assert [r["response_id"] for r in sheet] == [sheet_id(t, 4) for t in sample.response_ids]
     assert set(sheet[0]) == {"response_id", "explanation", *HUMAN_COLUMNS[1:]}
     assert all(r["coder"] == "" for r in sheet)
+    # blind: no item, condition or replicate on the sheet
+    for r in sheet:
+        assert ":" not in r["response_id"] and not any(c in r["response_id"] for c in ("E0", "EP", "EW"))
+    write_sample(tmp_path / "key.json", sample, seed=4)
+    key = json.loads((tmp_path / "key.json").read_text("utf-8"))
+    assert {r["sheet_id"]: r["trial_id"] for r in key["responses"]} == {sheet_id(t, 4): t for t in sample.response_ids}
+
+
+def test_sheet_ids_resolve_back_to_trials_in_the_analysis(tmp_path):
+    rows = [outcome(f"s{k}", "sensitive", "E0", y=k % 2 == 0) for k in range(10)]
+    codes = [HumanCode(sheet_id(o.trial_id, PARAMS.seed), "consensus",
+                       Coding({**{c: "not_mentioned" for c in SCORER_CLASSES},
+                               "content_motive": "asserted" if o.y_over else "rejected"}, "none", False))
+             for o in rows]
+    results = analyse(rows, PARAMS, codes)
+    assert results.scorer.n == 10 and results.scorer.kappa_y_over == pytest.approx(1.0)
+    assert results.outcome_basis == "scorer"
+    with pytest.raises(AnalysisError, match="unknown response ids"):
+        analyse(rows, PARAMS, [HumanCode("Rnope", "A", codes[0].coding)])
+
+
+def test_allocation_never_falls_short_of_n():
+    assert sum(allocate({"a": 20, "b": 1, "c": 25, "d": 28}, 63).values()) == 63
+    rng = random.Random(0)
+    for _ in range(500):
+        sizes = {f"s{i}": rng.randint(1, 30) for i in range(rng.randint(1, 12))}
+        n = rng.randint(0, sum(sizes.values()) + 5)
+        alloc = allocate(sizes, n)
+        assert sum(alloc.values()) == min(n, sum(sizes.values()))
+        assert all(0 <= alloc[s] <= sizes[s] for s in sizes)
+        if n >= len(sizes):
+            assert all(alloc[s] >= 1 for s in sizes)
 
 
 # --------------------------------------------------------------------------- planted effects, end to end
@@ -263,3 +317,35 @@ def test_no_planted_effect_gives_no_confirmatory_finding():
     for name in ("H1", "H2"):
         t = results.test(name)
         assert t.ci_low < 0 < t.ci_high and t.p_holm > 0.05, name
+
+
+def test_low_scorer_kappa_switches_h1_h2_to_two_phase_corrected_outcomes():
+    """The scorer over-calls Y_over in EW; human codes on a sample reveal it. Below the G4
+    kappa, H1/H2 are re-estimated from the corrected outcomes, not the scorer labels."""
+    rows, truth = [], {}
+    for k in range(40):
+        for arm in ("sensitive", "neutral"):
+            item = f"{arm[0]}{k}"
+            for cond in CONDITIONS:
+                true_y = arm == "sensitive" and cond == "E0" and k % 2 == 0
+                scorer_y = true_y or (cond == "EW" and k % 4 == 1)       # scorer false positives in EW
+                o = outcome(item, arm, cond, y=scorer_y)
+                rows.append(o)
+                truth[o.trial_id] = true_y
+    params = AnalysisParams(n_boot=200, n_perm=200, seed=3, n_draws=200)
+    sample = human_sample(rows, 120, seed=params.seed)
+    def code(tid: str) -> HumanCode:
+        stances = {c: "not_mentioned" for c in SCORER_CLASSES}
+        stances["content_motive"] = "asserted" if truth[tid] else "rejected"
+        return HumanCode(sheet_id(tid, params.seed), "consensus", Coding(stances, "none", False))
+
+    results = analyse(rows, params, [code(t) for t in sample.response_ids])
+    assert results.scorer.kappa_y_over < params.min_scorer_kappa and results.outcome_basis == "two_phase"
+    raw, h1 = results.test("H1[scorer]"), results.test("H1")
+    assert raw.role == "sensitivity" and h1.role == "confirmatory" and h1.p_holm is not None
+    assert raw.estimate == pytest.approx(0.5 - 0.25)                    # biased by the EW false positives
+    assert h1.estimate == pytest.approx(0.5, abs=0.08)                  # corrected towards the truth
+    assert h1.ci_low is not None and h1.ci_low <= h1.estimate <= h1.ci_high
+    assert results.test("H2[scorer]").role == "sensitivity"
+    no_codes = analyse(rows, params)
+    assert no_codes.outcome_basis == "unvalidated" and no_codes.test("H1").estimate == pytest.approx(raw.estimate)

@@ -68,8 +68,18 @@ bo:
     - {form: སྟོང, value: 1000}
     - {form: ཁྲི, value: 10000}
     - {form: འབུམ, value: 100000}
+    - {form: བྱེ་བ, value: 10000000}   # koti; the verb "to split" is excluded below
   teen_prefixes: [བཅུ, བཅོ]     # "ten"; with a following unit 11-19, alone 10
   connectors: [རྩ, རྩེ, ར, སོ, ཞེ, ང, རེ, དོན, གྱ, གོ]   # tens connectors (21-29 ... 91-99)
+  # Case and clause particles written inside the last syllable of a vowel-final numeral
+  # (instr. -s, gen. -'i, term. -r, final -'o, -'am, -'ang): 24 + instr., 15 + gen., 5 + term.
+  # (D417/418: 17 fused numeral forms). A fused particle ends the numeral.
+  fused_particles: [ས, འི, ར, འོ, འམ, འང]
+  # "X phrag Y" = X * Y for a base X >= 100 (100,000 phrag 7 = 700,000; D417:13b.5.1).
+  # "X phrag" alone ("thousands") stays X.
+  multipliers: [ཕྲག]
+  # "half": a numeral followed by it is not a count ("ten half" = 5, D417:6b.7.8).
+  fractions: [ཕྱེད]
   exclusions:
     # The first syllable of "emptiness" / "empty" is spelled like 1000. D417/418 hits:
     # stong pa 6, stong pas 4, stong pa'i 3, stong ba'i 1, stong nyid 1; with these
@@ -90,6 +100,7 @@ bo:
     - བརྒྱ་བྱིན      # Indra ("hundred sacrifices"; D417/418: 1)
     - གཉིས་མེད      # non-dual (D417/418: 2)
     - གཉིས་སུ་མེད    # non-dual (D417/418: 1)
+    - བྱེ་བར          # "split" (verb + terminative), not koti (D417/418: 1, "not split")
 
 sa:
   # Word-initial IAST stems; the longest stem that begins a word wins, so sandhi forms

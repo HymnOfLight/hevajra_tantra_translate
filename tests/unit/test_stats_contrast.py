@@ -150,3 +150,19 @@ def test_misclassification_table():
     assert rows["chapter", "I.2"].rate == 0.0
     assert (rows["tertile", "t2"].n, rows["tertile", "t2"].errors) == (2, 0)
     assert rows["tertile", "t1"].rate == 1.0            # the gold verdict is not in the sample
+
+
+
+def test_misclassification_table_keeps_the_machine_polarity_flip():
+    """A machine paraphrase + flip is a machine positive (pos:reversal:*), not a machine negative."""
+    def v(unit, final, flip, stratum="pos:reversal:other", machine_flip=False):
+        return Verdict(batch_id="b", item_id=unit, task="verify", unit_id=unit, fingerprint="f", stratum=stratum,
+                       machine_relation="paraphrase", machine_polarity_flip=machine_flip,
+                       blind_relation=final, final_relation=final, polarity_flip=flip)
+    agree = ct.misclassification_table([v("a", "reversal", True)], {"a": "I.1"}, {"a": "t1"})
+    assert all(r.errors == 0 for r in agree)                  # human confirms the machine deviation
+    miss = ct.misclassification_table([v("b", "equivalent", False)], {"b": "I.1"}, {"b": "t1"})
+    assert all(r.errors == 1 for r in miss)                   # human says no deviation: a machine error
+    recorded = ct.misclassification_table([v("c", "reversal", True, stratum="", machine_flip=True)],
+                                          {"c": "I.1"}, {"c": "t1"})
+    assert all(r.errors == 0 for r in recorded)

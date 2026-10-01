@@ -60,7 +60,8 @@ from .verdicts import (
 
 BLIND_COLUMNS = ("item_id", "task", "unit_id", "fingerprint", "locus", "ref_text", "zh_context_loci",
                  "zh_context", "blind_relation", "blind_wit_loci", "blind_flags", "note")
-REVEAL_COLUMNS = BLIND_COLUMNS + ("machine_relation", "machine_wit_loci", "machine_quotes", "machine_grade",
+REVEAL_COLUMNS = BLIND_COLUMNS + ("machine_relation", "machine_polarity_flip", "machine_wit_loci", "machine_quotes",
+                                  "machine_grade",
                                   "final_relation", "final_wit_loci", "final_flags", "revised_reason")
 TEXT_COLUMNS = frozenset({"text", "ref_text", "zh_context", "context_before", "context_after", "machine_quotes"})
 SHEET_TASKS = ("gold", "verify", "audit", "resolve", "reveal", "topics", "topics_second")
@@ -206,7 +207,8 @@ def _reveal_sheet(items: Sequence[ReviewItem], out: Path, batch: str, index: Map
         row = _blind_row(item, index, ref, wit, cells)
         blind_ids, blind_flags = " ".join(v.blind_wit_ids), format_flags(v.flags)
         row.update(blind_relation=v.blind_relation, blind_wit_loci=blind_ids, blind_flags=blind_flags, note=v.note,
-                   machine_relation=_machine_relation(cell), machine_wit_loci=" ".join(cell.wit_ids) if cell else "",
+                   machine_relation=_machine_relation(cell),
+                   machine_polarity_flip="1" if cell is not None and cell.polarity_flip else "0", machine_wit_loci=" ".join(cell.wit_ids) if cell else "",
                    machine_quotes=_quotes(links.get(item.unit_id)), machine_grade=cell.grade.value if cell else "",
                    final_relation=v.blind_relation, final_wit_loci=blind_ids, final_flags=blind_flags)
         rows.append(row)
@@ -375,6 +377,7 @@ def _import_reveal(rows: Sequence[Mapping[str, str]], blind: Sequence[Verdict], 
             continue
         machine = row["machine_relation"].strip()
         v = replace(v, machine_relation=machine, machine_status=_machine_status(machine),
+                    machine_polarity_flip=row.get("machine_polarity_flip", "").strip() in {"1", "true", "True"},
                     instrument_digest=instrument_digest or v.instrument_digest)
         value = row["final_relation"].strip()
         if value:

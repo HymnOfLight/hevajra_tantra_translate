@@ -136,6 +136,7 @@ def test_reveal_sheet(tmp_path: Path):
     assert (row["blind_relation"], row["final_relation"], row["final_wit_loci"]) == ("abridged", "abridged", WITS[1].id)
     assert (row["machine_relation"], row["machine_grade"], row["machine_wit_loci"]) == ("equivalent", "B", WITS[1].id)
     assert row["machine_quotes"] == "ref: rq | wit: wq"
+    assert row["machine_polarity_flip"] == "0"
     with pytest.raises(ValueError, match="no reveal"):
         sheets.export([make_item("resolve", REFS[1].id)], "reveal", tmp_path, SEGMENTS, cells, blind=blind)
     with pytest.raises(ValueError, match="no blind verdict"):
@@ -234,6 +235,12 @@ def test_import_reveal(tmp_path: Path):
     assert (changed.blind_relation, changed.final_relation, changed.final_date) == ("abridged", "equivalent", "2026-10-09")
     assert changed.note == "revised: missed the second clause"
     assert (changed.machine_relation, changed.machine_status, changed.instrument_digest) == ("equivalent", "PRESENT", "d" * 64)
+    assert changed.machine_polarity_flip is False
+    rows[1]["machine_polarity_flip"] = "1"                  # the machine's polarity call survives the round trip
+    write_rows(path, header, rows)
+    flipped = sheets.import_(path, "reveal", params=PARAMS, blind=blind)[1]
+    assert flipped.machine_polarity_flip is True
+    rows[1]["machine_polarity_flip"] = "0"
     assert (kept.final_relation, kept.blind_date, kept.stratum) == ("abridged", "2026-10-01", "pos:x:other")
     rows[0]["revised_reason"] = ""
     write_rows(path, header, rows)

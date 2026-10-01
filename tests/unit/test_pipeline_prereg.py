@@ -91,3 +91,12 @@ def test_freezing_makes_gate_g2_accept_the_digest(tmp_path: Path) -> None:
     assert main(["evaluate", "--offline", "--root", str(root), "--run-dir", str(run)]) == 0
     reasons = json.loads((run / "evaluation" / "gate.json").read_text(encoding="utf-8"))["reasons"]
     assert "G2: the instrument digest is not the preregistered one" not in reasons
+
+
+def test_beat_controls_comment_states_the_a7_rule() -> None:
+    """The prose in the frozen file must match gate.check_g1 (A7), not the old CI non-overlap."""
+    line = next(ln for ln in (REPO / "config" / "preregistration.yaml").read_text(encoding="utf-8")
+                .splitlines() if ln.strip().startswith("beat_controls:"))
+    comment = line.split("#", 1)[1]
+    assert "A7" in comment and "paired" in comment and "best control" in comment and "> 0" in comment
+    assert "CI high" not in comment and "every control" not in comment

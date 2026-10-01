@@ -17,8 +17,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
 
-from ..core.types import REASON_REFUSED, Estimate, Relation, Status
-from .resample import cohen_kappa, f1, positive_agreement, ratio, window_bootstrap
+from ..core.types import REASON_REFUSED, REASON_SUBSTITUTED_MODEL, Estimate, Relation, Status
+from .resample import cohen_kappa, f1, percentile_interval, positive_agreement, ratio, resample_windows
 
 STATUS_CLASSES = (Status.PRESENT.value, Status.PARTIAL.value, Status.ABSENT.value)
 
@@ -182,7 +182,11 @@ def invalid_handle_rate(s: AlignmentScores) -> float | None:
 
 
 def _refused(u: UnitScore) -> bool:
-    return u.pred_relation is None and (u.reason or "").split(":")[0] == REASON_REFUSED
+    """A refusal by the requested model. Server-side fallback only fires when the requested
+    model declines, so a ``substituted_model`` unit is a requested-model refusal too (its
+    answer stays a reviewer hint and is never measured; impl_decisions 4)."""
+    head = (u.reason or "").split(":")[0]
+    return u.pred_relation is None and head in (REASON_REFUSED, REASON_SUBSTITUTED_MODEL)
 
 
 def refusal_rate(s: AlignmentScores) -> float | None:
@@ -205,16 +209,30 @@ METRICS: Mapping[str, Callable[[AlignmentScores], float | None]] = {
 }
 
 
+BREAKDOWNS = ("status_agreement", "dany_agreement", "relation_recall", "refusal_rate")
+# keyed metrics of ``AlignmentScores.metrics``: "<breakdown>:<class, relation or group>"
+
+
 def interval_estimates(s: AlignmentScores, n_boot: int, seed: int,
-                       names: Sequence[str] = tuple(METRICS)) -> dict[str, Estimate]:
-    """Each named metric with its 95% window-cluster bootstrap interval."""
-    windows = s.windows()
+                       names: Sequence[str] | None = None) -> dict[str, Estimate]:
+    """Each named metric with its 95% window-cluster bootstrap interval (synthesis 5.2).
+
+    ``names`` defaults to every key of ``s.metrics()``: the scalar ``METRICS`` and the keyed
+    breakdowns (per-class agreement, per-relation recall, refusal by topic group), all on the
+    same resampled windows. A breakdown key absent from a replicate (its relation or group
+    not drawn) is undefined there and dropped, like any undefined replicate value.
+    """
+    full = s.metrics()
+    keys = tuple(full) if names is None else tuple(names)
+    for name in keys:
+        if name not in METRICS and name.split(":", 1)[0] not in BREAKDOWNS:
+            raise KeyError(f"unknown metric {name!r}")
+    replicates = [s.on_windows(ws).metrics() for ws in resample_windows(s.windows(), n_boot, seed)]
     out = {}
-    for name in names:
-        fn = METRICS[name]
-        point, lo, hi = window_bootstrap(lambda ws, fn=fn: fn(s.on_windows(ws)), windows, n_boot, seed)
-        out[name] = Estimate(name=name, point=point, lo=lo, hi=hi, n=len(s.units), scope=f"gold:{s.gold_set}",
-                             sources=(s.source,))
+    for name in keys:
+        lo, hi = percentile_interval(r.get(name) for r in replicates)
+        out[name] = Estimate(name=name, point=full.get(name), lo=lo, hi=hi, n=len(s.units),
+                             scope=f"gold:{s.gold_set}", sources=(s.source,))
     return out
 
 

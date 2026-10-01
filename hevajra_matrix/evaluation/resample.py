@@ -80,7 +80,8 @@ def resample_windows(windows: Sequence[T], n_boot: int, seed: int) -> list[list[
     return [rng.choices(ordered, k=len(ordered)) for _ in range(n_boot)]
 
 
-def _interval(values: Iterable[float | None]) -> tuple[float | None, float | None]:
+def percentile_interval(values: Iterable[float | None]) -> tuple[float | None, float | None]:
+    """The 95% percentile interval of replicate values, undefined (None) replicates dropped."""
     kept = [v for v in values if v is not None]
     if not kept:
         return None, None
@@ -96,7 +97,7 @@ def window_bootstrap(metric_fn: Callable[[Sequence[T]], float | None], windows: 
     the metric computed on the pooled units of those windows.
     """
     point = metric_fn(list(windows))
-    lo, hi = _interval(metric_fn(sample) for sample in resample_windows(windows, n_boot, seed))
+    lo, hi = percentile_interval(metric_fn(sample) for sample in resample_windows(windows, n_boot, seed))
     return point, lo, hi
 
 

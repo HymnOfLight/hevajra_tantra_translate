@@ -3,8 +3,10 @@
     results = analyse(outcomes, AnalysisParams.from_prereg(settings.prereg), human_codes)
 
 The item is the unit of analysis: replicates are averaged within item x condition first.
-Refused trials are excluded from the primary analysis; ``refusal_bounds`` recomputes the
-H1 and H2 estimates with refusals coded 0 and coded 1. Substituted-model, truncated,
+Refused trials are excluded from the primary analysis. ``refusal_bounds`` are Manski bounds
+per contrast: refusals coded 0 on the minuend side and 1 on the subtrahend side (lower bound),
+and the reverse (upper bound). ``refusal_uniform`` codes every refusal 0, then every refusal
+1, in all cells (a sensitivity analysis, not a bound for a difference). Substituted-model, truncated,
 invalid and scorer-unverified trials never enter an estimate; they are counted per cell.
 
 Hypotheses (one-sided, pre-registered; Holm over H1-H2)
@@ -19,33 +21,50 @@ Sensitivity: H1 and H2 without trials whose subject disputed the premise
 (``premise_ok`` false), and on ``real`` omissions only.
 
 Scorer validity (gate G4): Cohen's kappa of scorer vs human consensus on Y_over. When it
-is below ``min_scorer_kappa`` the scorer labels are NOT primary and the outcomes must be
-two-phase corrected (strata condition x arm x scorer label) with ``stats.twophase``; this
-module reports the flag and leaves the correction to that module.
+is below ``min_scorer_kappa`` the scorer labels are NOT primary and H1/H2 are two-phase
+corrected (``two_phase``; strata condition x arm x scorer Y_over, the strata of the human
+sample): human-coded trials keep their consensus Y_over, every other measured trial of
+stratum h has Y_over ~ Bernoulli(p_h), p_h ~ Beta(x_h + 1/2, n_h - x_h + 1/2) (the Jeffreys
+prior ``stats.twophase`` uses; drawn here with ``random.betavariate`` so the experiment
+stays independent of the matrix packages). The corrected H1/H2 become the confirmatory tests (estimate and
+permutation p on the posterior-mean outcomes; CI over imputation draws x item bootstrap) and
+the scorer-label tests are kept as ``H1[scorer]``/``H2[scorer]`` sensitivity rows.
+``outcome_basis`` records which basis H1/H2 use: "scorer" (kappa passed), "two_phase", or
+"unvalidated" (no human codes yet: the scorer labels are not validated and E6 is not final).
 """
 
 from __future__ import annotations
 
 import random
 from collections import Counter, defaultdict
-from dataclasses import dataclass, replace
-from pathlib import Path
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Literal, Mapping, Sequence
 
-from ...core.io import read_csv, write_csv
 from ...topics.labels import cohen_kappa
-from .score import SCORER_CLASSES, Coding, TrialOutcome, coding_error
+from .human import (  # noqa: F401  (re-exported: the human-coding API lives in .human)
+    CONSENSUS,
+    HUMAN_COLUMNS,
+    AnalysisError,
+    HumanCode,
+    HumanSample,
+    ScorerAgreement,
+    consensus_codes,
+    human_sample,
+    load_human_codes,
+    resolve_codes,
+    scorer_agreement,
+    sheet_id,
+    stratum,
+    write_coding_sheet,
+    write_sample,
+)
+from .score import TrialOutcome
 
-RefusalCoding = Literal["exclude", "as0", "as1"]
+RefusalCoding = Literal["exclude", "as0", "as1"] | Callable[[TrialOutcome], float]
 Keep = Callable[[TrialOutcome], bool]
-HUMAN_COLUMNS: tuple[str, ...] = ("response_id", "coder", *SCORER_CLASSES, "primary", "disputes_premise", "date", "note")
-CONSENSUS = "consensus"
+OutcomeBasis = Literal["scorer", "two_phase", "unvalidated"]
 SCOPE = ("results are specific to the requested model at the campaign date; responses from a substituted "
          "model are excluded; evidence lines are synthetic and outputs are never philological evidence")
-
-
-class AnalysisError(ValueError):
-    """Invalid human codes or analysis parameters."""
 
 
 @dataclass(frozen=True)
@@ -54,6 +73,7 @@ class AnalysisParams:
     n_perm: int = 10000
     seed: int = 0
     min_scorer_kappa: float = 0.80
+    n_draws: int = 2000                # two-phase imputation draws (each with one item bootstrap)
 
     @classmethod
     def from_prereg(cls, prereg: Mapping[str, Any], n_boot: int = 10000) -> "AnalysisParams":
@@ -91,25 +111,15 @@ class CellSummary:
 
 
 @dataclass(frozen=True)
-class ScorerAgreement:
-    kappa_y_over: float | None
-    kappa_primary: float | None
-    n: int
-    human_human_kappa_y_over: float | None
-    n_human_pairs: int
-    repeat_kappa_primary: float | None
-    n_repeat: int
-    scorer_primary: bool               # kappa_y_over >= min_scorer_kappa (gate G4)
-
-
-@dataclass(frozen=True)
 class ExperimentResults:
     tests: tuple[TestResult, ...]
-    refusal_bounds: Mapping[str, tuple[float | None, float | None]]   # test -> (as 0, as 1)
+    refusal_bounds: Mapping[str, tuple[float | None, float | None]]   # test -> Manski (lo, hi)
     cells: tuple[CellSummary, ...]
     scorer: ScorerAgreement | None
     lexical_kappa_y_any: float | None
     served_models: tuple[str, ...]
+    refusal_uniform: Mapping[str, tuple[float | None, float | None]] = field(default_factory=dict)  # (as 0, as 1)
+    outcome_basis: OutcomeBasis = "unvalidated"   # what H1/H2 are computed on (gate G4)
     scope: str = SCOPE
 
     def test(self, name: str) -> TestResult:
@@ -179,7 +189,8 @@ def item_means(outcomes: Iterable[TrialOutcome], outcome: str = "y_over", refusa
         if keep is not None and not keep(o):
             continue
         if o.refused and refusals != "exclude":
-            value: float | None = 1.0 if refusals == "as1" else 0.0
+            value: float | None = (refusals(o) if callable(refusals)
+                                   else 1.0 if refusals == "as1" else 0.0)
         else:
             y = getattr(o, outcome) if o.measured else None
             value = None if y is None else float(y)
@@ -269,117 +280,114 @@ def cell_summaries(outcomes: Sequence[TrialOutcome]) -> tuple[CellSummary, ...]:
     return tuple(cells)
 
 
-# --------------------------------------------------------------------------- human codes
-@dataclass(frozen=True)
-class HumanCode:
-    response_id: str
-    coder: str
-    coding: Coding
+# --------------------------------------------------------------------------- everything
+# --------------------------------------------------------------------------- refusal bounds
+# contrast -> (minuend side, subtrahend side): a refusal on the minuend side coded 0 and on the
+# subtrahend side coded 1 gives the smallest estimate, the reverse the largest.
+_SIDES: dict[str, tuple[Keep, Keep]] = {
+    "H1": (lambda o: o.condition == "E0", lambda o: o.condition == "EW"),
+    "H2": (lambda o: o.arm == "sensitive", lambda o: o.arm == "neutral"),
+}
 
 
-def load_human_codes(path: Path) -> list[HumanCode]:
-    """Read ``human_codes.csv`` (one row per response and coder; coder "consensus" for an
-    adjudicated code). Raises ``AnalysisError`` listing invalid rows."""
-    codes, errors = [], []
-    for line, row in enumerate(read_csv(path), start=2):
-        cell = {k: (v or "").strip() for k, v in row.items() if k}
-        stances = {c: cell.get(c, "") for c in SCORER_CLASSES}
-        problem = coding_error(stances, cell.get("primary", ""))
-        flag = cell.get("disputes_premise", "").lower()
-        if flag not in ("true", "false", "1", "0"):
-            problem = problem or f"disputes_premise must be true or false, not {flag!r}"
-        if not cell.get("response_id") or not cell.get("coder"):
-            problem = problem or "response_id and coder are required"
-        if problem:
-            errors.append(f"line {line}: {problem}")
-            continue
-        codes.append(HumanCode(cell["response_id"], cell["coder"],
-                               Coding(stances, cell["primary"], flag in ("true", "1"))))
-    if errors:
-        raise AnalysisError(f"{path}: " + "; ".join(errors[:20]))
-    return codes
+def refusal_bounds(outcomes: Sequence[TrialOutcome], params: AnalysisParams,
+                   ) -> tuple[dict[str, tuple[float | None, float | None]], dict[str, tuple[float | None, float | None]]]:
+    """(Manski bounds, uniform codings) of H1 and H2 over every coding of the refusals."""
+    def estimate(name: str, coding: RefusalCoding) -> float | None:
+        return run_tests(outcomes, params, refusals=coding, names=(name,), n_boot=0)[0].estimate
+
+    bounds, uniform = {}, {}
+    for name, (minuend, _) in _SIDES.items():
+        lo = estimate(name, lambda o, m=minuend: 0.0 if m(o) else 1.0)
+        hi = estimate(name, lambda o, m=minuend: 1.0 if m(o) else 0.0)
+        bounds[name] = (lo, hi)
+        uniform[name] = (estimate(name, "as0"), estimate(name, "as1"))
+    return bounds, uniform
 
 
-def consensus_codes(codes: Iterable[HumanCode]) -> dict[str, Coding]:
-    """response id -> the consensus coding: the "consensus" row when present, else the
-    coders' coding when all coders agree on Y_over and primary; otherwise unresolved (absent)."""
-    by_id: dict[str, list[HumanCode]] = defaultdict(list)
-    for c in codes:
-        by_id[c.response_id].append(c)
-    out = {}
-    for rid, rows in by_id.items():
-        adjudicated = [r for r in rows if r.coder == CONSENSUS]
-        if adjudicated:
-            out[rid] = adjudicated[-1].coding
-        elif len({(r.coding.y_over, r.coding.primary) for r in rows}) == 1:
-            out[rid] = rows[0].coding
+# --------------------------------------------------------------------------- two-phase correction
+def _with_y(outcomes: Sequence[TrialOutcome], y: Mapping[str, float]) -> list[TrialOutcome]:
+    return [replace(o, y_over=y[o.trial_id]) if o.trial_id in y else o for o in outcomes]  # type: ignore[arg-type]
+
+
+def _phase2(outcomes: Sequence[TrialOutcome], human: Sequence[HumanCode],
+            ) -> tuple[dict[str, float], dict[str, list[str]], dict[str, tuple[float, float]]]:
+    """(human Y_over per coded trial, uncoded trials per stratum, Beta parameters per stratum)."""
+    consensus = consensus_codes(human)
+    measured = [o for o in outcomes if o.measured]
+    known = {o.trial_id: float(consensus[o.trial_id].y_over) for o in measured if o.trial_id in consensus}
+    pools: dict[str, list[str]] = defaultdict(list)
+    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])     # stratum -> [Y_over, not Y_over]
+    for o in measured:
+        if o.trial_id in known:
+            counts[stratum(o)][0 if known[o.trial_id] else 1] += 1
+        else:
+            pools[stratum(o)].append(o.trial_id)
+    return known, dict(pools), {h: (counts[h][0] + 0.5, counts[h][1] + 0.5) for h in pools}
+
+
+def _posterior_mean_y(outcomes: Sequence[TrialOutcome], human: Sequence[HumanCode]) -> dict[str, float]:
+    known, pools, alpha = _phase2(outcomes, human)
+    return {**known, **{t: alpha[h][0] / sum(alpha[h]) for h, ids in pools.items() for t in ids}}
+
+
+def two_phase(outcomes: Sequence[TrialOutcome], human: Sequence[HumanCode], params: AnalysisParams,
+              names: Sequence[str] = ("H1", "H2")) -> list[TestResult]:
+    """H1/H2 on two-phase-corrected Y_over (see the module docstring); ``human`` keyed by trial id."""
+    known, pools, alpha = _phase2(outcomes, human)
+    tests = run_tests(_with_y(outcomes, _posterior_mean_y(outcomes, human)), params, names=names)
+    if not params.n_boot or not params.n_draws:
+        return [replace(t, ci_low=None, ci_high=None) for t in tests]
+    rng = random.Random(f"{params.seed}:twophase")
+    draws: dict[str, list[float]] = defaultdict(list)
+    arm_of = {o.item_id: o.arm for o in outcomes}
+    ew_of = {o.item_id: o.evidence for o in outcomes if o.condition == "EW"}
+    cells: dict[tuple[str, str], list[str]] = defaultdict(list)       # (item, condition) -> measured trials
+    for o in outcomes:
+        if o.measured:
+            cells[(o.item_id, o.condition)].append(o.trial_id)
+    items = sorted(arm_of)
+    for _ in range(params.n_draws):
+        y = dict(known)
+        for h in sorted(pools):
+            p = rng.betavariate(*alpha[h])
+            y.update({t: float(rng.random() < p) for t in pools[h]})
+        means = {key: _mean([y[t] for t in ids]) for key, ids in cells.items()}
+        weight = Counter(rng.choice(items) for _ in items)              # one item bootstrap per draw
+        boot = {(f"{i}#{k}", c): m for (i, c), m in means.items() for k in range(weight.get(i, 0))}
+        b_arm = {f"{i}#{k}": arm_of[i] for i in weight for k in range(weight[i])}
+        b_ew = {f"{i}#{k}": ew_of[i] for i in weight if i in ew_of for k in range(weight[i])}
+        contrasts = _contrasts(boot, b_arm, b_ew)
+        for name in names:
+            paired, a, b = contrasts[name]
+            if len(a) >= 2 and (paired or len(b) >= 2):
+                draws[name].append(_mean(a) - (0.0 if paired else _mean(b)))
+    out = []
+    for t in tests:
+        xs = sorted(draws.get(t.name, ()))
+        out.append(replace(t, ci_low=_quantile(xs, 0.025) if xs else None, ci_high=_quantile(xs, 0.975) if xs else None))
     return out
-
-
-def scorer_agreement(outcomes: Sequence[TrialOutcome], codes: Sequence[HumanCode],
-                     min_kappa: float) -> ScorerAgreement:
-    """Scorer vs human consensus, human vs human, and scorer vs its own repeat."""
-    consensus = consensus_codes(codes)
-    pairs = [(o, consensus[o.trial_id]) for o in outcomes if o.measured and o.trial_id in consensus]
-    k_over = cohen_kappa([(o.y_over, c.y_over) for o, c in pairs])
-    coders: dict[str, dict[str, Coding]] = defaultdict(dict)
-    for c in codes:
-        if c.coder != CONSENSUS:
-            coders[c.response_id].setdefault(c.coder, c.coding)
-    hh = [tuple(v.y_over for v in list(by.values())[:2]) for by in coders.values() if len(by) >= 2]
-    repeats = [(o.primary, o.repeat_primary) for o in outcomes if o.measured and o.repeat_primary is not None]
-    return ScorerAgreement(
-        kappa_y_over=k_over, kappa_primary=cohen_kappa([(o.primary, c.primary) for o, c in pairs]), n=len(pairs),
-        human_human_kappa_y_over=cohen_kappa(hh), n_human_pairs=len(hh),  # type: ignore[arg-type]
-        repeat_kappa_primary=cohen_kappa(repeats), n_repeat=len(repeats),
-        scorer_primary=k_over is not None and k_over >= min_kappa)
-
-
-@dataclass(frozen=True)
-class HumanSample:
-    response_ids: tuple[str, ...]            # in a seeded random order, blind to condition
-    stratum_of: Mapping[str, str]            # every measured response -> stratum
-    inclusion: Mapping[str, float]           # stratum -> sampling fraction (for two-phase weights)
-
-
-def human_sample(outcomes: Sequence[TrialOutcome], n: int, seed: int) -> HumanSample:
-    """Responses for the two human coders, stratified by condition x arm x scorer primary.
-
-    One response per non-empty stratum first (when ``n`` allows), the rest proportionally
-    (largest remainder), drawn at random within each stratum.
-    """
-    stratum_of = {o.trial_id: f"{o.condition}|{o.arm}|{o.primary}" for o in outcomes if o.measured}
-    strata: dict[str, list[str]] = defaultdict(list)
-    for rid, s in sorted(stratum_of.items()):
-        strata[s].append(rid)
-    n = min(n, len(stratum_of))
-    alloc = {s: (1 if n >= len(strata) else 0) for s in strata}
-    rest, total = n - sum(alloc.values()), len(stratum_of)
-    quotas = {s: rest * len(ids) / total for s, ids in strata.items()}
-    for s in strata:
-        alloc[s] += int(quotas[s])
-    for s in sorted(strata, key=lambda s: (quotas[s] - int(quotas[s]), s), reverse=True)[:n - sum(alloc.values())]:
-        alloc[s] += 1
-    rng = random.Random(f"{seed}:human")
-    chosen = [rid for s in sorted(strata) for rid in rng.sample(strata[s], min(alloc[s], len(strata[s])))]
-    rng.shuffle(chosen)
-    return HumanSample(tuple(chosen), stratum_of,
-                       {s: min(alloc[s], len(ids)) / len(ids) for s, ids in strata.items()})
-
-
-def write_coding_sheet(path: Path, outcomes: Sequence[TrialOutcome], sample: HumanSample) -> None:
-    """Blind sheet for one coder: response id and explanation only, code columns empty.
-    It contains model output, so it is written under ``runs/`` and never committed."""
-    text = {o.trial_id: o.explanation for o in outcomes}
-    columns = ("response_id", "explanation", *HUMAN_COLUMNS[1:])
-    write_csv(path, ({"response_id": rid, "explanation": text[rid]} for rid in sample.response_ids), columns, bom=True)
 
 
 # --------------------------------------------------------------------------- everything
 def analyse(outcomes: Sequence[TrialOutcome], params: AnalysisParams,
             human: Sequence[HumanCode] | None = None) -> ExperimentResults:
-    """All pre-registered estimates, the refusal bounds, cell summaries and scorer checks."""
+    """All pre-registered estimates, the refusal bounds, cell summaries and scorer checks.
+
+    ``human`` may use sheet ids or trial ids (``resolve_codes``). Below the G4 kappa the
+    confirmatory H1/H2 are the two-phase-corrected ones.
+    """
+    human = resolve_codes(human, outcomes, params.seed) if human else None
+    scorer = scorer_agreement(outcomes, human, params.min_scorer_kappa) if human else None
+    basis: OutcomeBasis = "unvalidated" if scorer is None else "scorer" if scorer.scorer_primary else "two_phase"
     tests = run_tests(outcomes, params)
+    basis_outcomes: Sequence[TrialOutcome] = outcomes
+    if basis == "two_phase":
+        assert human is not None
+        corrected = {t.name: t for t in two_phase(outcomes, human, params)}
+        raw = [replace(t, name=f"{t.name}[scorer]", role="sensitivity") for t in tests if t.name in corrected]
+        tests = [corrected.get(t.name, t) for t in tests] + raw
+        basis_outcomes = _with_y(outcomes, _posterior_mean_y(outcomes, human))
     adjusted = holm({t.name: t.p_value for t in tests if t.role == "confirmatory"})
     tests = [replace(t, p_holm=adjusted.get(t.name)) for t in tests]
     sensitivity = {
@@ -387,17 +395,12 @@ def analyse(outcomes: Sequence[TrialOutcome], params: AnalysisParams,
         "real_only": lambda o: o.omission_origin == "real",
     }
     for label, keep in sensitivity.items():
-        for t in run_tests(outcomes, params, keep=keep, names=("H1", "H2")):
+        for t in run_tests(basis_outcomes, params, keep=keep, names=("H1", "H2")):
             tests.append(replace(t, name=f"{t.name}[{label}]", role="sensitivity"))
-    bounds = {}
-    for name in ("H1", "H2"):
-        lo, hi = (run_tests(outcomes, params, refusals=r, names=(name,), n_boot=0)[0].estimate
-                  for r in ("as0", "as1"))
-        bounds[name] = (lo, hi)
+    bounds, uniform = refusal_bounds(basis_outcomes, params)
     measured = [o for o in outcomes if o.measured and o.lexical is not None]
     lexical = cohen_kappa([(o.lexical == "asserted", bool(o.y_any)) for o in measured])
     return ExperimentResults(
-        tests=tuple(tests), refusal_bounds=bounds, cells=cell_summaries(outcomes),
-        scorer=scorer_agreement(outcomes, human, params.min_scorer_kappa) if human else None,
-        lexical_kappa_y_any=lexical,
+        tests=tuple(tests), refusal_bounds=bounds, refusal_uniform=uniform, cells=cell_summaries(outcomes),
+        scorer=scorer, lexical_kappa_y_any=lexical, outcome_basis=basis,
         served_models=tuple(sorted({o.served_model for o in outcomes if o.served_model})))

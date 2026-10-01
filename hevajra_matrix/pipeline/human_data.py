@@ -7,9 +7,10 @@ Committed files live under ``data/annotations/`` (ids and short quotes only); re
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from ..core.ids import orphan_row_id
 from ..core.types import Verdict
@@ -112,3 +113,42 @@ def review_plans(ctx: RunContext) -> list[sampling.ReviewItem]:
 
 def plan_path(ctx: RunContext, batch: str) -> Path:
     return ctx.path("review", f"plan_{batch}.csv")
+
+
+# --------------------------------------------------------------------------- frozen strata
+def strata_path(ctx: RunContext, batch: str) -> Path:
+    """``review/strata_<batch>.json``: every unit's stratum when plan ``batch`` was drawn."""
+    return ctx.path("review", f"strata_{batch}.json")
+
+
+def write_strata_snapshot(ctx: RunContext, batch: str, strata: Mapping[str, str],
+                          items: Iterable[sampling.ReviewItem], topics_complete: bool) -> Path:
+    """Freeze the strata of a plan (synthesis 6.2: strata are fixed at sampling time).
+
+    ``families`` are the stratum prefixes the plan samples (``pos``, ``unresolved`` for a
+    verification plan, ``neg`` for an audit): the snapshot fixes the units of those families.
+    """
+    families = sorted({i.stratum.split(":")[0] for i in items if i.stratum})
+    path = strata_path(ctx, batch)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"families": families, "topics_complete": topics_complete,
+                                "strata": dict(sorted(strata.items()))}, indent=1, sort_keys=True) + "\n",
+                    encoding="utf-8")
+    return path
+
+
+def sampling_strata(ctx: RunContext, current: Mapping[str, str]) -> dict[str, str]:
+    """Unit -> stratum, frozen at sampling time where a plan's snapshot fixes it.
+
+    ``current`` (``sampling.machine_strata`` on today's topic labels) covers the units no
+    snapshot fixes, e.g. machine negatives before the audit is drawn. Without this, a unit
+    whose topic label changed after sampling would fall into a stratum no verdict calibrates.
+    """
+    out = dict(current)
+    review = ctx.path("review")
+    for path in sorted(review.glob("strata_*.json")) if review.is_dir() else []:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        families = set(doc.get("families") or ())
+        out.update({u: s for u, s in (doc.get("strata") or {}).items() if s.split(":")[0] in families})
+    return out
+

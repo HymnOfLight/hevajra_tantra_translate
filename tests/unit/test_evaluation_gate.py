@@ -229,11 +229,29 @@ def test_g3_unresolved_units_need_a_narrow_manski_interval():
     assert not evaluate(calibration=dataclasses.replace(CALIBRATION, achieved={"pos:absent": 11})).passed["G3"]
 
 
+def test_g3_fails_on_a_stratum_without_phase2_sample():
+    """Strata no plan covers (e.g. topic labels changed after sampling) would be imputed from the prior."""
+    c = dataclasses.replace(CALIBRATION, uncalibrated={"neg:B:sensitive": 20})
+    report = evaluate(calibration=c)
+    assert not report.passed["G3"] and report.level == 1
+    assert any("neg:B:sensitive has 20 unverified" in r for r in report.reasons)
+
+
+def test_gates_read_sentinels_through_blocking_failures(monkeypatch):
+    """The documented blocking rule (sentinels.blocking_failures) is the one the gates apply."""
+    failing = SentinelResult("S9", "note_kind", "final", "final", "provisional", False, True)
+    monkeypatch.setattr(GT, "blocking_failures", lambda results: [failing])
+    report = evaluate()
+    assert not report.passed["G0"] and any("verified sentinel S9 failed" in r for r in report.reasons)
+
+
 def test_g4_not_estimable():
     report = evaluate(calibration=GT.Calibration())
     assert set(report.not_estimable) == {"E3", "E4"}
     assert "topic labels incomplete" in report.not_estimable["E4"]
-    assert any("E6" in r for r in report.reasons)
+    assert any("E6" in r and "unvalidated" in r for r in report.reasons)
+    low = evaluate(calibration=dataclasses.replace(GT.Calibration(), scorer_kappa=0.6))
+    assert any("E6" in r and "two-phase" in r for r in low.reasons)
 
 
 # --------------------------------------------------------------------------- confirmatory flag
@@ -259,7 +277,6 @@ def test_unknown_gate_keys_are_refused():
 # --------------------------------------------------------------------------- ledger
 def test_ledger_is_append_only_and_counted(tmp_path: Path):
     path = tmp_path / "ledger" / "test_evaluations.jsonl"
-    assert GT.ledger_count(path, DIGEST) == 0
     assert GT.ledger_summary(path, DIGEST, PREREG_SHA) == GT.LedgerSummary(0, 0, 0, False)
     first = GT.ledger_record(DIGEST, PREREG_SHA, "abc123", {CLAUDE: {"link_f1": 0.9}}, True, ts="2026-10-01T00:00:00+00:00")
     GT.ledger_append(path, first)
@@ -268,7 +285,6 @@ def test_ledger_is_append_only_and_counted(tmp_path: Path):
     GT.ledger_append(path, GT.ledger_record(DIGEST, "q" * 64, "abc124", {}, False))
     assert path.read_bytes().startswith(before)
     assert json.loads(before) == first and first["gate"] == "pass"
-    assert GT.ledger_count(path, DIGEST) == 2 and GT.ledger_count(path, "e" * 64) == 1
     assert GT.ledger_summary(path, DIGEST, PREREG_SHA) == GT.LedgerSummary(2, 3, 2, False)
     assert GT.ledger_summary(path, "e" * 64, PREREG_SHA) == GT.LedgerSummary(1, 3, 2, True)
 

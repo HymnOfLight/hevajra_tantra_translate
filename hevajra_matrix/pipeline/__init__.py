@@ -19,17 +19,22 @@ Run directory ``runs/<UTC timestamp>-<git short hash>/``::
                                 diagnostics.jsonl, dry_run.json
     matrix/                     cells.csv, units.csv, wide_status.csv, stale_verdicts.csv,
                                 cells.jsonl (human decisions applied), machine_cells.jsonl
-    evaluation/                 scores.json, gate.json, sentinels.jsonl, perturbations.json
+    evaluation/                 scores.json, gate.json, sentinels.jsonl (the gating evaluation: Claude on
+                                test gold), scores.<set>[_baselines].json (every evaluation), perturbations.json
     topics/prelabels.jsonl      T3 hints
-    review/                     plan_<batch>.csv and the sheets (licensed text; never committed)
-    stats/                      estimates.json, details.json (Manski bounds, revision rates, E4 tests)
+    review/                     plan_<batch>.csv, strata_<batch>.json (strata frozen at sampling) and the
+                                sheets (licensed text; never committed)
+    stats/                      estimates.json, details.json (Manski bounds, revision rates, E4 tests and
+                                diagnostics), power.json (MDE on the real topic labels)
     components/                 components.jsonl, rendering_profile.csv, diagnostics.jsonl
-    experiments/overattribution/  trials.jsonl, responses.jsonl, results.json, coding sheet
+    experiments/overattribution/  trials.jsonl, responses.jsonl, results.json, coding sheet (main phase;
+                                the pilot's own files under pilot/)
     summary.md, status_strip.svg, chapter_heatmap.svg
 
 Modules: ``context`` (RunContext, run directories, ``make_client``, text loading), ``store``
 (JSON forms), ``texts`` (fetch, ingest, baselines), ``instrument`` (collate, perturb,
-components, claude-check), ``measure`` (build, evaluate), ``results`` (stats, report),
+components, claude-check), ``measure`` (build, evaluate), ``results`` (stats, report), ``e4``
+(the E4 diagnostics and the MDE on real labels),
 ``review`` (topics, sample, review sheets), ``human_data`` (committed annotations), ``experiment``.
 """
 
@@ -39,8 +44,8 @@ from pathlib import Path
 
 from .context import RunContext, StageError, has_api_key, latest_run_dir, make_client, new_run_dir
 from .experiment import experiment_plan, experiment_run, experiment_score
-from .instrument import claude_check, collate, components_stage, perturb, plan_collation
-from .measure import build, evaluate
+from .instrument import CONSENSUS_FILE, claude_check, collate, components_stage, perturb, plan_collation
+from .measure import build, evaluate, test_scoring_refused
 from .results import report, stats
 from .review import review_export, review_import, review_status, sample, topics_prelabel
 from .texts import baselines, baselines_import, fetch, ingest
@@ -60,7 +65,8 @@ def run(ctx: RunContext, raw_dir: Path | None = None, gold_set: str = "test") ->
     Collate is skipped (with a message) when there is no API key and the run is not
     offline; build and stats need a collation and are skipped without one. Evaluate and
     report always run, so a run without Claude still yields the baseline scores and a
-    level-0 report.
+    level-0 report. Before ``prereg freeze`` the consensus is never scored on test gold:
+    with test gold present, ``run`` then evaluates dev gold (non-gating) and goes on.
     """
     ingest(ctx, raw_dir)
     baselines(ctx)
@@ -70,6 +76,11 @@ def run(ctx: RunContext, raw_dir: Path | None = None, gold_set: str = "test") ->
         print("collate: skipped (no ANTHROPIC_API_KEY and not --offline); the report shows the controls only")
     if ctx.path("collation", "replicates.json").is_file():
         build(ctx)
+    if (gold_set == "test" and ctx.path("alignments", CONSENSUS_FILE).is_file()
+            and test_scoring_refused(ctx)):
+        print("evaluate: the preregistration is not frozen, so the Claude consensus is not scored on test gold; "
+              "scoring dev gold instead (run `hevajra-matrix prereg freeze`, then evaluate test gold)")
+        gold_set = "dev"
     gate = evaluate(ctx, gold_set=gold_set)
     if ctx.path("matrix", "cells.jsonl").is_file():
         stats(ctx)

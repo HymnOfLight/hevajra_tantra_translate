@@ -261,9 +261,16 @@ def misclassification_table(
 
 
 def _machine_outcome(v: Verdict, ref_kind: str) -> OutcomeClass | None:
-    """Outcome of the machine relation shown on the sheet (a reversal is its own relation)."""
+    """Outcome of the machine cell the verdict was sampled from.
+
+    The sheet's ``machine_relation`` alone loses a machine polarity flip on a non-reversal
+    relation (e.g. paraphrase + flip, a machine positive in ``pos:reversal:*``). The flip is
+    taken from ``machine_polarity_flip`` when recorded, else from the stratum fixed at
+    sampling time, which ``stratum_of`` derived from the full machine cell.
+    """
+    flip = v.machine_polarity_flip or v.stratum.startswith("pos:reversal:")
     try:
-        return outcome_class(Relation(v.machine_relation), False, ref_kind)
+        return outcome_class(Relation(v.machine_relation), flip, ref_kind)
     except ValueError:
         return None
 

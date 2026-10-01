@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from ..align.placebo import SOURCE_SHUFFLED, shuffle_alignment
 from ..collate.consensus import SOURCE_CONSENSUS, agreement, consensus
 from ..collate.perturb import Rate
 from ..core.io import git_commit, read_jsonl, write_jsonl
-from ..core.types import REASON_UNASSESSED, REASON_VERIFICATION_FAILED, Alignment, Cell, Status
+from ..core.types import REASON_UNASSESSED, REASON_VERIFICATION_FAILED, Alignment, Cell, OutcomeClass, Status, Verdict
 from ..evaluation import gate as gates
 from ..evaluation import gold as gold_sets
 from ..evaluation import sentinels as sentinel_checks
 from ..matrix.build import build_cells
 from ..matrix.export import write_matrix
+from ..matrix.status import cell_outcome
 from ..review import sampling
 from ..review.verdicts import is_orphan
 from ..stats import decompose, twophase
@@ -125,8 +127,13 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
 
     ``baselines_only`` scores the controls without any Claude output (critique A5: the
     baseline P/R report on dev gold exists before any call). Scoring the Claude consensus
-    on test gold appends one record to the evaluation ledger, and is refused while the
-    preregistration is not frozen (the protocol freezes before the test set is scored).
+    on test gold appends one record to the evaluation ledger (unless an identical scoring is
+    already recorded), and is refused while the preregistration is not frozen (the protocol
+    freezes before the test set is scored).
+
+    Only that evaluation gates: it alone writes ``gate.json`` and ``scores.json`` once it
+    exists. Dev-gold and baselines-only evaluations get G1 failed and level 0 (dev gold never
+    gates), write ``scores.<set>[_baselines].json``, and never replace a gating gate.
     """
     if gold_set not in gold_sets.SETS[:2]:
         raise StageError(f"--gold must be dev or test, not {gold_set!r}")
@@ -140,8 +147,7 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
     cells_path = ctx.path("matrix", "cells.jsonl")
     cells = read_cells(cells_path) if cells_path.is_file() and not baselines_only else None
     topics = ann.load_topics(ctx, texts)
-    if (gold_set == "test" and claude is not None and ctx.settings.prereg.get("frozen") is not True
-            and ann.load_gold(ctx, texts, "test") is not None):
+    if gold_set == "test" and claude is not None and test_scoring_refused(ctx, texts):
         raise StageError("test gold is scored against Claude only after `hevajra-matrix prereg freeze`; "
                          "use --gold dev or --baselines-only until then")
     scores, human_kappa = _scores(ctx, texts, aligners, gold_set, topics.groups())
@@ -150,21 +156,38 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
     prereg_sha = ctx.settings.shas.get("preregistration.yaml", "")
     ledger = ann.ledger_path(ctx)
     specs = gates.GateSpecs.from_prereg(ctx.settings.prereg)
-    if gold_set == "test" and SOURCE_CONSENSUS in scores:
+    gating = gold_set == "test" and SOURCE_CONSENSUS in scores
+    if gating:
         g1 = gates.check_g1(scores, human_kappa, specs.g1, specs.seed)
-        gates.ledger_append(ledger, gates.ledger_record(digest, prereg_sha, git_commit(ctx.root),
-                                                        {k: v.metrics() for k, v in scores.items()}, g1.passed))
+        record = gates.ledger_record(digest, prereg_sha, git_commit(ctx.root),
+                                     {k: v.metrics() for k, v in scores.items()}, g1.passed)
+        if already_ledgered(ledger, record):
+            print("ledger: this test scoring (same instrument digest, preregistration and scores) is already "
+                  "recorded; not appended again (re-gating after review does not score the test set anew)")
+        else:
+            gates.ledger_append(ledger, record)
     report = gates.evaluate(scores, human_kappa, integrity, _perturbations(ctx), _calibration(ctx, texts, cells, topics),
                             ctx.settings.prereg, digest, gates.ledger_summary(ledger, digest, prereg_sha))
+    if not gating:
+        report = not_gating(report, gold_set, baselines_only)
     out = ctx.path("evaluation")
-    _write_json(out / "scores.json", {
+    scores_doc = {
         "gold_set": gold_set, "baselines_only": baselines_only, "human_kappa": human_kappa,
         "sources": {src: {"counts": s.counts(), "metrics": s.metrics(),
                           "intervals": {k: estimate_to_dict(e) for k, e in
                                         gold_sets.interval_estimates(s, specs.g1.n_boot, specs.seed).items()}}
-                    for src, s in scores.items()}})
-    _write_json(out / "gate.json", gate_to_dict(report))
-    write_jsonl(out / "sentinels.jsonl", (sentinel_result_to_dict(r) for rs in integrity.sentinels.values() for r in rs))
+                    for src, s in scores.items()}}
+    own = out / f"scores.{gold_set}{'_baselines' if baselines_only else ''}.json"     # every evaluation keeps its own
+    _write_json(own, scores_doc)
+    if not gating and _read_json(out / "gate.json").get("gating") is True:
+        print(f"evaluate: gate.json and scores.json keep the test-gold Claude evaluation; this one never gates "
+              f"(scores in {own})")
+    else:
+        _write_json(out / "scores.json", scores_doc)
+        _write_json(out / "gate.json", {**gate_to_dict(report), "gating": gating, "gold_set": gold_set,
+                                        "baselines_only": baselines_only})
+        write_jsonl(out / "sentinels.jsonl",
+                    (sentinel_result_to_dict(r) for rs in integrity.sentinels.values() for r in rs))
     record_stage(ctx, "evaluate")
     if not scores:
         print(f"evaluate: no {gold_set} gold for {texts.witness_id} yet "
@@ -176,6 +199,40 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
     print(f"gates: {dict(report.passed)} -> report level {report.level}"
           f"{'' if report.confirmatory else ' (' + report.scope_note + ')'}")
     return report
+
+
+def test_scoring_refused(ctx: RunContext, texts: Texts | None = None) -> bool:
+    """True when test gold exists but the preregistration is not frozen yet: the Claude
+    consensus may not be scored on it (``evaluate`` refuses; ``run`` falls back to dev)."""
+    if ctx.settings.prereg.get("frozen") is True:
+        return False
+    return ann.load_gold(ctx, texts or load_texts(ctx), "test") is not None
+
+
+def already_ledgered(ledger: Path, record: Mapping[str, Any]) -> bool:
+    """True when the ledger holds a record of the same instrument digest, preregistration,
+    scores and gate outcome: re-gating identical output on identical gold (e.g. to refresh
+    G2/G3 after review) reveals nothing new about the test set and is not a new scoring."""
+    def key(r: Mapping[str, Any]) -> tuple[Any, ...]:
+        return (r.get("instrument_digest"), r.get("prereg_sha256"), r.get("gate"),
+                json.dumps(json.loads(json.dumps(r.get("metrics"))), sort_keys=True))
+
+    if not ledger.is_file():
+        return False
+    return any(key(r) == key(record) for r in read_jsonl(ledger))
+
+
+def not_gating(report: gates.GateReport, gold_set: str, baselines_only: bool) -> gates.GateReport:
+    """The gate of an evaluation that cannot gate: dev gold never gates (synthesis 5.4) and a
+    baselines-only run has no instrument. G1 is replaced by that reason, the level is 0
+    and the result is never confirmatory."""
+    what = "baselines only, no Claude output" if baselines_only else f"{gold_set} gold"
+    if gold_set == "test" and not baselines_only:
+        what = "no Claude consensus scored on test gold"
+    reason = f"G1: not a gating evaluation ({what}); only the Claude consensus scored on test gold gates"
+    reasons = (reason,) + tuple(r for r in report.reasons if not r.startswith("G1:"))
+    return replace(report, level=0, confirmatory=False, passed={**report.passed, "G1": False}, reasons=reasons,
+                   scope_note=f"exploratory; not a gating evaluation ({what})")
 
 
 def _fmt(x: float | None) -> str:
@@ -238,27 +295,76 @@ def _perturbations(ctx: RunContext) -> gates.Perturbations:
 def _calibration(ctx: RunContext, texts: Texts, cells: list[Cell] | None, topics: ann.Topics) -> gates.Calibration:
     """Two-phase facts for G3 and estimand facts for G4 (see ``evaluation.gate.Calibration``)."""
     verdicts = ann.current_verdicts(ann.review_verdicts(ctx, texts), texts)
-    coverage = sampling.coverage(ann.review_plans(ctx), verdicts)
+    plan = ann.review_plans(ctx)
+    coverage = sampling.coverage(plan, verdicts)
     planned = {s: c["planned"] for s, c in coverage.items()}
     achieved = {s: c["final"] for s, c in coverage.items()}
-    audit = {s: n for s, n in achieved.items() if s.startswith("neg:")}
+    floor = gates.GateSpecs.from_prereg(ctx.settings.prereg).g3.min_audit_per_stratum
+    census = {s for s in planned if all(i.inclusion_prob >= 1.0 for i in plan if i.stratum == s)}
+    # A fully verified census of a stratum smaller than the floor meets it: draw_audit plans
+    # min(floor, |U_h|) and a census has no sampling error (synthesis 6.2).
+    audit = {s: max(n, floor) if s in census and n >= planned[s] else n
+             for s, n in achieved.items() if s.startswith("neg:")}
     absent = [v for v in verdicts if v.stratum.startswith("pos:absent") and v.blind_relation]
     null_precision = sum(1 for v in absent if v.blind_relation == "no_counterpart") / len(absent) if absent else None
     units = [c for c in cells or [] if not is_orphan(c.unit_id)]
     unresolved = sum(1 for c in units if c.status is Status.UNALIGNED) if units else None
     width = None
+    uncalibrated: dict[str, int] = {}
+    null_recall = None
     if units:
         lo, hi = twophase.manski(units, ctx.settings.prereg.get("primary_outcome", "any"), texts.ref_kinds)
         width = hi - lo
-    e3 = decompose.not_estimable_reason((), texts.reference_id, texts.reference_id)
+        machine_path = ctx.path("matrix", "machine_cells.jsonl")
+        if machine_path.is_file():
+            machine = [c for c in read_cells(machine_path) if not is_orphan(c.unit_id)]
+            strata = ann.sampling_strata(ctx, sampling.machine_strata(machine, topics.groups(), texts.ref_kinds))
+            uncalibrated = twophase.uncalibrated_strata(units, verdicts, strata, "final", texts.ref_kinds)
+            null_recall = deferred_null_recall(machine, units, verdicts, strata, texts.ref_kinds,
+                                               ctx.settings.prereg.get("stats") or {})
+    e3 = decompose.E3_NOT_INGESTED
     agreement_topics = human_agreement(topics.labels)
     scorer = _read_json(ctx.path("experiments", "overattribution", "results.json")).get("scorer") or {}
     return gates.Calibration(
-        planned=planned, achieved=achieved, audit=audit, null_precision=null_precision, null_recall=None,
-        unresolved_units=unresolved, manski_width=width,
+        planned=planned, achieved=achieved, audit=audit, null_precision=null_precision, null_recall=null_recall,
+        unresolved_units=unresolved, manski_width=width, uncalibrated=uncalibrated,
         e3_not_estimable=e3.removeprefix("G4: ") if e3 else None, topic_labels_complete=topics.complete,
-        topic_kappa=agreement_topics.group_kappa, mde=(ctx.settings.prereg.get("stats") or {}).get("mde"),
-        scorer_kappa=scorer.get("kappa_y_over"))
+        topic_kappa=agreement_topics.group_kappa, mde=design_mde(ctx), scorer_kappa=scorer.get("kappa_y_over"))
+
+
+def deferred_null_recall(machine: Sequence[Cell], cells: Sequence[Cell], verdicts: Sequence[Verdict],
+                         strata: Mapping[str, str], ref_kinds: Mapping[str, str],
+                         params: Mapping[str, Any]) -> float | None:
+    """NULL recall from imputation (synthesis 5.5, G3): over the two-phase draws on the blind
+    column, the share of units whose completed outcome is ABSENT that the machine marked
+    ABSENT, averaged over draws. None without phase-2 sample verdicts or when a stratum has
+    no sample to impute from (G3 then says so)."""
+    if not any(v.task in twophase.SAMPLE_TASKS for v in verdicts):
+        return None
+    try:
+        vectors = twophase.draws(cells, verdicts, strata, int(params.get("n_draws", 500)),
+                                 int(params.get("seed", 0)), "blind", ref_kinds)
+    except twophase.UncalibratedStrata:
+        return None
+    flagged = {c.unit_id for c in machine if cell_outcome(c, ref_kinds.get(c.unit_id, "")) is OutcomeClass.ABSENT}
+    values = []
+    for vector in vectors:
+        absent = [u for u, cls in vector.items() if cls is OutcomeClass.ABSENT]
+        if absent:
+            values.append(sum(1 for u in absent if u in flagged) / len(absent))
+    return sum(values) / len(values) if values else None
+
+
+def design_mde(ctx: RunContext) -> float | None:
+    """MDE for G4: the preregistered one, or the larger one simulated on the real topic labels
+    (``stats/power.json``, written by the stats stage) once it exists; None when the
+    simulation found no detectable effect within its grid."""
+    mde = (ctx.settings.prereg.get("stats") or {}).get("mde")
+    power = _read_json(ctx.path("stats", "power.json"))
+    if "mde_on_labels" not in power:
+        return mde
+    computed = power["mde_on_labels"]
+    return None if computed is None or mde is None else max(float(mde), float(computed))
 
 
 def read_gate(ctx: RunContext) -> gates.GateReport | None:

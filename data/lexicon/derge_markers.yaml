@@ -60,3 +60,16 @@ translator_colophon:
   # corrected it" (gZhon nu dpal).
   - role: reviser
     pattern: "སླར་ཡང་ལོ་ཙྪ་བ་(?P<name>.+?)་གྱིས་འགྱུར་ཆད"
+
+# Mantra cues (hevajra_matrix.ingest.derge._content_kind). A content unit of at least 3
+# syllables is a mantra when more than half of its syllables carry Sanskrit-only letters,
+# or when it opens with an `initial` cue or closes with a `final` cue (whole syllables,
+# tsheg-joined; the closing shad is ignored) and at least `min_ratio` of its syllables
+# carry Sanskrit-only letters. Checked on D417/418, 2026-10-01: the cue rule adds
+# D417:3a.7.1, 3b.2.10, 4a.7.2, D418:14a.4.1, 23a.1.3, 25a.4.1, 30a.1.3, 30a.1.4. Instruction
+# verses that name a mantra word ("at the end svaha") have 2 of 7 Sanskrit syllables
+# (0.29) and stay verse; a cue word inside a line ("phat and at the end svaha ...") is no cue.
+mantra_cues:
+  initial: ["ཨོཾ"]          # om
+  final: ["སྭཱ་ཧཱ", "ཕཊ"]    # svaha, phat
+  min_ratio: 0.35

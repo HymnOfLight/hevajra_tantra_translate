@@ -125,10 +125,18 @@ them within item.
 `llm/audit.AuditedClient` writes one line per call (cache hits included) to
 `<run>/llm_audit.jsonl`, with no prompt or response text, and refuses a new uncached call once
 the recorded estimated spend reaches `budget_usd` (300). Spend counts only calls not served
-from the cache. The log is per run directory, so the cap is per run directory too: a new run
-(e.g. a fresh `ingest`) starts from zero, while stages rerun in the same directory accumulate.
-Concurrent workers can overshoot by the calls already in flight. Substituted calls are
-estimated at the configured model's prices.
+from the cache, and is read from the spend ledger `<paths.cache>/llm_spend.jsonl` (one text-free
+line per uncached call: `ts, run_id, task, key, est_usd, from_cache`), which every run appends
+to. The cap is therefore cumulative across runs: a new run directory does not reset it.
+Concurrent workers can overshoot by the calls already in flight. A fallback model bills at its
+own rates and the response does not split usage by model, so a substituted call is priced at the
+per-key maximum of `pricing_usd_per_mtok` and `fallback_pricing_usd_per_mtok` (conservative).
+
+Refusal rate. Server-side fallback fires only when the requested model declines, so the
+`refusal_rate` metrics (overall and per topic group) count units with reason `substituted_model`
+as refusals of the requested model, alongside `refused:<category>`. The declined attempt's
+category is not reported in a fallback-served response (`fallback` blocks carry no reason), so
+these refusals have no category.
 
 ### Instrument digests
 

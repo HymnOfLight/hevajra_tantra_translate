@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from ..core.types import Alignment, Cell, Estimate, Grade, OutcomeClass, Relation
 from ..evaluation.gate import GateReport
@@ -54,6 +54,8 @@ ESTIMANDS = (
 CALIBRATED = 2                        # every estimate needs report level 2
 SCORE_COLUMNS = (("link_f1", "link F1"), ("status_kappa", "status kappa"), ("null_precision", "NULL precision"),
                  ("null_recall", "NULL recall"), ("witness_only_recall", "witness-only recall"))
+BREAKDOWN_LABELS = {"relation_recall": "recall of relation", "status_agreement": "status agreement",
+                    "dany_agreement": "D_any agreement", "refusal_rate": "refusal rate, topic"}
 _DECIMAL = re.compile(r"(?<![\w.:])-?\d+\.\d+(?![\w.])")
 _INTERVAL = re.compile(r"\[[^\]]*\d[^\]]*\]")
 WITHHELD = "<withheld>"
@@ -97,6 +99,8 @@ class ReportInputs:
     manski: Mapping[str, tuple[float, float]] = field(default_factory=dict)
     max_manski_width: float = 0.05
     notes: tuple[tuple[str, str, str], ...] = ()
+    revision: Mapping[str, Mapping[str, int]] = field(default_factory=dict)   # stratum -> n, outcome_changed
+    e4_details: Mapping[str, Any] = field(default_factory=dict)              # stats/details.json "e4"
 
 
 # --------------------------------------------------------------------------- counting (pure)
@@ -249,6 +253,21 @@ def _scores(inputs: ReportInputs) -> list[str]:
             "|---|" + "---|" * len(SCORE_COLUMNS)]
     out += [f"| {_label(src)} | " + " | ".join(_interval(m.get(key)) for key, _ in SCORE_COLUMNS) + " |"
             for src, m in inputs.scores.items()]
+    return out + [""] + _score_breakdowns(inputs)
+
+
+def _score_breakdowns(inputs: ReportInputs) -> list[str]:
+    """Per-relation recall, per-class agreement and refusal by topic group (synthesis 5.2)."""
+    keys = sorted({k for m in inputs.scores.values() for k in m if k.split(":", 1)[0] in BREAKDOWN_LABELS})
+    if not keys:
+        return []
+    sources = list(inputs.scores)
+    out = ["### Per-class and per-relation scores", "",
+           "| metric | " + " | ".join(_label(src) for src in sources) + " |", "|---|" + "---|" * len(sources)]
+    for key in keys:
+        kind, _, which = key.partition(":")
+        out.append(f"| {BREAKDOWN_LABELS[kind]} {which} | "
+                   + " | ".join(_interval(inputs.scores[src].get(key)) for src in sources) + " |")
     return out + [""]
 
 
@@ -300,12 +319,56 @@ def _estimates(inputs: ReportInputs, gate: GateReport) -> list[str]:
             blind = inputs.estimates.get(f"{name}_blind")
             if blind is not None and blind.point is not None:
                 out.append(f"  - automation-bias sensitivity (blind verdicts): {_interval(blind)}")
+                out += _revision(inputs) if name == "E1_any" else []
+            if name == "E4":
+                out += _e4_diagnostics(inputs.e4_details)
+            prior = inputs.estimates.get(f"{name}_prior")
+            if prior is not None and prior.point is not None:
+                out.append(f"  - prior sensitivity (Dirichlet symmetric in D, not Jeffreys): {_interval(prior)}")
     if gate.level >= CALIBRATED and inputs.manski:
         out += ["", "Manski bounds over units still unresolved after review:"]
         for outcome, (lo, hi) in inputs.manski.items():
             wide = " (wider than the gate allows)" if hi - lo > inputs.max_manski_width else ""
             out.append(f"- {outcome}: [{_num(lo)}, {_num(hi)}]{wide}")
     return out + [""]
+
+
+def _revision(inputs: ReportInputs) -> list[str]:
+    """Blind -> final revision rate beside the blind estimate (synthesis 6.2, critique A1)."""
+    rows = {s: r for s, r in inputs.revision.items() if r.get("n")}
+    if not rows:
+        return []
+    n = sum(r["n"] for r in rows.values())
+    changed = sum(r.get("outcome_changed", 0) for r in rows.values())
+    per = "; ".join(f"{s} {r.get('outcome_changed', 0)}/{r['n']}" for s, r in rows.items())
+    return [f"  - revised at reveal (outcome class changed): {changed} of {n} verdicts ({_num(changed / n)}); {per}"]
+
+
+def _e4_diagnostics(d: Mapping[str, Any]) -> list[str]:
+    """Pre-registered E4 checks (synthesis 6.3, critique B13), printed only beside a computed E4."""
+    if not d or "overlap" not in d:
+        return []
+    o, m = d["overlap"], d.get("matched_rd") or {}
+    neg = d.get("negative_control") or {}
+    out = [f"  - TOST within +/-{_num(d.get('margin'))} (the pre-registered MDE): "
+           f"{'equivalent' if d.get('equivalent_within_margin') else 'not shown equivalent'}; "
+           f"within-stratum permutation p {_num(d.get('permutation_p'))}",
+           f"  - overlap: {o['n_overlap_strata']} of {o['n_strata']} chapter x length strata hold both exposures; "
+           f"{o['n_used']} of {o['n_units']} units used, {len(o['dropped'])} dropped",
+           f"  - naive Delta on machine labels {_num(d.get('naive'))}; corrected minus naive "
+           f"{_num(d.get('attenuation'))} (attenuation check)",
+           f"  - caliper-matched difference {_num(m.get('difference'))} ({m.get('pairs', 0)} pairs)",
+           "  - negative control, frame vs neutral: "
+           + (f"NOT_ESTIMABLE: {neg['not_estimable']}" if neg.get("not_estimable")
+              else f"{_num(neg.get('point'))} [{_num(neg.get('lo'))}, {_num(neg.get('hi'))}] (expected about 0)")]
+    rows = d.get("misclassification") or []
+    if rows:
+        out += ["", "  Verified machine error by imputation stratum (checks within-stratum independence):", "",
+                "  | stratum | factor | level | n | errors | rate |", "  |---|---|---|---|---|---|"]
+        out += [f"  | {r['stratum']} | {r['factor']} | {r['level']} | {r['n']} | {r['errors']} | {_num(r['rate'])} |"
+                for r in rows]
+        out.append("")
+    return out
 
 
 def _notes(inputs: ReportInputs) -> list[str]:

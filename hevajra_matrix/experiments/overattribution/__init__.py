@@ -7,7 +7,8 @@ when the evidence shown explains it by the source side, and more so for sensitiv
     run        T4 subject and T5 scorer requests (fallback off), the run loop
     score      schemas, answer verification, outcomes
     lexical    negation-aware lexical motive baseline (comparison only)
-    analysis   item-level H1/H2 (Holm), exploratory H3, refusal bounds, scorer kappa
+    analysis   item-level H1/H2 (Holm), exploratory H3, Manski refusal bounds, two-phase correction
+    human      human sample, blind coding sheet (opaque ids), human codes, scorer kappa
 """
 
 from .analysis import AnalysisParams, ExperimentResults, analyse, load_human_codes

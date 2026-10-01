@@ -47,6 +47,28 @@ cases:
   - {lang: bo, text: "ཉི་མ་དང་ཟླ་བ", expected: []}                   # sun: nyi alone is not twenty
   - {lang: bo, text: "སུམ་ཅུ། །རྩ་གཉིས", expected: [30, 2]}         # a shad ends a numeral
   - {lang: bo, text: "ཁྲི་བཟླས་པས་འགྲུབ་བོ", expected: [10000]}
+  # Fused case particles on the last syllable (real D417/418 segments)
+  - {lang: bo, text: "སྤྱན་ཉི་ཤུ་རྩ་བཞིས་ཕྱེ་པ།", expected: [24]}          # D417:3b.6.3, was 20
+  - {lang: bo, text: "བཅོ་ལྔའི་ཆ་ཡི་བདག་ཉིད་ཀྱི།", expected: [15]}        # D418:20a.7.8, was 10
+  - {lang: bo, text: "བཅོ་ལྔས་ཡོངས་སུ་བསྐོར་བ་ཡི།", expected: [15]}       # D418:23b.3.3, was 10
+  - {lang: bo, text: "ཕྱག་རྒྱ་ལྔར་ནི་རྣམ་པར་ངེས།", expected: [5]}
+  - {lang: bo, text: "ས་བཅུའི་དབང་ཕྱུག་མགོན་པོ་ཉིད།", expected: [10]}
+  - {lang: bo, text: "གར་དགུའི་རོ་དང་ལྡན་པ་ཉིད།", expected: [9]}
+  - {lang: bo, text: "གཙོ་བོ་དཔེ་བྱད་བརྒྱད་ཅུར་ལྡན།", expected: [80]}       # was 8
+  - {lang: bo, text: "སོར་མོ་ཉི་ཤུའམ་དེ་ཡི་ཕྱེད།", expected: [20]}        # a fused particle ends the numeral
+  - {lang: bo, text: "གཉིས་ཀྱིས", expected: [2]}                           # final s of gnyis is not a particle
+  # Multiples: "X phrag Y" and "Y X" for X >= 100
+  - {lang: bo, text: "འབུམ་ཕྲག་བདུན་གྱིས་ལྷ་མ་ཡིན།", expected: [700000]}  # D417:13b.5.1; the zh parallel reads 700,000
+  - {lang: bo, text: "བརྒྱ་ཕྲག་གཅིག་གིས་སྔགས་པ་ཉིད།", expected: [100]}
+  - {lang: bo, text: "བྱེ་བ་ཕྲག་བདུན་བཟླས་ཏེ", expected: [70000000]}     # D417:4b.1.2
+  - {lang: bo, text: "ལྔ་བརྒྱ", expected: [500]}
+  - {lang: bo, text: "སྟོང་ཕྲག་བཅུ་གཉིས", expected: [12000]}
+  - {lang: bo, text: "ཕྲག་དོག་རྡོ་རྗེ་མཁའ་འགྲོ་མ།", expected: []}          # jealousy
+  # koti, and the verb "split" that is spelled the same
+  - {lang: bo, text: "བྱེ་བ་བཟླས་ལ་ཐིག་ལེ་བྱས་ཏེ", expected: [10000000]}
+  - {lang: bo, text: "ཇི་ལྟར་བྱེ་བར་མི་འགྱུར་བར།", expected: []}
+  # "half" after a numeral is not a count
+  - {lang: bo, text: "བཟའ་བ་མི་འཆིའི་བཅུ་ཕྱེད་དེ།", expected: []}           # D417:6b.7.8, was 10
   # Sanskrit (IAST)
   - {lang: sa, text: "dvātriṃśan nāḍyaḥ", expected: [32]}
   - {lang: sa, text: "lakṣaṇa", expected: []}                     # was 100000 in v0.2

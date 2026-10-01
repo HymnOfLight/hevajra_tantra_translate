@@ -47,6 +47,9 @@ class BoNumerals:
     teen_prefixes: frozenset[str]      # "ten" syllables that combine with a following unit
     connectors: frozenset[str]         # syllables joining a base >= 20 to a unit
     exclusions: tuple[str, ...]        # tsheg-joined syllable contexts
+    fused_particles: tuple[str, ...] = ()    # particles written inside a numeral's last syllable
+    multipliers: frozenset[str] = frozenset()  # "X <multiplier> Y" is X * Y (X >= 100)
+    fractions: frozenset[str] = frozenset()    # a numeral followed by one of these is not a count
 
 
 @dataclass(frozen=True)
@@ -117,7 +120,8 @@ def load_numerals(data_dir: Path) -> NumeralTable:
     doc = read_lexicon(data_dir, "numerals")
     _only(doc, {"zh", "bo", "sa"}, "numerals")
     zh = _section(doc, "zh", {"digits", "units", "exclusions"})
-    bo = _section(doc, "bo", {"words", "teen_prefixes", "connectors", "exclusions"})
+    bo = _section(doc, "bo", {"words", "teen_prefixes", "connectors", "exclusions", "fused_particles",
+                              "multipliers", "fractions"})
     sa = _section(doc, "sa", {"stems", "exclusions"})
     table = NumeralTable(
         zh=ZhNumerals(
@@ -130,6 +134,9 @@ def load_numerals(data_dir: Path) -> NumeralTable:
             teen_prefixes=frozenset(_strings(bo.get("teen_prefixes", ()), "numerals.bo.teen_prefixes", "bo")),
             connectors=frozenset(_strings(bo.get("connectors", ()), "numerals.bo.connectors", "bo")),
             exclusions=_strings(bo.get("exclusions", ()), "numerals.bo.exclusions", "bo"),
+            fused_particles=_strings(bo.get("fused_particles", ()), "numerals.bo.fused_particles", "bo"),
+            multipliers=frozenset(_strings(bo.get("multipliers", ()), "numerals.bo.multipliers", "bo")),
+            fractions=frozenset(_strings(bo.get("fractions", ()), "numerals.bo.fractions", "bo")),
         ),
         sa=SaNumerals(
             stems=_values(sa.get("stems"), "numerals.sa.stems", "sa"),
@@ -139,7 +146,8 @@ def load_numerals(data_dir: Path) -> NumeralTable:
     _check_tokens([*table.zh.digits, *table.zh.units], "zh", "numerals.zh digits/units", single=True)
     _check_tokens(table.zh.exclusions, "zh", "numerals.zh.exclusions")
     _check_tokens(table.bo.words, "bo", "numerals.bo.words")
-    _check_tokens([*table.bo.teen_prefixes, *table.bo.connectors], "bo", "numerals.bo prefixes", single=True)
+    _check_tokens([*table.bo.teen_prefixes, *table.bo.connectors, *table.bo.fused_particles,
+                   *table.bo.multipliers, *table.bo.fractions], "bo", "numerals.bo single syllables", single=True)
     _check_tokens(table.bo.exclusions, "bo", "numerals.bo.exclusions")
     _check_tokens([*table.sa.stems, *table.sa.exclusions], "sa", "numerals.sa", single=True)
     overlap = set(table.zh.digits) & set(table.zh.units)

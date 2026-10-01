@@ -18,9 +18,21 @@ UNALIGNED after human resolution are left out of every draw; ``manski`` bounds t
 Assumption (stated, see ``contrast.misclassification_table`` for the check): within a stratum,
 machine error does not depend on chapter or unit length.
 
+Prior (critique of v0.3): the spec's Jeffreys Dirichlet(1/2, 1/2, 1/2, 1/2) puts 3/2 of its
+pseudo-counts on the three deviating classes and 1/2 on NONDEV (prior P(D) = 3/4), which
+pulls large, rarely-deviating machine-negative strata upward by about 1/(n_h + 2). It stays
+the primary prior (synthesis 6.2); ``PRIOR_SYMMETRIC_D`` (1/2 on NONDEV, 1/6 on each
+deviating class: prior P(D) = 1/2) is the pre-registered prior sensitivity.
+
+A stratum that holds unverified units but no phase-2 sample verdict has nothing to calibrate
+it: imputing it would report the Jeffreys prior (about 3/4 deviating) as data. ``draws``
+refuses such strata (``UncalibratedStrata``); ``uncalibrated_strata`` lists them for G3.
+
 Verdict columns (critique A1): ``column="final"`` is primary; ``column="blind"`` repeats the
 estimate with the verdicts made before the annotator saw the machine output, which is the
 pre-registered automation-bias sensitivity. ``revision_rate`` reports blind -> final changes.
+A verify or audit verdict whose reveal is not imported yet has no final decision: it is
+absent from the final column (as it is from the matrix), never read as a final one.
 """
 
 from __future__ import annotations
@@ -39,6 +51,9 @@ Column = Literal["final", "blind"]
 OUTCOMES: tuple[OutcomeClass, ...] = (
     OutcomeClass.NONDEV, OutcomeClass.DEV_PRESENT, OutcomeClass.PARTIAL, OutcomeClass.ABSENT,
 )
+PRIOR_JEFFREYS: tuple[float, ...] = (0.5, 0.5, 0.5, 0.5)            # primary (synthesis 6.2)
+PRIOR_SYMMETRIC_D: tuple[float, ...] = (0.5, 1 / 6, 1 / 6, 1 / 6)   # sensitivity: symmetric in D
+PRIORS: Mapping[str, tuple[float, ...]] = {"jeffreys": PRIOR_JEFFREYS, "symmetric_d": PRIOR_SYMMETRIC_D}
 UNRESOLVED = "unresolved"          # UNALIGNED cells: never imputed, bounded by ``manski``
 EXCLUDED = "excluded"              # LACUNA / NA cells: outside every denominator
 SAMPLE_TASKS = frozenset({"verify", "audit"})   # verdicts drawn by the phase-2 probability sample
@@ -51,7 +66,7 @@ _SENSITIVE = "sensitive"
 
 SOURCES = (
     "machine status error: two-phase verification + posterior predictive",
-    "calibration uncertainty: Dirichlet(x_h + 1/2) draws per stratum",
+    "calibration uncertainty: Dirichlet(x_h + prior) draws per stratum",
     "Claude stochasticity: grade is a stratum",
     "differential error by topic: topic group is a stratum",
 )
@@ -106,14 +121,29 @@ def stratum_of(cell: Cell, topic_group: str, ref_kind: str = "") -> str:
 def verdict_relation(verdict: Verdict, column: Column) -> str:
     """The relation a verdict records in ``column``; "" when that column is empty.
 
-    A verdict without a reveal stage (gold) has only a blind decision, which is then also its
-    final one.
+    Only gold has no reveal stage: its blind decision is also its final one (as in
+    ``review.verdicts.decision``). A verify / audit / resolve verdict without a final
+    decision has not been revealed yet and has no final relation.
     """
     if column == "final":
-        return verdict.final_relation or verdict.blind_relation
+        return verdict.final_relation or (verdict.blind_relation if verdict.task == "gold" else "")
     if column == "blind":
         return verdict.blind_relation
     raise ValueError(f"column must be 'final' or 'blind', not {column!r}")
+
+
+def verdict_flip(verdict: Verdict, column: Column) -> bool:
+    """The polarity flip of the decision in ``column``.
+
+    A verdict stores one ``polarity_flip``: the blind import sets it from the blind relation
+    and the reveal import overwrites it with the final decision's. Once a final decision
+    exists the stored flip is therefore the final one, and the blind flip is recovered the
+    way the blind import set it (blind relation == reversal). Gold has no reveal, so its
+    stored flip (which may mark a flip on a non-reversal relation) is the blind one.
+    """
+    if column == "blind" and verdict.final_relation and verdict.task != "gold":
+        return verdict.blind_relation == Relation.REVERSAL.value
+    return verdict.polarity_flip
 
 
 def verdict_outcome(verdict: Verdict, column: Column, ref_kind: str = "") -> OutcomeClass | None:
@@ -123,7 +153,7 @@ def verdict_outcome(verdict: Verdict, column: Column, ref_kind: str = "") -> Out
         relation = Relation(value)
     except ValueError:
         return None
-    return outcome_class(relation, verdict.polarity_flip, ref_kind)
+    return outcome_class(relation, verdict_flip(verdict, column), ref_kind)
 
 
 def _latest(verdicts: Iterable[Verdict], column: Column) -> dict[str, Verdict]:
@@ -192,26 +222,17 @@ def sample_counts(
     return counts
 
 
-def dirichlet(alpha: Sequence[float], rng: random.Random) -> list[float]:
-    """One Dirichlet draw via normalised Gamma variates."""
-    g = [rng.gammavariate(a, 1.0) for a in alpha]
-    total = sum(g)
-    return [x / total for x in g]
+class UncalibratedStrata(ValueError):
+    """Strata with unverified units to impute but no phase-2 sample verdict (stratum -> units)."""
+
+    def __init__(self, strata: Mapping[str, int]):
+        self.strata = dict(sorted(strata.items()))
+        listed = ", ".join(f"{s} ({n} unverified)" for s, n in self.strata.items())
+        super().__init__(f"G3: no phase-2 sample verdict in stratum {listed}")
 
 
-def draws(
-    cells: Iterable[Cell], verdicts: Sequence[Verdict], strata: Mapping[str, str],
-    n_draws: int, seed: int, column: Column = "final", ref_kinds: Mapping[str, str] | None = None,
-) -> list[dict[str, OutcomeClass]]:
-    """M completed outcome vectors (unit id -> outcome class) under the two-phase posterior.
-
-    ``cells`` is the built matrix (verdicts applied); ``strata`` maps every countable unit to
-    its sampling stratum, computed with ``stratum_of`` on the *machine* cells. Unverified units
-    in ``unresolved`` or ``excluded`` strata, and LACUNA/NA cells, are absent from every draw.
-    """
-    cells = list(cells)
-    known = known_outcomes(cells, verdicts, column, ref_kinds)
-    x = sample_counts(verdicts, strata, column, ref_kinds)
+def _pools(cells: Sequence[Cell], known: Mapping[str, OutcomeClass], strata: Mapping[str, str]) -> dict[str, list[str]]:
+    """Per imputable stratum, its unverified countable units."""
     pools: dict[str, list[str]] = {}
     for cell in cells:
         unit = cell.unit_id
@@ -222,13 +243,61 @@ def draws(
             raise ValueError(f"{unit}: unverified unit without a sampling stratum")
         if stratum not in (UNRESOLVED, EXCLUDED):
             pools.setdefault(stratum, []).append(unit)
+    return pools
+
+
+def uncalibrated_strata(
+    cells: Iterable[Cell], verdicts: Sequence[Verdict], strata: Mapping[str, str], column: Column = "final",
+    ref_kinds: Mapping[str, str] | None = None,
+) -> dict[str, int]:
+    """Stratum -> unverified units, for strata that ``draws`` would have to impute from the prior.
+
+    Arises when a stratum was never planned (e.g. topic labels imported after the plan was
+    drawn move units into ``...:sensitive`` strata) or its sample is not verified yet.
+    """
+    cells = list(cells)
+    known = known_outcomes(cells, verdicts, column, ref_kinds)
+    x = sample_counts(verdicts, strata, column, ref_kinds)
+    return {s: len(units) for s, units in sorted(_pools(cells, known, strata).items()) if not sum(x.get(s, {}).values())}
+
+
+def dirichlet(alpha: Sequence[float], rng: random.Random) -> list[float]:
+    """One Dirichlet draw via normalised Gamma variates."""
+    g = [rng.gammavariate(a, 1.0) for a in alpha]
+    total = sum(g)
+    return [x / total for x in g]
+
+
+def draws(
+    cells: Iterable[Cell], verdicts: Sequence[Verdict], strata: Mapping[str, str],
+    n_draws: int, seed: int, column: Column = "final", ref_kinds: Mapping[str, str] | None = None,
+    prior: str = "jeffreys",
+) -> list[dict[str, OutcomeClass]]:
+    """M completed outcome vectors (unit id -> outcome class) under the two-phase posterior.
+
+    ``cells`` is the built matrix (verdicts applied); ``strata`` maps every countable unit to
+    its sampling stratum, computed with ``stratum_of`` on the *machine* cells. Unverified units
+    in ``unresolved`` or ``excluded`` strata, and LACUNA/NA cells, are absent from every draw.
+    Raises ``UncalibratedStrata`` when an imputed stratum has no phase-2 sample verdict.
+    ``prior`` names the Dirichlet pseudo-counts in ``PRIORS`` (in ``OUTCOMES`` order).
+    """
+    if prior not in PRIORS:
+        raise ValueError(f"prior must be one of {sorted(PRIORS)}, not {prior!r}")
+    alpha = PRIORS[prior]
+    cells = list(cells)
+    known = known_outcomes(cells, verdicts, column, ref_kinds)
+    x = sample_counts(verdicts, strata, column, ref_kinds)
+    pools = _pools(cells, known, strata)
+    empty = {s: len(units) for s, units in pools.items() if not sum(x.get(s, {}).values())}
+    if empty:
+        raise UncalibratedStrata(empty)
     rng = random.Random(seed)
     out: list[dict[str, OutcomeClass]] = []
     for _ in range(n_draws):
         vector = dict(known)
         for stratum in sorted(pools):
             row = x.get(stratum, {})
-            p = dirichlet([row.get(o, 0) + 0.5 for o in OUTCOMES], rng)
+            p = dirichlet([row.get(o, 0) + a for o, a in zip(OUTCOMES, alpha)], rng)
             cum = list(itertools.accumulate(p))
             for unit in pools[stratum]:
                 vector[unit] = rng.choices(OUTCOMES, cum_weights=cum)[0]

@@ -55,8 +55,13 @@ def status_strip(cells: Sequence[Cell], path: Path, caption: str = "", max_units
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
-def chapter_heatmap(cells: Sequence[Cell], path: Path, caption: str = "") -> None:
-    """Write the chapter x status count heatmap to ``path``."""
+def chapter_heatmap(cells: Sequence[Cell], path: Path, caption: str = "", shade: bool = True) -> None:
+    """Write the chapter x status count heatmap to ``path``.
+
+    ``shade`` scales each cell's opacity by its share of the chapter. At report level 0 the
+    caller passes False: a per-chapter share of unvalidated machine output is a rate, which
+    level 0 never shows (synthesis 5.5), so cells carry their count on uniform shading.
+    """
     units = _unit_cells(cells)
     seen = {c.chapter for c in units}
     chapters = [ch for ch in REF_CHAPTERS if ch in seen] + sorted(seen - set(REF_CHAPTERS))
@@ -78,7 +83,7 @@ def chapter_heatmap(cells: Sequence[Cell], path: Path, caption: str = "") -> Non
         out.append(f'<text x="{left - 6}" y="{y + cell * 0.6}" text-anchor="end">{_esc(chapter)}</text>')
         for j, status in enumerate(HEATMAP_STATUSES):
             n = counts.get((chapter, status), 0)
-            opacity = 0.08 + 0.92 * n / total if n else 0.0
+            opacity = (0.08 + 0.92 * n / total if shade else 0.25) if n else 0.0
             out.append(f'<rect x="{left + j * cell}" y="{y}" width="{cell - 2}" height="{cell - 2}" '
                        f'fill="{STATUS_COLOR[status]}" fill-opacity="{opacity:.2f}" stroke="#dee2e6"/>')
             if n:

@@ -79,9 +79,12 @@ def test_verification_blind_reveal_and_back_into_the_matrix(finished, capsys) ->
     assert sum(1 for c in cells if c["grade"] == "A") == 5
     assert cli(root, run, "stats") == 0
     estimates = json.loads((run / "stats" / "estimates.json").read_text(encoding="utf-8"))
-    e1 = estimates["E1_any"]
-    assert e1["not_estimable"] is None and 0.5 <= e1["lo"] <= e1["point"] <= e1["hi"] <= 1.0
-    assert estimates["E1_any_blind"]["not_estimable"] is None
+    # the five machine negatives (neg:B:other) have no audit verdict yet: imputing them would
+    # report the Dirichlet prior, so E1 is NOT_ESTIMABLE and names the stratum
+    for name in ("E1_any", "E1_any_blind", "E2_any"):
+        assert estimates[name]["not_estimable"] == "G3: no phase-2 sample verdict in stratum neg:B:other (5 unverified)"
+    details = json.loads((run / "stats" / "details.json").read_text(encoding="utf-8"))
+    assert details["uncalibrated"] == {"final": {"neg:B:other": 5}, "blind": {"neg:B:other": 5}}
     assert cli(root, run, "report") == 0
     text = (run / "summary.md").read_text(encoding="utf-8")
     assert "| absent (no counterpart) | 5 |" in text.split("## Human-verified counts (grade A)")[1]
@@ -89,6 +92,40 @@ def test_verification_blind_reveal_and_back_into_the_matrix(finished, capsys) ->
     assert cli(root, run, "sample", "audit") == 0
     plan = (run / "review" / "plan_audit.csv").read_text(encoding="utf-8").splitlines()
     assert len(plan) == 1 + 5 and all(",audit," in line for line in plan[1:])
+    assert cli(root, run, "evaluate") == 0
+    gate = json.loads((run / "evaluation" / "gate.json").read_text(encoding="utf-8"))
+    assert any("neg:B:other has 5 unverified" in r for r in gate["reasons"]), "G3 sees the uncalibrated stratum"
+
+    # blind-only audit verdicts calibrate the blind column but are not final decisions (A1)
+    assert cli(root, run, "review", "export", "--task", "audit") == 0
+    audit_blind = run / "review" / "audit.blind.csv"
+    with audit_blind.open(encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh)
+        rows, columns = list(reader), reader.fieldnames
+    for row in rows:
+        row.update(blind_relation="equivalent", blind_wit_loci=row["zh_context_loci"].split()[0])
+    with audit_blind.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    assert len(rows) == 5
+    assert cli(root, run, "review", "import", "--task", "audit", "--file", str(audit_blind), "--annotator", "ann",
+               "--date", "2026-10-02") == 0
+    assert cli(root, run, "stats") == 0
+    estimates = json.loads((run / "stats" / "estimates.json").read_text(encoding="utf-8"))
+    assert estimates["E1_any"]["not_estimable"].startswith("G3: no phase-2 sample verdict in stratum neg:B:other")
+    assert estimates["E1_any_blind"]["not_estimable"] is None
+    assert estimates["E1_any_blind"]["point"] == pytest.approx(0.5)      # 5 absent + 5 equivalent, all verified
+
+    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "audit") == 0
+    audit_reveal = run / "review" / "audit.reveal.csv"
+    assert fill(audit_reveal) == 5                         # final columns come prefilled with the blind decision
+    assert cli(root, run, "review", "reveal", "--file", str(audit_reveal), "--date", "2026-10-03") == 0
+    assert cli(root, run, "build") == 0
+    assert cli(root, run, "stats") == 0
+    estimates = json.loads((run / "stats" / "estimates.json").read_text(encoding="utf-8"))
+    assert estimates["E1_any"]["not_estimable"] is None and estimates["E1_any"]["point"] == pytest.approx(0.5)
+    assert estimates["E1_any_prior"]["not_estimable"] is None                   # prior sensitivity (symmetric in D)
 
 
 def test_topic_prelabels_first_and_blind_second_coder(finished) -> None:

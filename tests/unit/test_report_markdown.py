@@ -104,10 +104,28 @@ def test_level_1_adds_scores_with_intervals_and_the_witness_only_list() -> None:
     assert "0.123" not in text, "estimates need level 2"
 
 
+def test_level_1_prints_per_relation_recall_and_per_class_agreement_with_intervals() -> None:
+    scores = {"claude:consensus": {"link_f1": Estimate("link_f1", 0.85, 0.8, 0.9, 300, "gold:test"),
+                                   "relation_recall:abridged": Estimate("relation_recall:abridged", 0.4, 0.2, 0.6, 300,
+                                                                        "gold:test"),
+                                   "status_agreement:ABSENT": Estimate("status_agreement:ABSENT", 0.7, 0.6, 0.8, 300,
+                                                                       "gold:test")},
+              "dp:zero": {"link_f1": Estimate("link_f1", 0.5, 0.4, 0.6, 300, "gold:test")}}
+    text = render(inputs(scores=scores), gate(1))
+    assert "| metric | Claude consensus | P1 length-only DP |" in text
+    assert "| recall of relation abridged | 0.400 [0.200, 0.600] | n/a |" in text
+    assert "| status agreement ABSENT | 0.700 [0.600, 0.800] | n/a |" in text
+    assert "recall of relation" not in render(inputs(scores=scores), gate(0))
+
+
 def test_level_2_prints_estimates_blind_sensitivity_and_manski() -> None:
     text = render(inputs(), gate(2, confirmatory=True))
     assert "- E1 share of units deviating (D_any): 0.123 [0.101, 0.150] (n = 100; covers: machine status error)" in text
     assert "automation-bias sensitivity (blind verdicts): 0.130 [0.110, 0.160]" in text
+    assert "prior sensitivity" not in text
+    prior = Estimate("E1_any_prior", 0.11, 0.09, 0.14, 100, "scope")
+    with_prior = render(inputs(estimates={**inputs().estimates, "E1_any_prior": prior}), gate(2))
+    assert "  - prior sensitivity (Dirichlet symmetric in D, not Jeffreys): 0.110 [0.090, 0.140]" in with_prior
     assert "- any: [0.120, 0.200] (wider than the gate allows)" in text
     assert "**Confirmatory**" in text
     assert "E1 share of units absent: NOT_ESTIMABLE: stats: not computed in this run" in text

@@ -34,14 +34,7 @@ from typing import Any, Mapping, Sequence, get_args
 
 from ..config import ConfigError, from_mapping
 from ..core.textnorm import quote_in
-from ..core.types import (
-    REASON_INVALID,
-    REASON_REFUSED,
-    REASON_SUBSTITUTED_MODEL,
-    REASON_TRUNCATED,
-    REASON_UNASSESSED,
-    Segment,
-)
+from ..core.types import REASON_SUBSTITUTED_MODEL, REASON_UNASSESSED, Segment, failure_reason
 from ..llm.client import DEFAULT_MODEL, Effort, LLMRequest, LLMResponse, sha256_text
 from ..llm.schema import strict
 from .codebook import NEUTRAL, TOPICS, TopicCodebook
@@ -230,7 +223,7 @@ def parse_prelabels(response: LLMResponse, batch: PrelabelBatch) -> dict[str, Pr
     ``unassessed``.
     """
     if response.status != "ok" or response.data is None:
-        reason = _failure_reason(response)
+        reason = failure_reason(response.status, response.refusal_category)
         return {s.id: Prelabel(s.id, reason=reason) for s in batch.units}
     reason = REASON_SUBSTITUTED_MODEL if response.substituted_model else None
     answers: dict[str, list[Sequence[Mapping[str, str]]]] = {}
@@ -258,9 +251,3 @@ def _verified(unit: Segment, proposed: Sequence[Mapping[str, str]], flags: set[s
     flags |= {f"{FLAG_CUE_UNVERIFIED}:{t}" for t in named - {NEUTRAL} - set(cues)}
     topics = frozenset(cues) or (frozenset({NEUTRAL}) if named == {NEUTRAL} else frozenset())
     return Prelabel(unit.id, topics, tuple((t, cues[t]) for t in TOPICS if t in cues), frozenset(flags), reason)
-
-
-def _failure_reason(response: LLMResponse) -> str:
-    if response.status == "refusal":
-        return f"{REASON_REFUSED}:{response.refusal_category}" if response.refusal_category else REASON_REFUSED
-    return REASON_TRUNCATED if response.status == "truncated" else REASON_INVALID

@@ -34,7 +34,8 @@ from .measure import read_built_cells
 
 PRELABELS = ("topics", "prelabels.jsonl")
 SECOND_CODER_FRACTION = 0.2
-REVIEW_TASKS = ("gold", "verify", "audit", "resolve", "reveal", "topics", "topics_second")
+EXPORT_TASKS = sheets.SHEET_TASKS     # the one list of sheet tasks (review.verdicts.REVIEW_TASKS: verdict files)
+IMPORT_TASKS = tuple(t for t in EXPORT_TASKS if t != "reveal")   # reveal has its own subcommand
 RESOLVE_SUFFIX = "_resolve"
 
 
@@ -78,7 +79,13 @@ def sample(ctx: RunContext, kind: str, batch: str | None = None, force: bool = F
     if kind not in ("verification", "audit"):
         raise StageError(f"sample: unknown kind {kind!r}; use windows, verification or audit")
     machine = read_built_cells(ctx, machine=True)
-    groups = ann.load_topics(ctx, texts).groups()
+    topics = ann.load_topics(ctx, texts)
+    groups = topics.groups()
+    if not topics.complete:
+        print(f"sample {kind}: WARNING topic labels are incomplete "
+              f"({sum(1 for x in topics.labels.values() if x.topics)}/{topics.n_units}); unlabelled units are "
+              "stratified as 'other' and stay so (strata are frozen with the plan). Label topics first "
+              "(synthesis 6.2) unless this is deliberate.")
     decided = {v.unit_id for v in ann.current_verdicts(ann.review_verdicts(ctx, texts), texts) if v.final_relation}
     decided |= {v.unit_id for v in ann.gold_verdicts(ctx, texts)}
     if kind == "verification":
@@ -87,10 +94,13 @@ def sample(ctx: RunContext, kind: str, batch: str | None = None, force: bool = F
     else:
         spec_a = sampling.AuditSpec.from_config(ctx.settings.prereg)
         items = sampling.draw_audit(machine, groups, spec_a, ref_kinds=texts.ref_kinds, verified=decided)
-    path = ann.plan_path(ctx, batch or ("verify" if kind == "verification" else "audit"))
+    batch = batch or ("verify" if kind == "verification" else "audit")
+    path = ann.plan_path(ctx, batch)
     if path.exists() and not force:
         raise StageError(f"{path} exists; a plan is drawn once (pass --force to redraw it)")
     sampling.write_plan(items, path)
+    ann.write_strata_snapshot(ctx, batch, sampling.machine_strata(machine, groups, texts.ref_kinds), items,
+                              topics.complete)
     record_stage(ctx, f"sample-{kind}")
     print(f"sample {kind}: {len(items)} items -> {path}")
     return path
@@ -114,10 +124,15 @@ def _sample_windows(ctx: RunContext, texts: Texts, force: bool) -> Path:
 
 # --------------------------------------------------------------------------- export
 def review_export(ctx: RunContext, task: str, batch: str | None = None, gold_set: str | None = None,
-                  hours: float | None = None, competence: Sequence[str] = ()) -> list[Path]:
-    """Write the sheets of one batch under ``review/`` (see ``review.sheets``)."""
-    if task not in REVIEW_TASKS:
-        raise StageError(f"review export: unknown task {task!r}; use one of {', '.join(REVIEW_TASKS)}")
+                  hours: float | None = None, competence: Sequence[str] = (), force: bool = False) -> list[Path]:
+    """Write the sheets of one batch under ``review/`` (see ``review.sheets``).
+
+    An existing blind or reveal sheet is never overwritten without ``force``: a reviewer may
+    be filling it in place, and a ``--hours`` queue shares the batch's sheet name (import
+    reads the batch from the file name).
+    """
+    if task not in EXPORT_TASKS:
+        raise StageError(f"review export: unknown task {task!r}; use one of {', '.join(EXPORT_TASKS)}")
     texts = load_texts(ctx)
     out = ctx.path("review")
     segments = [*texts.reference, *texts.witness]
@@ -128,15 +143,20 @@ def review_export(ctx: RunContext, task: str, batch: str | None = None, gold_set
         if not items:
             raise StageError(f"review export: no unit left for {task}")
         default = "first" if task == "topics" else "second"          # topics_first.csv, topics_second.second.csv
-        return sheets.export(items, task, out, segments, (), batch=batch or default, prelabels=read_prelabels(ctx))
+        paths = sheets.export(items, task, out, segments, (), batch=batch or default, prelabels=read_prelabels(ctx))
+        print(f"review export {task}: {len(items)} units -> {paths[0]}")
+        return paths
     batch = batch or ("audit" if task == "audit" else "verify")      # resolve items are in the verification plan
     machine = read_built_cells(ctx, machine=True)
     if task == "reveal":
         blind = verdict_files.read_file(require(ann.verdict_dir(ctx, texts.witness_id) / f"{batch}.csv", "review import"))
         items = [sampling.ReviewItem(v.item_id, v.task, v.unit_id, v.stratum) for v in blind]
+        _refuse_overwrite(out / f"{batch}.reveal.csv", force)
         consensus = read_consensus(ctx)
-        return sheets.export(items, "reveal", out, segments, machine, batch=batch, blind=blind,
-                             links=consensus.by_ref() if consensus else {})
+        paths = sheets.export(items, "reveal", out, segments, machine, batch=batch, blind=blind,
+                              links=consensus.by_ref() if consensus else {})
+        print(f"review export reveal: {len(items)} items -> {paths[0]}")
+        return paths
     items = [i for i in sampling.read_plan(require(ann.plan_path(ctx, batch), "sample")) if i.task == task]
     if hours is not None:
         done = {v.item_id for v in ann.review_verdicts(ctx, texts) if v.blind_relation}
@@ -144,9 +164,16 @@ def review_export(ctx: RunContext, task: str, batch: str | None = None, gold_set
     if not items:
         raise StageError(f"review export: no {task} item in plan_{batch}.csv (or none fits the budget)")
     sheet = batch if task != "resolve" else f"{batch}{RESOLVE_SUFFIX}"      # a plan's resolve items get their own sheet
+    _refuse_overwrite(out / f"{sheet}.blind.csv", force)
     paths = sheets.export(items, task, out, segments, machine, batch=sheet)
     print(f"review export {task}: {len(items)} items -> {paths[0]}")
     return paths
+
+
+def _refuse_overwrite(path: Path, force: bool) -> None:
+    if path.exists() and not force:
+        raise StageError(f"{path} exists and may hold a reviewer's work; import it first, or pass --force "
+                         "to overwrite it")
 
 
 def _export_gold(ctx: RunContext, texts: Texts, gold_set: str, out: Path, segments: list) -> list[Path]:

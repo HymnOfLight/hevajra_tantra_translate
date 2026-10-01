@@ -13,14 +13,21 @@ writes no line.
 
 Budget. Before a call that is not already cached, the client raises
 ``BudgetExceeded`` once the estimated spend has reached ``budget_usd``. Spend counts
-only calls not served from the cache, and it includes what earlier runs recorded in
-the same log file, so restarting a run does not reset the cap. With concurrent
-workers the cap can be overshot by the calls already in flight.
+only calls not served from the cache. It is read from the spend *ledger*: a text-free
+JSONL file (``ts, run_id, task, key, est_usd, from_cache``) shared by every run
+(the pipeline keeps it beside the shared response cache), to which each uncached call
+appends one line. The cap is therefore cumulative across runs and run directories;
+a new run does not reset it. Without a ledger the audit log itself is the ledger
+(a per-log cap). With concurrent workers the cap can be overshot by the calls already
+in flight.
 
 Cost estimate. Tokens times ``pricing`` in USD per million tokens, with the keys
 ``input``, ``output``, ``cache_read`` and ``cache_write`` (``config/llm.yaml:
-pricing_usd_per_mtok``). A fallback model bills at its own rates, so substituted
-calls are estimated at the configured model's prices.
+pricing_usd_per_mtok``). A fallback model bills at its own rates, which the response
+does not break down per model, so a fallback-served call (``fallback_used``) is priced
+conservatively: every token at the higher of ``pricing`` and ``fallback_pricing``
+(``config/llm.yaml: fallback_pricing_usd_per_mtok``, the dearest permitted fallback
+target). Without ``fallback_pricing`` the configured model's prices are used.
 """
 
 from __future__ import annotations
@@ -54,6 +61,15 @@ def estimate_usd(usage: Usage, pricing: Mapping[str, float]) -> float:
         + usage.cache_read_input_tokens * pricing["cache_read"]
         + usage.cache_creation_input_tokens * pricing["cache_write"]
     ) / 1_000_000
+
+
+def call_pricing(
+    response: LLMResponse, pricing: Mapping[str, float], fallback_pricing: Mapping[str, float] | None
+) -> Mapping[str, float]:
+    """Prices for ``response``: the per-key maximum of both tables when a fallback served it."""
+    if fallback_pricing is None or not response.substituted_model:
+        return pricing
+    return {k: max(float(pricing[k]), float(fallback_pricing[k])) for k in PRICING_KEYS}
 
 
 def audit_record(
@@ -102,19 +118,26 @@ class AuditedClient:
         budget_usd: float,
         run_id: str,
         clock: Callable[[], float] | None = None,
+        ledger_path: Path | None = None,
+        fallback_pricing: Mapping[str, float] | None = None,
     ) -> None:
-        missing = [k for k in PRICING_KEYS if k not in pricing]
-        if missing:
-            raise ConfigurationError(
-                f"pricing lacks {missing}; expected USD per MTok for {list(PRICING_KEYS)}"
-            )
+        for name, table in (("pricing", pricing), ("fallback_pricing", fallback_pricing)):
+            missing = [k for k in PRICING_KEYS if table is not None and k not in table]
+            if missing:
+                raise ConfigurationError(
+                    f"{name} lacks {missing}; expected USD per MTok for {list(PRICING_KEYS)}"
+                )
         self.inner = inner
         self.log_path = Path(log_path)
+        self.ledger_path = Path(ledger_path) if ledger_path is not None else None
         self.pricing = {k: float(pricing[k]) for k in PRICING_KEYS}
+        self.fallback_pricing = (
+            {k: float(fallback_pricing[k]) for k in PRICING_KEYS} if fallback_pricing is not None else None
+        )
         self.budget_usd = float(budget_usd)
         self.run_id = run_id
         self.clock = clock or time.time
-        self.spent_usd = recorded_spend(self.log_path)
+        self.spent_usd = recorded_spend(self.ledger_path or self.log_path)
         self._lock = threading.Lock()
 
     def is_cached(self, request: LLMRequest) -> bool:
@@ -132,21 +155,28 @@ class AuditedClient:
         started = self.clock()
         response = self.inner.complete(request)
         seconds = self.clock() - started
-        cost = estimate_usd(response.usage, self.pricing)
+        cost = estimate_usd(response.usage, call_pricing(response, self.pricing, self.fallback_pricing))
         ts = datetime.fromtimestamp(started, timezone.utc).isoformat(timespec="seconds")
         record = audit_record(request, response, run_id=self.run_id, ts=ts, seconds=seconds, est_usd=cost)
         line = json.dumps(record, sort_keys=True) + "\n"
         with self._lock:
             if not response.from_cache:
                 self.spent_usd += cost
-            self.log_path.parent.mkdir(parents=True, exist_ok=True)
-            with self.log_path.open("a", encoding="utf-8") as handle:
-                handle.write(line)
+                if self.ledger_path is not None:
+                    entry = {k: record[k] for k in ("ts", "run_id", "task", "key", "est_usd", "from_cache")}
+                    _append(self.ledger_path, json.dumps(entry, sort_keys=True) + "\n")
+            _append(self.log_path, line)
         return response
 
 
+def _append(path: Path, line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line)
+
+
 def recorded_spend(log_path: Path) -> float:
-    """Sum of ``est_usd`` over the non-cached calls already in the audit log (0 if absent)."""
+    """Sum of ``est_usd`` over the non-cached calls in an audit log or spend ledger (0 if absent)."""
     if not log_path.is_file():
         return 0.0
     total = 0.0

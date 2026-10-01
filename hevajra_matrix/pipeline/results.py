@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from ..collate.consensus import SOURCE_CONSENSUS
 from ..core.io import read_jsonl
 from ..core.textnorm import length
-from ..core.types import Cell, Estimate, Status
-from ..evaluation.gate import GateReport
+from ..core.types import Cell, Estimate
+from ..evaluation.gate import GateReport, GateSpecs
 from ..report import markdown, svg
 from ..review import sampling
 from ..review.verdicts import is_orphan
-from ..stats import contrast, decompose, twophase
+from ..stats import decompose, twophase
+from . import e4 as e4_stage
 from . import human_data as ann
 from .context import RunContext, Texts, load_texts, record_stage
 from .instrument import read_consensus
@@ -24,12 +25,17 @@ from .store import estimate_from_dict, estimate_to_dict, sentinel_result_from_di
 
 OUTCOMES = ("any", "cov", "absent", "partial")
 NO_PHASE2 = "G3: no phase-2 verification or audit verdict yet"
+PRIOR_SUFFIX = "_prior"    # E1_<primary>_prior: the primary E1 with a prior symmetric in D
 TRANSLATOR_NOTE_CLASSES = (decompose.VORLAGE_NOTE, decompose.TRANSLATOR_NOTE)
 
 
 # --------------------------------------------------------------------------- stats
 def stats(ctx: RunContext) -> dict[str, Estimate]:
     """E1, E2 (two-phase draws, final and blind columns), Manski bounds, E3, E4, E5.
+
+    ``E1_<primary>_prior`` repeats E1 of the primary outcome with ``twophase.PRIOR_SYMMETRIC_D``
+    (the spec's Jeffreys prior leans 3/4 toward deviation in sparse strata). A column whose
+    draws would impute a stratum without any phase-2 sample is NOT_ESTIMABLE, not a prior.
 
     Numbers are computed only from phase-2 verdicts: without any, E1/E2 are NOT_ESTIMABLE
     rather than prior-only draws. Whether a number may be printed is the report's job.
@@ -40,7 +46,7 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     machine = [c for c in read_built_cells(ctx, machine=True) if not is_orphan(c.unit_id)]
     topics = ann.load_topics(ctx, texts)
     verdicts = ann.current_verdicts(ann.review_verdicts(ctx, texts), texts)
-    strata = sampling.machine_strata(machine, topics.groups(), texts.ref_kinds)
+    strata = ann.sampling_strata(ctx, sampling.machine_strata(machine, topics.groups(), texts.ref_kinds))
     params = ctx.settings.prereg.get("stats") or {}
     n_draws, seed = int(params.get("n_draws", 500)), int(params.get("seed", 0))
     scope = "; ".join(str(s) for s in ctx.settings.prereg.get("scope") or [])
@@ -51,21 +57,32 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     if any(v.task in twophase.SAMPLE_TASKS for v in verdicts):
         weights = {s.id: float(length(s.text, s.lang)) for s in texts.units}
         for column in ("final", "blind"):
-            draws[column] = twophase.draws(cells, verdicts, strata, n_draws, seed, column, texts.ref_kinds)
             suffix = "" if column == "final" else "_blind"
+            names = [f"E1_{o}{suffix}" for o in (OUTCOMES if column == "final" else ("any", "cov"))]
+            names.append(f"E2_any{suffix}")
+            try:
+                draws[column] = twophase.draws(cells, verdicts, strata, n_draws, seed, column, texts.ref_kinds)
+            except twophase.UncalibratedStrata as err:
+                extra.setdefault("uncalibrated", {})[column] = err.strata
+                est.update({name: Estimate.missing(name, str(err), scope) for name in names})
+                continue
             for outcome in OUTCOMES if column == "final" else ("any", "cov"):
                 est[f"E1_{outcome}{suffix}"] = twophase.prevalence(draws[column], outcome, name=f"E1_{outcome}{suffix}",
                                                                    scope=scope)
             est[f"E2_any{suffix}"] = twophase.prevalence(draws[column], "any", weights, name=f"E2_any{suffix}", scope=scope)
+        if "final" in draws:      # prior sensitivity: Dirichlet symmetric in D instead of Jeffreys
+            sym = twophase.draws(cells, verdicts, strata, n_draws, seed, "final", texts.ref_kinds, prior="symmetric_d")
+            name = f"E1_{primary}{PRIOR_SUFFIX}"
+            est[name] = twophase.prevalence(sym, primary, name=name, scope=scope)
         extra["revision"] = {s: vars(r) for s, r in twophase.revision_rate(verdicts, texts.ref_kinds).items()}
     else:
         for name in ("E1_any", "E1_cov", "E1_absent", "E1_partial", "E2_any"):
             est[name] = Estimate.missing(name, NO_PHASE2, scope)
     if cells:
         extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in ("any", "cov")}
-    est["E3"] = decompose.e3((), manuscripts=(), reference=texts.reference_id, cowitness=texts.reference_id,
-                             scope=scope)   # the Derge reference is also the only co-witness: NOT_ESTIMABLE
-    est["E4"], extra["e4"] = _e4(ctx, texts, cells, topics, draws.get("final"), primary, seed, scope)
+    est["E3"] = Estimate.missing("E3", decompose.E3_NOT_INGESTED, scope)
+    est["E4"], extra["e4"] = _e4(ctx, texts, cells, machine, topics, verdicts, draws.get("final"), primary, seed,
+                                 scope)
     est["E5"] = _e5(orphans, texts, scope)
     out = ctx.path("stats")
     out.mkdir(parents=True, exist_ok=True)
@@ -79,28 +96,32 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     return est
 
 
-def _e4(ctx: RunContext, texts: Texts, cells: list[Cell], topics: ann.Topics, draws: list | None, outcome: str,
-        seed: int, scope: str) -> tuple[Estimate, dict[str, Any]]:
-    """Delta (synthesis 6.3) when G4 allows it and draws exist; otherwise the reason."""
+def _e4(ctx: RunContext, texts: Texts, cells: list[Cell], machine: list[Cell], topics: ann.Topics,
+        verdicts: list, draws: list | None, outcome: str, seed: int, scope: str) -> tuple[Estimate, dict[str, Any]]:
+    """Delta (synthesis 6.3) with its diagnostics (``pipeline.e4``) when G4 allows it and draws
+    exist; otherwise the reason. With complete topic labels the MDE is first simulated on them
+    (``stats/power.json``); an MDE above the G4 maximum blocks E4 here as well."""
+    prereg = ctx.settings.prereg
+    margin, warning = e4_stage.tost_margin(prereg)
+    if warning:
+        print(f"stats E4: WARNING {warning}")
+    power = None
+    if topics.complete:
+        power = e4_stage.mde_on_labels(texts, machine, topics.groups(), outcome, seed)
+        _write_json(ctx.path("stats", "power.json"), power)
     gate = read_gate(ctx)
     reason = (gate.not_estimable.get("E4") if gate is not None else "G4: evaluate has not run")
+    max_mde = GateSpecs.from_prereg(prereg).g4.max_mde
+    if reason is None and power is not None and (power["mde_on_labels"] is None or power["mde_on_labels"] > max_mde):
+        reason = f"G4: MDE on the real topic labels {power['mde_on_labels']} > {max_mde} (stats/power.json)"
     if reason is None and draws is None:
         reason = NO_PHASE2
     if reason:
-        return Estimate.missing("E4", reason, scope), {}
-    groups = topics.groups()
-    excluded = {c.unit_id for c in cells if "uniform_across_list" in c.flags or c.status is Status.LACUNA}
-    exposure = {u: g == "sensitive" for u, g in groups.items() if g in ("sensitive", "neutral") and u not in excluded}
-    lengths = {s.id: float(length(s.text, s.lang)) for s in texts.units if s.id in exposure}
-    strata = contrast.tertile_strata(lengths, texts.chapter_of)
-    estimate = contrast.delta(draws, exposure, strata, texts.chapter_of, seed, outcome, scope=scope)
-    means = twophase.unit_means(draws, outcome)
-    n_perm = int((ctx.settings.prereg.get("stats") or {}).get("n_permutations", 2000))
-    margin = float((ctx.settings.prereg.get("stats") or {}).get("tost_margin", 0.1))
-    overlap = contrast.overlap_diagnostics(exposure, strata)
-    return estimate, {"permutation_p": contrast.permutation_p(means, exposure, strata, n_perm, seed),
-                      "equivalent_within_margin": contrast.tost(estimate, margin), "margin": margin,
-                      "overlap": asdict(overlap)}
+        return Estimate.missing("E4", reason, scope), {"margin": margin, **({"power": power} if power else {})}
+    n_perm = int((prereg.get("stats") or {}).get("n_permutations", 2000))
+    estimate, extra = e4_stage.contrast_with_diagnostics(texts, cells, machine, topics.groups(), verdicts, draws,
+                                                         outcome, seed, n_perm, margin, scope)
+    return estimate, {**extra, **({"power": power} if power else {})}
 
 
 def _e5(orphans: list[Cell], texts: Texts, scope: str) -> Estimate:
@@ -149,13 +170,20 @@ def report_inputs(ctx: RunContext) -> markdown.ReportInputs:
                            for c in cells if is_orphan(c.unit_id)),
         estimates=est, manski={k: (v[0], v[1]) for k, v in (details.get("manski") or {}).items()},
         max_manski_width=float(((ctx.settings.prereg.get("gates") or {}).get("g3") or {}).get("max_manski_width", 0.05)),
-        notes=tuple(tuple(n) for n in translator_notes(texts)))
+        notes=tuple(tuple(n) for n in translator_notes(texts)),
+        revision=details.get("revision") or {}, e4_details=details.get("e4") or {})
 
 
 def report(ctx: RunContext) -> Path:
     """Write ``summary.md`` and the SVG figures, gated by the level in ``evaluation/gate.json``."""
     gate = read_gate(ctx) or GateReport(level=0, confirmatory=False, passed={},
                                         reasons=("G0: evaluate has not run in this run directory",))
+    stale = stale_gate_inputs(ctx)
+    if stale:
+        note = (f"report: evaluation/gate.json predates {', '.join(stale)}; the gates (G2, G3) may not reflect them: "
+                "rerun `hevajra-matrix evaluate`")
+        print(f"report: WARNING {note.removeprefix('report: ')}")
+        gate = replace(gate, reasons=(*gate.reasons, note))
     inputs = report_inputs(ctx)
     path = ctx.path("summary.md")
     path.write_text(markdown.render(inputs, gate), encoding="utf-8")
@@ -164,12 +192,29 @@ def report(ctx: RunContext) -> Path:
         caption = markdown.UNVALIDATED if gate.level == 0 else f"report level {gate.level}"
         cells = read_built_cells(ctx)
         svg.status_strip(cells, ctx.path("status_strip.svg"), caption)
-        svg.chapter_heatmap(cells, ctx.path("chapter_heatmap.svg"), caption)
+        svg.chapter_heatmap(cells, ctx.path("chapter_heatmap.svg"), caption, shade=gate.level > 0)
     record_stage(ctx, "report")
     print(f"report: {path} (level {gate.level})")
     return path
 
 
+STALE_CHECKS = (("matrix", "cells.jsonl"), ("evaluation", "perturbations.json"))
+
+
+def stale_gate_inputs(ctx: RunContext) -> list[str]:
+    """Gate inputs written after ``evaluation/gate.json`` (e.g. build after new verdicts)."""
+    gate = ctx.path("evaluation", "gate.json")
+    if not gate.is_file():
+        return []
+    when = gate.stat().st_mtime_ns
+    return ["/".join(parts) for parts in STALE_CHECKS
+            if ctx.path(*parts).is_file() and ctx.path(*parts).stat().st_mtime_ns > when]
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
 
+
+def _write_json(path: Path, obj: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, indent=1, sort_keys=True) + "\n", encoding="utf-8")

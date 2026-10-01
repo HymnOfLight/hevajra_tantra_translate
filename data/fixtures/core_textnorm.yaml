@@ -25,6 +25,12 @@ quote_contained:
   - {lang: bo, quote: "རྗེ་སྙིང", text: "རྡོ་རྗེ་སྙིང་པོ།", contained: true}
   - {lang: bo, quote: "། །", text: "རྡོ་རྗེ།", contained: false}                     # empty after normalisation
   - {lang: sa, quote: "mayā śrutam", text: "evaṃ mayā śrutam", contained: true}
+  # The Derge writes no tsheg after a visarga (D417:3b.1.3): each mantra syllable is
+  # still a whole syllable.
+  - {lang: bo, quote: "ཧཱུྃ", text: "ཨོཾ་ཨཱཿཧཱུྃ།", contained: true}
+  - {lang: bo, quote: "ཨཱཿ", text: "ཨོཾ་ཨཱཿཧཱུྃ།", contained: true}
+  - {lang: bo, quote: "ཨཱཿཧཱུྃ", text: "ཨོཾ་ཨཱཿཧཱུྃ།", contained: true}
+  - {lang: bo, quote: "ཨཱཿ", text: "ཟེ་འབྲུ་ལ་ནི་ཨཱཿའི་རྣམ་པའོ།", contained: false}  # fused genitive: "of a:h"
   - {lang: zh, quote: "", text: "善哉", contained: false}
 
 fingerprint_same:
@@ -46,6 +52,8 @@ length:
   - {lang: zh, text: "唵嚩日囉吽", expected: 5}
   - {lang: bo, text: "རྡོ་རྗེ་སྙིང་པོས་གསོལ་བ།", expected: 6}
   - {lang: bo, text: "༄༅༅། །རྒྱ་གར་སྐད་དུ།", expected: 4}                  # head marks are not syllables
+  - {lang: bo, text: "ཕུཿཕུཿཕུཿཕུཿཕུཿཕུཿཕུཿཕུཿཧཱུྃ་ཧཱུྃ་ཧཱུྃ་ཕཊ་སྭཱ་ཧཱ།", expected: 14}   # D417:3b.7.7
+  - {lang: bo, text: "ཧྲཱིཿལས་བྱུང་བའི་ལྷ་མོ་ནི།", expected: 7}            # D417:13b.3.8, a 7-syllable verse
   - {lang: sa, text: "evaṃ mayā śrutam", expected: 6}
   - {lang: sa, text: "kṛṣṇa", expected: 2}
   - {lang: en, text: "This is not censorship.", expected: 4}
@@ -53,6 +61,11 @@ length:
 bo_syllables:
   - {text: "རྡོ་རྗེ། །སྙིང་པོ", expected: [རྡོ, རྗེ, སྙིང, པོ]}
   - {text: "༄༅། །ཨེ་མའོ་", expected: [ཨེ, མའོ]}
+  - {text: "ཨོཾ་ཨཱཿཧཱུྃ།", expected: [ཨོཾ, ཨཱཿ, ཧཱུྃ]}             # visarga ends a syllable
+  - {text: "ཧྲཱིཿལས་བྱུང", expected: [ཧྲཱིཿ, ལས, བྱུང]}
+  - {text: "ཧྲཱིཿཡིས་", expected: [ཧྲཱིཿ, ཡིས]}
+  - {text: "ཨཱཿའི་རྣམ་པ", expected: [ཨཱཿའི, རྣམ, པ]}             # fused particle stays
+  - {text: "ཨཱཿའོ།", expected: [ཨཱཿའོ]}
 
 bo_sanskrit_ratio:
   - {text: "ཨོཾ་ཧཱུྃ་ཕཊ", low: 0.99, high: 1.0}

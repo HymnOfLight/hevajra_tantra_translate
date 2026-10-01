@@ -63,6 +63,15 @@ def test_bad_boolean_names_the_line(tmp_path: Path) -> None:
         read_file(path)
 
 
+def test_a_gold_row_in_a_verdict_file_is_refused(tmp_path: Path) -> None:
+    # Gold belongs in data/annotations/gold/; loaded from here it would be applied with
+    # review-verdict precedence and be invisible to G1 (review finding, known issue 5).
+    path = tmp_path / "zh_wit" / "gold_1.csv"
+    save([record(), record(item_id=f"gold:{REF.id}", task="gold", stratum="", inclusion_prob=None)], path)
+    with pytest.raises(VerdictError, match="line 3: task 'gold' does not belong"):
+        load(tmp_path)
+
+
 def test_decision_rule() -> None:
     assert decision(record()) == ("abridged", (WIT.id,))
     assert decision(record(final_relation="", final_wit_ids=())) is None                  # not revealed yet

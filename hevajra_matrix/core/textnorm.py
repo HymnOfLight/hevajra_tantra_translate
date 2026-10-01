@@ -10,7 +10,11 @@ Tokenisation (shared by every function below)
     Inside a chunk the tokens are
         zh     single characters (whitespace is dropped),
         bo     syllables (tsheg, non-breaking tsheg and whitespace separate them;
-               shad and other Tibetan punctuation end the chunk),
+               shad and other Tibetan punctuation end the chunk). A visarga followed
+               directly by a base consonant also ends a syllable: the Derge writes no
+               tsheg after a visarga, so "om a:h hum" is three syllables, not two;
+               a fused particle written straight after the visarga ('i, 'o, 'ang,
+               'am, as in "a:h'i") stays in the syllable),
         other  words (runs between whitespace), e.g. IAST Sanskrit or English.
     Matching on whole tokens is what keeps a Tibetan syllable from matching inside a
     longer syllable, and a Sanskrit numeral from matching inside another word.
@@ -29,6 +33,10 @@ if TYPE_CHECKING:  # type-only import: core.lexicon itself imports nothing from 
 
 TSHEG = "\u0f0b"        # Tibetan intersyllabic tsheg
 TSHEG_NB = "\u0f0c"     # Tibetan non-breaking tsheg
+VISARGA = "\u0f7f"      # Tibetan visarga (rnam bcad), a spacing mark (category Mc)
+BO_BASE_CONSONANTS = (0x0F40, 0x0F6C)   # inclusive code point range of base letters
+# Case and clause particles fused to a vowel-final syllable: 'i, 'o, 'ang, 'am.
+_BO_FUSED_PARTICLES = ("\u0f60\u0f72", "\u0f60\u0f7c", "\u0f60\u0f44", "\u0f60\u0f58")
 FINGERPRINT_HEX = 12    # hex digits of sha1 kept in a fingerprint (48 bits)
 MIN_NUMERAL = 2         # a bare "one" (and zero) is never reported; see ``numerals``
 
@@ -68,6 +76,22 @@ def _char_class(ch: str) -> str:
     return "text"
 
 
+def _starts_bo_syllable_after_visarga(text: str, i: int) -> bool:
+    """True when ``text[i]`` follows a visarga and begins a new syllable (a base
+    consonant that does not begin a fused particle closing the current syllable)."""
+    if not BO_BASE_CONSONANTS[0] <= ord(text[i]) <= BO_BASE_CONSONANTS[1]:
+        return False
+    for particle in _BO_FUSED_PARTICLES:
+        j = i + len(particle)
+        if text.startswith(particle, i) and (j == len(text) or _bo_breaks(text[j])):
+            return False
+    return True
+
+
+def _bo_breaks(ch: str) -> bool:
+    return ch in (TSHEG, TSHEG_NB) or _char_class(ch) in ("space", "boundary")
+
+
 def chunks(text: str, lang: str) -> list[list[str]]:
     """Token lists between boundaries, as described in the module docstring."""
     text = unicodedata.normalize("NFC", text).lower()
@@ -86,7 +110,7 @@ def chunks(text: str, lang: str) -> list[list[str]]:
             out.append(tokens.copy())
             tokens.clear()
 
-    for ch in text:
+    for i, ch in enumerate(text):
         kind = "space" if ch in (TSHEG, TSHEG_NB) else _char_class(ch)
         if kind == "boundary":
             end_chunk()
@@ -95,8 +119,10 @@ def chunks(text: str, lang: str) -> list[list[str]]:
         elif kind == "text":
             if lang == "zh":
                 tokens.append(ch)
-            else:
-                buf.append(ch)
+                continue
+            if lang == "bo" and buf and buf[-1] == VISARGA and _starts_bo_syllable_after_visarga(text, i):
+                end_token()     # no tsheg after a visarga: the consonant starts a new syllable
+            buf.append(ch)
     end_chunk()
     return out
 
@@ -282,12 +308,17 @@ def _zh_numerals(text: str, table: ZhNumerals) -> set[int]:
 
 
 def _bo_numerals(text: str, table: BoNumerals) -> set[int]:
-    """Syllable-level parser for numeral words, teens and base + connector + unit forms.
+    """Syllable-level parser for numeral words, teens, base + connector + unit forms and
+    multiples.
 
     Covered forms: a numeral word from the table (one or more syllables, longest first);
     a teen prefix followed by a unit (15 as "ten, five"); a base of 20 or more followed
     by a connector syllable and a unit (32 as "thirty, connector, two"; 108 as
-    "hundred, connector, eight"). Masked syllables never take part in a numeral.
+    "hundred, connector, eight"); a multiple of a base X >= 100, written "X, multiplier,
+    Y" (700,000 as "100,000, multiple, seven") or "Y X" (500 as "five, hundred").
+    A case particle fused to the last syllable (24 as "twenty, connector, four+instr.")
+    is accepted and ends the numeral. A numeral followed by a fraction word ("ten,
+    half") is not reported. Masked syllables never take part in a numeral.
     """
     words = {_term_tokens(w, "bo"): v for w, v in table.words.items()}
     out: set[int] = set()
@@ -304,32 +335,80 @@ def _bo_numerals(text: str, table: BoNumerals) -> set[int]:
 def _bo_numeral_at(syl: Sequence[str], mask: Sequence[bool], i: int,
                    words: Mapping[tuple[str, ...], int], table: BoNumerals) -> tuple[int | None, int]:
     """(value or None, index after it) for a numeral starting at syllable ``i``."""
-    if mask[i]:
-        return None, i + 1
-    if syl[i] in table.teen_prefixes:
-        unit = _bo_word_at(syl, mask, i + 1, words)
-        if unit is not None and unit[0] < 10:
-            return 10 + unit[0], i + 1 + unit[1]
-        return 10, i + 1
-    hit = _bo_word_at(syl, mask, i, words)
+    hit = _bo_simple_at(syl, mask, i, words, table)
     if hit is None:
         return None, i + 1
-    value, j = hit[0], i + hit[1]
-    if value >= 20 and j < len(syl) and not mask[j] and syl[j] in table.connectors:
-        unit = _bo_word_at(syl, mask, j + 1, words)
-        if unit is not None and unit[0] < 10:
-            return value + unit[0], j + 1 + unit[1]
+    value, j, closed = hit
+
+    def free(k: int) -> bool:
+        return not closed and k < len(syl) and not mask[k]
+
+    if free(j) and value >= 100 and syl[j] in table.multipliers:          # X, multiple, Y
+        factor = _bo_simple_at(syl, mask, j + 1, words, table)
+        if factor is not None and factor[0] < value:
+            return value * factor[0], factor[1]
+        return value, j + 1                                                # "X-fold": X
+    if free(j):                                                            # Y X
+        base = _bo_simple_at(syl, mask, j, words, table)
+        if base is not None and base[0] >= 100 and base[0] > value:
+            value, j, closed = value * base[0], base[1], base[2]
+    if free(j) and syl[j] in table.fractions:
+        return None, j + 1
     return value, j
 
 
+def _bo_simple_at(syl: Sequence[str], mask: Sequence[bool], i: int,
+                  words: Mapping[tuple[str, ...], int],
+                  table: BoNumerals) -> tuple[int, int, bool] | None:
+    """(value, index after it, closed by a fused particle) of a word, teen or base +
+    connector + unit starting at ``i``; None if there is none."""
+    if i >= len(syl) or mask[i]:
+        return None
+    teen = _bo_fused_stem(syl[i], table.teen_prefixes, table)
+    if teen is not None:
+        if teen == syl[i]:
+            unit = _bo_word_at(syl, mask, i + 1, words, table)
+            if unit is not None and unit[0] < 10:
+                return 10 + unit[0], i + 1 + unit[1], unit[2]
+        return 10, i + 1, teen != syl[i]
+    hit = _bo_word_at(syl, mask, i, words, table)
+    if hit is None:
+        return None
+    value, j, closed = hit[0], i + hit[1], hit[2]
+    if not closed and value >= 20 and j < len(syl) and not mask[j] and syl[j] in table.connectors:
+        unit = _bo_word_at(syl, mask, j + 1, words, table)
+        if unit is not None and unit[0] < 10:
+            return value + unit[0], j + 1 + unit[1], unit[2]
+    return value, j, closed
+
+
+def _bo_fused_stem(syllable: str, forms: frozenset[str], table: BoNumerals) -> str | None:
+    """``syllable`` if it is one of ``forms``, else the form it carries a fused particle on."""
+    if syllable in forms:
+        return syllable
+    for particle in table.fused_particles:
+        stem = syllable[:-len(particle)]
+        if stem and syllable.endswith(particle) and stem in forms:
+            return stem
+    return None
+
+
 def _bo_word_at(syl: Sequence[str], mask: Sequence[bool], i: int,
-                words: Mapping[tuple[str, ...], int]) -> tuple[int, int] | None:
-    """(value, syllable count) of the longest unmasked numeral word starting at ``i``."""
+                words: Mapping[tuple[str, ...], int],
+                table: BoNumerals) -> tuple[int, int, bool] | None:
+    """(value, syllable count, fused) of the longest unmasked numeral word starting at ``i``;
+    ``fused`` is True when its last syllable carries a fused particle."""
     longest = max((len(w) for w in words), default=0)
     for n in range(min(longest, len(syl) - i), 0, -1):
+        if any(mask[i:i + n]):
+            continue
         seq = tuple(syl[i:i + n])
-        if seq in words and not any(mask[i:i + n]):
-            return words[seq], n
+        if seq in words:
+            return words[seq], n, False
+        for particle in table.fused_particles:
+            stem = seq[-1][:-len(particle)]
+            if stem and seq[-1].endswith(particle) and (*seq[:-1], stem) in words:
+                return words[(*seq[:-1], stem)], n, True
     return None
 
 

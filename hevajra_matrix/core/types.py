@@ -110,6 +110,14 @@ REASON_NO_MAJORITY = "no_majority"
 REASON_UNMAPPED_CHAPTER = "unmapped_chapter"
 
 
+def failure_reason(status: str, refusal_category: str | None = None) -> str:
+    """The UNALIGNED reason of an unusable LLM answer with ``status`` (refusal, truncated,
+    anything else -> invalid): ``refused:<category>`` or ``refused`` without a category."""
+    if status == "refusal":
+        return f"{REASON_REFUSED}:{refusal_category}" if refusal_category else REASON_REFUSED
+    return REASON_TRUNCATED if status == "truncated" else REASON_INVALID
+
+
 @dataclass(frozen=True)
 class Segment:
     """One alignable (or deliberately non-alignable) stretch of a witness.

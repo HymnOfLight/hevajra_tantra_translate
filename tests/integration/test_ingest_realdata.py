@@ -124,6 +124,26 @@ def test_alignable_reference_units(bo):
     assert bo.report["content_segments"] == len(units) == 3042     # v0.2: 3,045 minus the 3 paratext units
 
 
+def test_derge_mantras_after_a_visarga_or_with_a_cue(bo):
+    """Review (v0.3): visarga without tsheg, ratio exactly 0.5, and om-opening mantras."""
+    from hevajra_matrix.core.lexicon import load_numerals
+    from hevajra_matrix.core.textnorm import length, numerals
+
+    by_id = {s.id: s for s in bo.segments}
+    for sid in ("D417:3b.1.3", "D417:3b.2.10", "D417:4a.7.2", "D417:3a.7.1", "D418:14a.4.1",
+                "D418:25a.4.1", "D418:30a.1.3", "D418:30a.1.4"):
+        assert by_id[sid].kind == "mantra", sid
+    for sid in ("D418:21b.7.3", "D418:28b.6.3", "D418:28a.3.8", "D418:24b.1.8"):   # name list, instructions
+        assert by_id[sid].kind != "mantra", sid
+    assert length(by_id["D417:3b.7.7"].text, "bo") == 14
+    assert by_id["D417:13b.3.8"].kind == "verse_line"                                # 7 syllables
+    table = load_numerals(DATA)
+    assert numerals(by_id["D417:3b.6.3"].text, "bo", table) == {24}
+    assert numerals(by_id["D417:13b.5.1"].text, "bo", table) == {700000}
+    assert numerals(by_id["D418:20a.7.8"].text, "bo", table) == {15}
+    assert numerals(by_id["D417:6b.7.8"].text, "bo", table) == set()
+
+
 def test_no_duplicate_ids_over_both_witnesses(zh, bo):
     ids = [s.id for s in (*zh.segments, *bo.segments)]
     assert len(ids) == len(set(ids))

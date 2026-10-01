@@ -192,8 +192,19 @@ def not_estimable_reason(manuscripts: Sequence[str], reference: str, cowitness: 
     return "G4: " + "; ".join(problems) if problems else None
 
 
+# E3 in v0.3: only the Derge reference and the Chinese witness are ingested. No Sanskrit
+# manuscript column exists and the reference is the only Tibetan text, so it would be its
+# own co-witness. Stages print this reason until manuscripts and a co-witness are ingested;
+# then they call ``e3`` with the real columns.
+E3_NOT_INGESTED = "G4: no manuscript column; reference is the co-witness"
+
+
 def bound_unverified_shared(units: Sequence[UnitEvidence], verified: Container[str]) -> list[UnitEvidence]:
-    """A2 sensitivity: unverified deviating units count as not shared (lower bound on shared)."""
+    """A2 sensitivity: unverified deviating units count as not shared (lower bound on shared).
+
+    Reserved for when E3 is estimable (impl_decisions: bound unverified shared units); no
+    stage computes E3 while ``E3_NOT_INGESTED`` holds.
+    """
     return [
         replace(u, cowitness_deviates=False) if u.deviates and u.cowitness_deviates and u.unit_id not in verified else u
         for u in units

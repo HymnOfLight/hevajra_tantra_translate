@@ -51,6 +51,8 @@ def test_make_client_composes_audit_cache_and_sdk_client(ingested: tuple[Path, P
     assert client.inner.root == ctx.settings.path("cache") and not client.inner.offline
     assert client.log_path == ctx.run_dir / "llm_audit.jsonl"
     assert client.budget_usd == 300 and client.run_id == ctx.run_dir.name
+    assert client.ledger_path == ctx.settings.path("cache") / "llm_spend.jsonl", "budget spans runs"
+    assert client.fallback_pricing is not None and client.fallback_pricing["output"] > client.pricing["output"]
 
 
 def test_offline_client_never_builds_an_anthropic_client(ingested: tuple[Path, Path], monkeypatch) -> None:
@@ -270,7 +272,11 @@ def test_experiment_score_analyses_recorded_responses(ingested) -> None:
     assert results == json.loads(json.dumps(payload, default=list))
     h1 = next(t for t in results["tests"] if t["name"] == "H1")
     assert h1["role"] == "confirmatory" and h1["estimate"] == 1.0
-    assert (run / "experiments" / "overattribution" / "human_coding_sheet.csv").is_file()
+    sheet = (run / "experiments" / "overattribution" / "human_coding_sheet.csv").read_text(encoding="utf-8-sig")
+    assert ":E0:" not in sheet and ":EW:" not in sheet, "the coding sheet is blind to condition"
+    key = json.loads((run / "experiments" / "overattribution" / "human_sample.json").read_text(encoding="utf-8"))
+    assert key["responses"] and all(r["sheet_id"] in sheet and r["trial_id"] not in sheet for r in key["responses"])
+    assert results["outcome_basis"] == "unvalidated" and "refusal_uniform" in results
 
 
 ITEMS = """item_id,phase,arm,pair_id,chapter,unit_ids,omission_origin,zh_context_from,zh_context_to,synthetic_facts,note

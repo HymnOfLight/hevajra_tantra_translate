@@ -8,6 +8,12 @@ written by `hevajra-matrix review import` (`hevajra_matrix.review.sheets.import_
 `review.verdicts.save`) and read by `review.verdicts.load`. They are applied to the matrix on
 every `build` (`hevajra_matrix.matrix.build.build_cells`).
 
+Gold is not stored here. `review import --task gold` writes blind gold sheets to
+`data/annotations/gold/<witness>/<set>.csv` (see `data/annotations/gold/README.md`); gold
+rows become verdicts only in memory (`evaluation.gold.to_verdicts`), which is what gives them
+gold precedence and makes them visible to G1 scoring. Do not copy gold rows into this
+directory: `review.verdicts.load` refuses them.
+
 Licence rule: these files hold ids, decisions and short quotes only. The text the annotator
 read is in the review sheets under `runs/<id>/review/`, which are never committed. Quotes are
 cut to `config/run.yaml: review.quote_max_chars` (30 Chinese / 60 Tibetan characters) and
@@ -22,7 +28,7 @@ by spaces, lists of flags by `;`.
 |---|---|
 | `batch_id` | the batch (the sheet's file name without `.blind.csv`) |
 | `item_id` | `<task>:<unit id>`, unique within the batch |
-| `task` | `verify`, `audit` or `resolve` (`gold` for rows imported from blind gold sheets) |
+| `task` | `verify`, `audit` or `resolve` (a file with any other task, including `gold`, is refused on load) |
 | `stratum` | sampling stratum fixed when the plan was drawn, e.g. `pos:abridged:sensitive`, `neg:C:other`, `unresolved`, `pos:witness_only` |
 | `inclusion_prob` | n_h divided by the size of the unverified pool U_h of the stratum when drawn (1 for census strata); required for verify and audit |
 | `unit_id` | reference unit id (e.g. `D418:17b.6.2`) or orphan row id (e.g. `+T0892:0601c01.2`) |

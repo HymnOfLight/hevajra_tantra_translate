@@ -21,7 +21,10 @@ double shad or head mark) is dropped. Kinds, in order of precedence:
     meta        front matter: title block and homage before the text proper
     colophon    a chapter colophon, or the text-end colophon (the last unit containing
                 the text-end marker); it closes the current chapter
-    mantra      at least 3 syllables, more than half with Sanskrit-only letters
+    mantra      at least 3 syllables, and either more than half of them with
+                Sanskrit-only letters, or a mantra cue (an opening om, a closing svaha
+                or phat; ``mantra_cues`` in the marker file) and at least
+                ``mantra_cues.min_ratio`` of them with Sanskrit-only letters
     verse_line  7, 9 or 11 syllables (the classical metres)
     prose       everything else
 
@@ -44,7 +47,7 @@ from typing import Any, Mapping, Sequence
 
 from ..core.ids import assign_ids
 from ..core.lexicon import LexiconError, read_lexicon
-from ..core.textnorm import bo_sanskrit_syllable_ratio, fingerprint, for_quote, length
+from ..core.textnorm import bo_sanskrit_syllable_ratio, bo_syllables, chunks, fingerprint, for_quote
 from ..core.types import Segment
 from . import CONTENT_KINDS, IngestResult, Variant, duplicate_ids, kind_counts
 
@@ -53,6 +56,9 @@ REVISER_ROLE = "reviser"
 VERSE_SYLLABLES = frozenset({7, 9, 11})
 MANTRA_MIN_SYLLABLES = 3
 MANTRA_MIN_RATIO = 0.5          # share of syllables with Sanskrit-only letters (exclusive)
+# Why exclusive: at exactly 0.5 the real D417/418 text has name lists and transliterated
+# Apabhramsa song lines (e.g. "Mamaki and", D418:21b.7.3), not mantras. The mantras at 0.5
+# (D417:3b.2.10, D417:4a.7.2) open with om and are caught by the cue rule instead.
 
 # Shad (U+0F0D), nyis shad (U+0F0E), tsheg shad (U+0F0F), nyis tsheg shad (U+0F10),
 # rin chen spungs shad (U+0F11) and gter tsheg (U+0F14): a unit ends after any of them.
@@ -73,6 +79,9 @@ class Markers:
     front_start_within: int
     front_max_units: int
     colophon_roles: tuple[tuple[str, re.Pattern[str]], ...]
+    mantra_initial: tuple[tuple[str, ...], ...] = ()     # syllable sequences opening a mantra
+    mantra_final: tuple[tuple[str, ...], ...] = ()       # syllable sequences closing a mantra
+    mantra_cue_min_ratio: float = 1.0                    # Sanskrit ratio needed with a cue (inclusive)
 
 
 @dataclass
@@ -84,10 +93,11 @@ class _Stream:
 
 def load_markers(data_dir: Path) -> Markers:
     doc = read_lexicon(data_dir, "derge_markers")
-    expected = {"text_end", "chapter_colophon", "ordinals", "front_matter", "translator_colophon"}
+    expected = {"text_end", "chapter_colophon", "ordinals", "front_matter", "translator_colophon", "mantra_cues"}
     if set(doc) != expected:
         raise LexiconError(f"derge_markers: expected keys {sorted(expected)}, got {sorted(doc)}")
     front = doc["front_matter"]
+    cues = doc["mantra_cues"]
     try:
         markers = Markers(
             text_end=re.compile(doc["text_end"]),
@@ -98,9 +108,14 @@ def load_markers(data_dir: Path) -> Markers:
             front_start_within=int(front["start_within_units"]),
             front_max_units=int(front["max_units"]),
             colophon_roles=tuple((r["role"], re.compile(r["pattern"])) for r in doc["translator_colophon"]),
+            mantra_initial=tuple(_cue(c) for c in cues["initial"]),
+            mantra_final=tuple(_cue(c) for c in cues["final"]),
+            mantra_cue_min_ratio=float(cues["min_ratio"]),
         )
     except (KeyError, TypeError, ValueError, re.error) as exc:
         raise LexiconError(f"derge_markers: malformed entry ({exc})") from exc
+    if not 0.0 < markers.mantra_cue_min_ratio <= 1.0:
+        raise LexiconError("derge_markers.mantra_cues.min_ratio must be in (0, 1]")
     if "ordinal" not in markers.chapter_colophon.groupindex:
         raise LexiconError("derge_markers.chapter_colophon needs a group named 'ordinal'")
     if any("name" not in p.groupindex for _, p in markers.colophon_roles):
@@ -226,7 +241,7 @@ def _segments(units: list[tuple[int, int]], chars: list[tuple[str, str]], toh: s
                              "segment_id": ids[i], "text_end": i == text_end})
             chapter += 1
         else:
-            kind = _content_kind(text)
+            kind = _content_kind(text, markers)
         segments.append(Segment(id=ids[i], witness=witness, lang=LANG, text=text, start=chars[a][1],
                                 end=chars[b - 1][1], kind=kind, local_chapter=local,
                                 fingerprint=fingerprint(text, LANG)))
@@ -243,11 +258,28 @@ def _front_matter(texts: list[str], m: Markers) -> int:
     return min(len(texts), m.front_max_units)
 
 
-def _content_kind(text: str) -> str:
-    syllables = length(text, LANG)
-    if syllables >= MANTRA_MIN_SYLLABLES and bo_sanskrit_syllable_ratio(text) > MANTRA_MIN_RATIO:
-        return "mantra"
-    return "verse_line" if syllables in VERSE_SYLLABLES else "prose"
+def _cue(form: Any) -> tuple[str, ...]:
+    """A cue as a syllable sequence; a cue must be one non-empty run of syllables."""
+    if not isinstance(form, str):
+        raise TypeError(f"mantra cue {form!r} is not a string")
+    parts = chunks(form, LANG)
+    if len(parts) != 1:
+        raise ValueError(f"mantra cue {form!r} is empty or contains punctuation")
+    return tuple(parts[0])
+
+
+def _content_kind(text: str, m: Markers) -> str:
+    syllables = bo_syllables(text)
+    n = len(syllables)
+    if n >= MANTRA_MIN_SYLLABLES:
+        ratio = bo_sanskrit_syllable_ratio(text)
+        if ratio > MANTRA_MIN_RATIO:
+            return "mantra"
+        cued = (any(tuple(syllables[:len(c)]) == c for c in m.mantra_initial)
+                or any(tuple(syllables[-len(c):]) == c for c in m.mantra_final))
+        if cued and ratio >= m.mantra_cue_min_ratio:
+            return "mantra"
+    return "verse_line" if n in VERSE_SYLLABLES else "prose"
 
 
 def _variants(marks: list[tuple[int, str, str, str]], begin: int, end: int,

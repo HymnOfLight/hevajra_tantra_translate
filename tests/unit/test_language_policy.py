@@ -6,13 +6,16 @@
     * ``config/*.yaml``: no non-Latin script at all.
     * YAML under ``data/``: keys and comments are English; values may be any language.
     * File and directory names are ASCII.
-    * ``data/annotations/`` holds only ids and short quotes (licence rule).
+    * ``data/annotations``, ``sentinels``, ``experiments``, ``ledger`` and ``registry`` hold only
+      ids and short quotes (licence rule, B16): no run of more than 60 non-Latin characters,
+      except the runs listed one by one in ``LICENCE_ALLOWLIST``.
 
 IAST transliteration is Latin script and therefore allowed everywhere.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -110,11 +113,52 @@ def test_file_and_directory_names_are_ascii() -> None:
     assert not bad, "\n".join(bad)
 
 
-def test_annotations_hold_only_short_quotes() -> None:
-    annotations = ROOT / "data" / "annotations"
+LICENCE_DIRS = ("annotations", "sentinels", "experiments", "ledger", "registry")
+LICENCE_SUFFIXES = {".csv", ".yaml", ".yml", ".jsonl", ".json", ".tsv", ".md", ".txt"}
+# (path, sha256 of the exact run) for long runs that are allowed on purpose. Each entry is
+# a deliberate decision; a new entry needs a reason here.
+LICENCE_ALLOWLIST = {
+    # Derge translators' colophon (30a.3), 66 characters, quoted as the evidence for the
+    # gZhon nu dpal revision layer (B9).
+    ("data/registry/witnesses.yaml",
+     "d70bc117c9c43d5c99edbc1d415ca9b9a7854d904180d681cad0e067343c9f6d"),
+}
+
+
+def _long_runs(path: Path, root: Path = ROOT) -> list[str]:
+    rel = path.relative_to(root).as_posix()
+    text = path.read_text(encoding="utf-8")
     bad = []
-    for path in _files("*", annotations):
-        if path.is_file() and path.suffix in {".csv", ".yaml", ".jsonl", ".json", ".tsv"}:
-            if LONG_NON_LATIN_RUN.search(path.read_text(encoding="utf-8")):
-                bad.append(str(path.relative_to(ROOT)))
-    assert not bad, "long source-text runs found (licence rule): " + ", ".join(bad)
+    for m in LONG_NON_LATIN_RUN.finditer(text):
+        digest = hashlib.sha256(m.group().encode("utf-8")).hexdigest()
+        if (rel, digest) not in LICENCE_ALLOWLIST:
+            line = text.count("\n", 0, m.start()) + 1
+            bad.append(f"{rel}:{line} ({len(m.group())} chars, sha256 {digest})")
+    return bad
+
+
+def test_long_run_scan_catches_a_pasted_passage(tmp_path: Path) -> None:
+    target = tmp_path / "data" / "experiments" / "evidence.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text("quote: " + "\u0f40" * 61 + "\nok: " + "\u0f40" * 60 + "\n", encoding="utf-8")
+    hits = _long_runs(target, root=tmp_path)
+    assert len(hits) == 1 and hits[0].startswith("data/experiments/evidence.yaml:1 (61 chars")
+
+
+@pytest.mark.parametrize("name", LICENCE_DIRS)
+def test_licensed_dirs_hold_only_short_quotes(name: str) -> None:
+    base = ROOT / "data" / name
+    assert base.is_dir(), f"data/{name} is missing"
+    bad = []
+    for path in _files("*", base):
+        if path.is_file() and path.suffix in LICENCE_SUFFIXES:
+            bad.extend(_long_runs(path))
+    assert not bad, "long source-text runs found (licence rule, B16): " + ", ".join(bad)
+
+
+def test_licence_allowlist_has_no_stale_entries() -> None:
+    for rel, digest in LICENCE_ALLOWLIST:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        found = {hashlib.sha256(m.group().encode("utf-8")).hexdigest()
+                 for m in LONG_NON_LATIN_RUN.finditer(text)}
+        assert digest in found, f"allowlisted run no longer in {rel}; drop the entry"

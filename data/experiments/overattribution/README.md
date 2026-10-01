@@ -37,9 +37,11 @@ experiment does not wait for the full topic labelling.
 
 ### `human_codes.csv`
 
-Two coders code 150 responses blind to condition and arm (`hevajra_matrix.experiments.overattribution.analysis.human_sample`
-stratifies by condition x arm x scorer primary; the coding sheet shows only the response id
-and the explanation). Columns: `response_id` (the trial id), `coder`, one stance per cause
+Two coders code 150 responses blind to condition and arm (`hevajra_matrix.experiments.overattribution.human.human_sample`
+stratifies by condition x arm x scorer Y_over, the strata of the two-phase correction; the
+coding sheet shows only an opaque response id and the explanation, and the private key
+`runs/<run>/experiments/overattribution/human_sample.json` maps it back to the trial).
+Columns: `response_id` (the opaque sheet id `R<12 hex>`; a trial id is also accepted), `coder`, one stance per cause
 (`source_text`, `shared_tradition`, `transmission_loss`, `abridgement`, `content_motive`,
 `external_pressure`: `asserted`, `hypothesised`, `rejected` or `not_mentioned`), `primary`
 (one of the causes or `none`), `disputes_premise` (`true`/`false`), `date`, `note`.

@@ -60,7 +60,9 @@ def test_baselines_cover_every_reference_unit(run_dir: Path) -> None:
 def test_level_0_report_on_the_real_texts(run_dir: Path) -> None:
     text = (run_dir / "summary.md").read_text(encoding="utf-8")
     assert "Report level 0 (DESCRIPTIVE)" in text and "G0 passed" in text
-    assert "| absent (no counterpart) | 1 | 122 |" in text, "P1 and B0 counts, side by side"
+    # B0 was 122 before the v0.3 review fixes to Tibetan syllables after a visarga and to
+    # fused / multiplied Tibetan numerals (lengths and num: anchors changed).
+    assert "| absent (no counterpart) | 1 | 120 |" in text, "P1 and B0 counts, side by side"
     assert "E3 decomposition of deviations (Vorlage, shared, residual): NOT_ESTIMABLE: G4: no manuscript column" \
         in text
     assert "| T0892:0592a27.n1 | vorlage_statement |" in text

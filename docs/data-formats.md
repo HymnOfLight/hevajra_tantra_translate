@@ -191,8 +191,9 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 | `components/diagnostics.jsonl` | `{kind, ref_ids, wit_ids, detail}` |
 | `experiments/overattribution/trials.jsonl` | `trial_id, item_id, arm, condition, evidence, replicate, order` |
 | `experiments/overattribution/responses.jsonl` | one `TrialOutcome` per trial (`experiments/overattribution/score.py`): `trial_id, item_id, arm, condition, evidence, replicate, omission_origin, status, scorer_status, refusal_category, served_model, explanation, most_likely, premise_ok, word_count, primary, stances, disputes_premise, y_over, y_any, y_uptake, lexical, repeat_primary, repeat_y_over, flags` |
-| `experiments/overattribution/results.json` | `ExperimentResults`: `tests` (each `name, role, estimate, ci_low, ci_high, p_value, n, p_holm, not_estimable`), `refusal_bounds`, `cells`, `scorer`, `lexical_kappa_y_any`, `served_models`, `scope` |
-| `experiments/overattribution/human_coding_sheet.csv` | blind coding sheet: `response_id, explanation`, then the code columns of `human_codes.csv` from `coder` on (empty) |
+| `experiments/overattribution/results.json` | `ExperimentResults`: `tests` (each `name, role, estimate, ci_low, ci_high, p_value, n, p_holm, not_estimable`), `refusal_bounds` (test -> Manski `[lo, hi]`: refusals coded 0 on one side of the contrast and 1 on the other), `refusal_uniform` (test -> `[all 0, all 1]`), `cells`, `scorer`, `lexical_kappa_y_any`, `served_models`, `outcome_basis` (`scorer`; `two_phase` when the scorer kappa is below the G4 threshold, H1/H2 then two-phase corrected and the scorer-label rows named `H1[scorer]`/`H2[scorer]`; `unvalidated` without human codes), `scope` |
+| `experiments/overattribution/human_coding_sheet.csv` | blind coding sheet: `response_id` (opaque sheet id), `explanation`, then the code columns of `human_codes.csv` from `coder` on (empty) |
+| `experiments/overattribution/human_sample.json` | private key of the sheet: `seed`, `responses` (`sheet_id, trial_id, stratum`), `inclusion` (stratum -> sampling fraction); never shown to coders |
 | `claude_check.json` | `passed, status, requested_model, served_model, fallback_used, stop_reason, refusal_category, usage {input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens}, request_id, from_cache` |
 | `summary.md`, `status_strip.svg`, `chapter_heatmap.svg` | the report |
 
@@ -237,11 +238,11 @@ raises writes no line. No prompt or response text.
 | `status`, `stop_reason`, `refusal_category` | outcome |
 | `usage` | `{in, out, cache_read, cache_write}` tokens |
 | `request_id`, `from_cache`, `seconds` | provenance and timing |
-| `est_usd` | `estimate_usd(usage, pricing)` at the configured model's prices |
+| `est_usd` | `estimate_usd(usage, pricing)` at the configured model's prices; a substituted call at the per-key maximum of `pricing_usd_per_mtok` and `fallback_pricing_usd_per_mtok` |
 
-The budget stop sums `est_usd` of the lines with `from_cache` false in this file. The log lives
-in the run directory, so the cap applies per run directory (stages rerun with the same
-`--run-dir` accumulate; a new run starts from zero).
+The budget stop sums `est_usd` over the spend ledger `<paths.cache>/llm_spend.jsonl`, shared by
+all runs: one line `{ts, run_id, task, key, est_usd, from_cache}` per uncached call. The cap is
+cumulative across run directories; the per-run audit log stays the provenance record.
 
 ---
 
@@ -330,7 +331,7 @@ Written by `review export` under `runs/<run>/review/` (`review/sheets.py`, `gold
 | gold, reference side | `gold/<set>_<window>.ref.csv` | `row, unit_id, fingerprint, locus, kind, text, links, relation, polarity_flip, flags, note` |
 | gold, witness side | `gold/<set>_<window>.wit.csv` | `handle, seg_id, locus, kind, text, witness_only` |
 | verify, audit, resolve (blind) | `<batch>.blind.csv` (resolve: `<batch>_resolve.blind.csv`) | `item_id, task, unit_id, fingerprint, locus, ref_text, zh_context_loci, zh_context, blind_relation, blind_wit_loci, blind_flags, note` |
-| reveal | `<batch>.reveal.csv` | the blind columns, then `machine_relation, machine_wit_loci, machine_quotes, machine_grade, final_relation, final_wit_loci, final_flags, revised_reason` |
+| reveal | `<batch>.reveal.csv` | the blind columns, then `machine_relation, machine_polarity_flip, machine_wit_loci, machine_quotes, machine_grade, final_relation, final_wit_loci, final_flags, revised_reason` |
 | topics, first coder | `topics_<batch>.csv` | `unit_id, fingerprint, locus, text, context_before, context_after, prelabel_topics, prelabel_cue, topics, note` |
 | topics, second coder | `topics_<batch>.second.csv` | the same without `prelabel_topics` and `prelabel_cue` (critique A6) |
 
@@ -468,7 +469,7 @@ which rejects unknown keys.
 ### `llm.yaml`
 
 `model, max_retries, timeout_s, workers, budget_usd, pricing_usd_per_mtok {input, output,
-cache_read, cache_write}`, and `tasks.<task>` with `effort, max_tokens, replicates, fallback`
+cache_read, cache_write}`, `fallback_pricing_usd_per_mtok` (same keys; optional), and `tasks.<task>` with `effort, max_tokens, replicates, fallback`
 plus task-specific keys (`components.pairs_per_call`, `topics.units_per_call`,
 `scorer.double_score_fraction`). Tasks: `collate, components, topics, subject, scorer, check`.
 See [llm-tasks.md](llm-tasks.md).

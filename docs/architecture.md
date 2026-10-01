@@ -129,7 +129,9 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `collate/merge.py` | V9, V10, chapter and text merge | `verify_all`, `merge_chapter`, `merge_text`, `compare_overlaps` |
 | `collate/consensus.py` | replicate vote, grades, Fleiss kappa | `consensus`, `agreement` |
 | `collate/perturb.py` | perturbation placebos and their scores | `wrong_window`, `delete_segments`, `remove_negators`, `false_link_rate`, `deletion_recall`, `negation_recall` |
-| `collate/components.py` | T2 component coder (descriptive only) | `select_pairs`, `code_components`, `verify`, `rendering_profile`, `invention_rate` |
+| `collate/components.py` | T2 component coder (descriptive only): pair selection, run loop, outputs; re-exports the two modules below | `select_pairs`, `code_components`, `verify`, `rendering_profile`, `invention_rate` |
+| `collate/components_request.py` | T2 settings, schema, batches with full segment texts, prompts, few-shot examples | `ComponentTaskSettings`, `plan_batches`, `build_requests`, `load_system`, `load_examples` |
+| `collate/components_verify.py` | T2 code checks C1-C5 | `SlotCode`, `verify`, `verify_answer` |
 
 ### Matrix, review, evaluation, statistics, topics, report
 
@@ -166,7 +168,8 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `run.py` | T4 subject and T5 scorer requests and the run loop | `subject_request`, `scorer_request`, `run_trials` |
 | `score.py` | answer verification and outcomes | `parse_subject`, `parse_scorer`, `trial_outcome` |
 | `lexical.py` | negation-aware lexical motive baseline (comparison only) | `load_motive_lexicon`, `lexical_motive` |
-| `analysis.py` | H1/H2 with Holm, exploratory H3, refusal bounds, scorer agreement | `analyse`, `human_sample`, `write_coding_sheet` |
+| `analysis.py` | H1/H2 with Holm, exploratory H3, Manski refusal bounds, two-phase correction below the G4 scorer kappa | `analyse`, `two_phase`, `refusal_bounds` |
+| `human.py` | human sample (condition x arm x scorer Y_over), blind coding sheet with opaque ids, human codes, scorer agreement | `human_sample`, `write_coding_sheet`, `write_sample`, `load_human_codes`, `resolve_codes`, `scorer_agreement` |
 
 The experiment depends only on `core`, `llm` and the topic codebook and never feeds the matrix.
 

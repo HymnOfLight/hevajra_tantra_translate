@@ -19,7 +19,7 @@ from hevajra_matrix.llm.client import (
     canonical_json,
     sha256_text,
 )
-from hevajra_matrix.llm.fake import FakeClient, ok_response, refusal_response
+from hevajra_matrix.llm.fake import FakeClient, ok_response, refusal_response, substituted_response
 from hevajra_matrix.llm.schema import strict
 
 PRICING = {"input": 4.0, "output": 20.0, "cache_read": 0.20, "cache_write": 5.0}  # config/llm.yaml
@@ -208,3 +208,53 @@ def test_pricing_must_name_every_rate(tmp_path: Path):
             budget_usd=1,
             run_id="x",
         )
+
+
+def _ledgered(tmp_path: Path, run: str, budget: float, script=_answer, fallback_pricing=None):
+    inner = FakeClient(script)
+    audited = AuditedClient(
+        CachedClient(inner, tmp_path / "cache"),
+        tmp_path / run / "audit.jsonl",
+        PRICING,
+        budget_usd=budget,
+        run_id=run,
+        clock=Clock(),
+        ledger_path=tmp_path / "cache" / "spend.jsonl",
+        fallback_pricing=fallback_pricing,
+    )
+    return audited, inner
+
+
+def test_budget_is_cumulative_across_run_directories(tmp_path: Path):
+    first, _ = _ledgered(tmp_path, "run-1", budget=0.15)
+    first.complete(_request("r1"))
+    first.complete(_request("r1"))  # cache hit: not in the ledger
+    second, inner = _ledgered(tmp_path, "run-2", budget=0.15)  # fresh run dir, empty audit log
+    assert not (tmp_path / "run-2" / "audit.jsonl").exists()
+    assert second.spent_usd == pytest.approx(USAGE_USD)
+    second.complete(_request("r2"))  # 0.095 < 0.15: allowed, now 0.19
+    third, _ = _ledgered(tmp_path, "run-3", budget=0.15)
+    with pytest.raises(BudgetExceeded):
+        third.complete(_request("r3"))
+    ledger = [json.loads(x) for x in (tmp_path / "cache" / "spend.jsonl").read_text("utf-8").splitlines()]
+    assert [e["run_id"] for e in ledger] == ["run-1", "run-2"]
+    assert set(ledger[0]) == {"ts", "run_id", "task", "key", "est_usd", "from_cache"}
+    assert recorded_spend(tmp_path / "cache" / "spend.jsonl") == pytest.approx(2 * USAGE_USD)
+
+
+FALLBACK_PRICING = {"input": 5.0, "output": 25.0, "cache_read": 0.50, "cache_write": 6.25}
+
+
+def test_fallback_served_calls_are_priced_at_the_dearer_table(tmp_path: Path):
+    audited, _ = _ledgered(tmp_path, "run-1", budget=100.0, fallback_pricing=FALLBACK_PRICING,
+                           script=lambda r: substituted_response(r, {"answer": "x"}, usage=USAGE))
+    audited.complete(_request("r1"))
+    expected = estimate_usd(USAGE, FALLBACK_PRICING)
+    assert expected > USAGE_USD
+    (line,) = [json.loads(x) for x in (tmp_path / "run-1" / "audit.jsonl").read_text("utf-8").splitlines()]
+    assert line["est_usd"] == pytest.approx(expected) and audited.spent_usd == pytest.approx(expected)
+    plain, _ = _ledgered(tmp_path / "b", "run-1", budget=100.0, fallback_pricing=FALLBACK_PRICING)
+    plain.complete(_request("r1"))  # requested model served: configured prices
+    assert plain.spent_usd == pytest.approx(USAGE_USD)
+    with pytest.raises(ConfigurationError, match="fallback_pricing"):
+        _ledgered(tmp_path, "x", budget=1.0, fallback_pricing={"input": 1.0})

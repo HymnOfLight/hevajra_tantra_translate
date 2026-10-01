@@ -26,6 +26,8 @@ DATA = Path(__file__).resolve().parents[2] / "data"
 WITNESS = "bo_derge_D417_418"
 S = "\u0f0d"                      # Tibetan shad: ends a unit
 OM = "\u0f68\u0f7c\u0f7e"         # the syllable om with anusvara (Sanskrit-only sign)
+AH = "\u0f68\u0f71\u0f7f"         # a with long-a sign and visarga
+HUM = "\u0f67\u0f71\u0f74\u0f83"   # hum with long-a sign and candrabindu
 
 
 @pytest.fixture(scope="module")
@@ -137,6 +139,7 @@ front_matter: {start: 'TITLE', end: 'THUS', start_within_units: 2, max_units: 3}
 translator_colophon:
   - {role: translator, pattern: 'translated by (?P<name>[a-z]+)'}
   - {role: reviser, pattern: 'revised by (?P<name>[a-z]+)'}
+mantra_cues: {initial: ["\u0f68\u0f7c\u0f7e"], final: [svaha, 'p h a t'], min_ratio: 0.35}
 """
 
 
@@ -215,6 +218,27 @@ def test_verse_and_mantra_kinds(tmp_path, ascii_data):
     assert [s.kind for s in r.segments] == ["verse_line", "prose", "mantra", "prose"]
 
 
+def test_mantra_cues_and_the_exclusive_ratio(tmp_path, ascii_data):
+    r = parse_lines(tmp_path, ascii_data,
+                    f"[1a.1]{{D1}}{OM} {OM} x y z{S}x {OM} {OM} y z{S}x y {OM} {OM} svaha{S}"
+                    f"x {OM} {OM} {OM} svaha y{S}{OM} x y{S}x {OM} {OM} y{S}x {OM} {OM} p h a t{S}")
+    assert [s.kind for s in r.segments] == [
+        "mantra",       # opening om, 2 of 5 Sanskrit syllables (0.4 >= 0.35)
+        "prose",        # same ratio without a cue
+        "mantra",       # closing svaha
+        "prose",        # exactly half, and a closing cue inside the unit is no cue
+        "prose",        # opening om, but 1 of 3 (0.33 < 0.35)
+        "prose",        # exactly half, no cue: the general rule is exclusive
+        "verse_line",   # closing cue, 2 of 7 (0.29): an instruction verse naming the mantra
+    ]
+
+
+def test_a_visarga_ends_a_syllable_so_om_ah_hum_is_a_mantra(tmp_path, ascii_data):
+    # D417:3b.1.3: no tsheg after the visarga; v0.3 counted 2 syllables and made it prose.
+    r = parse_lines(tmp_path, ascii_data, f"[1a.1]{{D1}}{OM} {AH}{HUM}{S}")
+    assert [s.kind for s in r.segments] == ["mantra"]
+
+
 def test_edit_marks_and_text_starts(tmp_path, ascii_data):
     r = parse_lines(tmp_path, ascii_data, f"[1a.1]{{D1}}a {{bb,b}} c{S}{{D2}}{{xx,x}}{S}", f"[1a.2]{{D3}}z{S}",
                     toh=("D1", "D3"))
@@ -244,6 +268,9 @@ def test_requested_texts_must_be_distinct(tmp_path, ascii_data):
     ("(?P<name>[a-z]+)'}\n  - {role: reviser", "([a-z]+)'}\n  - {role: reviser", "name"),
     ("text_end: 'END'\n", "", "expected keys"),
     ("max_units: 3", "max_units: x", "malformed"),
+    ("min_ratio: 0.35", "min_ratio: 0", "min_ratio"),
+    ("final: [svaha,", "final: ['sva, ha',", "malformed"),
+    ("mantra_cues: ", "mantra_clues: ", "expected keys"),
 ])
 def test_malformed_marker_files_are_rejected(tmp_path, old, new, message):
     (tmp_path / "lexicon").mkdir()

@@ -104,17 +104,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("review", "Export, import, reveal and track human review sheets.")
     rsub = p.add_subparsers(dest="action", required=True, metavar="<action>")
     q = add("export", "Write the sheets of one batch into the run's review/ directory.", rsub)
-    q.add_argument("--task", required=True, choices=pipeline.review.REVIEW_TASKS)
+    q.add_argument("--task", required=True, choices=pipeline.review.EXPORT_TASKS)
     q.add_argument("--batch", help="batch (plan) name")
     q.add_argument("--set", dest="gold_set", help="gold set for --task gold: dev, test or test_second")
     q.add_argument("--hours", type=float, help="fill only this many hours of work, in priority order")
     q.add_argument("--competence", default="bo,zh", help="reviewer languages for --hours (default: bo,zh)")
+    q.add_argument("--force", action="store_true", help="overwrite an existing sheet of this batch")
     for action, help_ in (("import", "Import a filled sheet into data/annotations/."),
                           ("reveal", "Import a filled reveal sheet (final decisions after seeing the machine).")):
         q = add(action, help_, rsub)
         if action == "import":
-            q.add_argument("--task", required=True, choices=("gold", "verify", "audit", "resolve", "topics",
-                                                             "topics_second"))
+            q.add_argument("--task", required=True, choices=pipeline.review.IMPORT_TASKS)
         q.add_argument("--file", type=Path, required=True, help="the filled sheet")
         q.add_argument("--annotator", default="", help="who filled it")
         q.add_argument("--date", help="YYYY-MM-DD (default: today)")
@@ -127,7 +127,8 @@ def build_parser() -> argparse.ArgumentParser:
     esub = p.add_subparsers(dest="name", required=True, metavar="<experiment>")
     q = add("overattribution", "Plan, run or score the over-attribution experiment.", esub)
     q.add_argument("action", choices=("plan", "run", "score"))
-    q.add_argument("--phase", choices=("main", "pilot"), default="main")
+    q.add_argument("--phase", choices=("main", "pilot"), default="main",
+                   help="item phase; each phase has its own outputs and only main is confirmatory")
 
     add("claude-check", "Send one tiny live request: key, model and response path work.")
 
@@ -206,7 +207,7 @@ def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
         elif args.action == "run":
             pipeline.experiment_run(ctx, args.phase)
         else:
-            pipeline.experiment_score(ctx)
+            pipeline.experiment_score(ctx, phase=args.phase)
         return 0
     if command == "claude-check":
         return 0 if pipeline.claude_check(ctx)["passed"] else 1
@@ -219,7 +220,7 @@ def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
 def _review(ctx: RunContext, args: argparse.Namespace) -> int:
     if args.action == "export":
         competence = [c.strip() for c in args.competence.split(",") if c.strip()]
-        pipeline.review_export(ctx, args.task, args.batch, args.gold_set, args.hours, competence)
+        pipeline.review_export(ctx, args.task, args.batch, args.gold_set, args.hours, competence, args.force)
     elif args.action in ("import", "reveal"):
         task = "reveal" if args.action == "reveal" else args.task
         pipeline.review_import(ctx, task, args.file, args.annotator, args.date, args.minutes)

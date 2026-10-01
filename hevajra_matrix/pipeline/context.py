@@ -30,6 +30,7 @@ from .store import read_segments
 
 RUN_NAME = re.compile(r"^\d{8}T\d{6}Z-[0-9a-z]+(-\d+)?$")
 AUDIT_LOG = "llm_audit.jsonl"
+SPEND_LEDGER = "llm_spend.jsonl"     # beside the shared response cache: the budget is cumulative
 CONCORDANCE_FILE = Path("registry") / "concordance.yaml"
 
 
@@ -108,10 +109,17 @@ def anthropic_client(settings: Settings) -> AnthropicClient:
 
 
 def audited(ctx: RunContext, inner: LLMClient) -> AuditedClient:
-    """``inner`` wrapped in the run's audit log and the configured spending cap."""
+    """``inner`` wrapped in the run's audit log and the configured spending cap.
+
+    The cap is checked against the spend ledger ``<paths.cache>/llm_spend.jsonl``, which
+    every run appends to, so starting a new run directory does not reset it.
+    """
     llm = ctx.settings.llm
+    fallback = llm.get("fallback_pricing_usd_per_mtok")
     return AuditedClient(inner, ctx.path(AUDIT_LOG), pricing=dict(llm.get("pricing_usd_per_mtok") or {}),
-                         budget_usd=float(llm.get("budget_usd", 0)), run_id=ctx.run_dir.name)
+                         budget_usd=float(llm.get("budget_usd", 0)), run_id=ctx.run_dir.name,
+                         ledger_path=ctx.settings.path("cache") / SPEND_LEDGER,
+                         fallback_pricing=dict(fallback) if fallback else None)
 
 
 def make_client(ctx: RunContext) -> AuditedClient:
@@ -125,8 +133,13 @@ def make_client(ctx: RunContext) -> AuditedClient:
     return audited(ctx, CachedClient(inner, ctx.settings.path("cache"), offline=ctx.offline))
 
 
+CREDENTIAL_VARIABLES = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")   # what the SDK reads from the environment
+
+
 def has_api_key() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    """Whether live calls have credentials: an API key or a bearer auth token (the SDK takes
+    either). Other SDK sources (profiles, workload identity) are not detected here."""
+    return any(os.environ.get(name) for name in CREDENTIAL_VARIABLES)
 
 
 def audit_summary(log_path: Path) -> dict[str, Any]:

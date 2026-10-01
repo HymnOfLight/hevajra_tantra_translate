@@ -1,7 +1,10 @@
 """Committed human verdicts: ``data/annotations/verdicts/<witness>/<batch>.csv``.
 
 A verdict is a human decision about one matrix row, made on a review sheet (tasks verify,
-audit, resolve; see ``review.sheets``) or on a blind gold sheet (task gold). The committed
+audit, resolve; see ``review.sheets``) or on a blind gold sheet (task gold). Gold verdicts
+exist only in memory: ``review import --task gold`` stores them as a gold set under
+``data/annotations/gold/<witness>/<set>.csv`` (``evaluation.gold``), and ``read_file``
+refuses a task-gold row in a committed verdict file. The committed
 files hold ids, decisions and short quotes only (licence rule, synthesis 7.2); the text the
 annotator read lives in the sheets under ``runs/``, which are never committed. The format
 is documented for annotators in ``data/annotations/verdicts/README.md``.
@@ -174,9 +177,15 @@ def read_file(path: Path) -> list[VerdictRecord]:
         if None in row:
             raise VerdictError(f"{path}: line {line}: more values than columns")
         try:
-            out.append(from_row(row))
+            record = from_row(row)
         except VerdictError as exc:
             raise VerdictError(f"{path}: line {line}: {exc}") from None
+        if record.task not in REVIEW_TASKS:
+            # Gold lives in data/annotations/gold/; here it would lose gold precedence.
+            raise VerdictError(f"{path}: line {line}: task {record.task!r} does not belong in a verdict "
+                               f"file (one of {', '.join(REVIEW_TASKS)}); gold sets are kept under "
+                               f"data/annotations/gold/<witness>/<set>.csv")
+        out.append(record)
     return out
 
 

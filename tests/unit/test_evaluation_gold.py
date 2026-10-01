@@ -180,6 +180,17 @@ def test_refusals_quote_failures_and_invalid_handles():
     assert {u.unit_id: u.reason for u in s.units if u.pred_relation is None}["D:1a.5.1"] == "unassessed"
 
 
+def test_fallback_served_units_count_as_requested_model_refusals():
+    """Fallback fires only on a refusal by the requested model, so a substituted unit is
+    one of its refusals (otherwise sensitive-content refusals vanish from the rate)."""
+    s = G.score(Alignment("x", REF, WIT, ()), GOLD, ref_kinds=KINDS,
+                unresolved={"D:1a.1.1": "substituted_model", "D:1a.2.1": "refused:bio"},
+                topic_groups={"D:1a.1.1": "sensitive", "D:1a.2.1": "sensitive", "D:1a.3.1": "neutral"})
+    m = s.metrics()
+    assert m["refusal_rate"] == pytest.approx(2 / 5)
+    assert m["refusal_rate:sensitive"] == 1.0 and m["refusal_rate:neutral"] == 0.0
+
+
 def test_substituted_model_hints_are_never_scored():
     pred = Alignment("x", REF, WIT, (Link("D:1a.1.1", ("T:1.1",), EQ, flags=frozenset({FLAG_HINT})),))
     with pytest.raises(ValueError, match="never scored"):
@@ -204,6 +215,21 @@ def test_interval_estimates_and_mcnemar():
     perfect = G.score(GOLD.alignment, GOLD, ref_kinds=KINDS)
     result = G.mcnemar(G.status_correct(perfect), G.status_correct(s))
     assert (result.only_a, result.only_b) == (3, 0)
+
+
+def test_interval_estimates_cover_every_breakdown_key():
+    """Per-relation recall, per-class agreement and refusal by group get intervals too (synthesis 5.2)."""
+    s = G.score(PRED, GOLD, ref_kinds=KINDS)
+    est = G.interval_estimates(s, n_boot=200, seed=1)
+    assert set(est) == set(s.metrics())
+    for key in ("relation_recall:equivalent", "relation_recall:no_counterpart", "relation_recall:abridged",
+                "status_agreement:PRESENT", "dany_agreement:dev"):
+        assert est[key].point == s.metrics()[key] and est[key].lo is not None and est[key].lo <= est[key].hi
+    assert est["relation_recall:abridged"].hi == 0.0          # only in w02, never recalled
+    single = G.interval_estimates(s, n_boot=200, seed=1, names=("link_f1",))["link_f1"]
+    assert (single.point, single.lo, single.hi) == (est["link_f1"].point, est["link_f1"].lo, est["link_f1"].hi)
+    with pytest.raises(KeyError):
+        G.interval_estimates(s, n_boot=10, seed=1, names=("no_such_metric",))
 
 
 def test_human_kappa():

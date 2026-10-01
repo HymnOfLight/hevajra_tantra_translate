@@ -13,7 +13,8 @@
                     call served by the requested model, digest = prereg, P-wrong-window and
                     P-deletion; verified sentinels pass at stage proposal. (No drift canary:
                     the ledger lets runs be compared. P-negation is reported, never gated.)
-    G3 calibration  every stratum reached its planned n_h; every machine-negative stratum
+    G3 calibration  every stratum reached its planned n_h; every stratum of the current
+                    machine cells with unverified units has phase-2 sample verdicts; every machine-negative stratum
                     audited >= floor; deferred NULL metrics >= floor; unresolved units all
                     resolved or Manski width <= max; verified sentinels pass at stage final
     G4 estimands    per estimand: E3 and E4 print NOT_ESTIMABLE with the reason; E6 falls
@@ -47,7 +48,7 @@ from ..config import ConfigError, from_mapping
 from ..core.io import append_jsonl, read_jsonl
 from .gold import AlignmentScores, link_f1, null_precision, null_recall, paired_difference, status_kappa, \
     witness_only_recall
-from .sentinels import SentinelResult
+from .sentinels import SentinelResult, blocking_failures
 
 LEDGER_KEYS = ("ts", "instrument_digest", "prereg_sha256", "git_commit", "metrics", "gate")
 GATE_VALUES = ("pass", "fail")
@@ -157,12 +158,16 @@ class Calibration:
 
     ``planned`` / ``achieved``  stratum -> n_h planned and verified
     ``audit``                   machine-negative x topic-group stratum -> audited units
+    ``uncalibrated``            stratum of the current machine cells -> unverified units, for
+                                strata with no phase-2 sample verdict (``twophase.uncalibrated_strata``;
+                                e.g. strata no plan covers because topic labels changed after sampling)
     ``e3_not_estimable``        reason from ``stats.decompose.not_estimable_reason`` (None: ok)
     """
 
     planned: Mapping[str, int] = field(default_factory=dict)
     achieved: Mapping[str, int] = field(default_factory=dict)
     audit: Mapping[str, int] = field(default_factory=dict)
+    uncalibrated: Mapping[str, int] = field(default_factory=dict)
     null_precision: float | None = None
     null_recall: float | None = None
     unresolved_units: int | None = None
@@ -256,8 +261,7 @@ def _sentinel_reasons(gate: str, stage: str, integrity: Integrity) -> list[str]:
     results = integrity.sentinels.get(stage)
     if results is None:
         return [f"{gate}: sentinels were not checked at stage {stage}"]
-    return [f"{gate}: verified sentinel {r.sentinel_id} failed: {r.detail}" for r in results if r.blocking
-            and not r.passed]
+    return [f"{gate}: verified sentinel {r.sentinel_id} failed: {r.detail}" for r in blocking_failures(results)]
 
 
 def _g0(integrity: Integrity, spec: G0Spec) -> list[str]:
@@ -291,9 +295,10 @@ def _g2(integrity: Integrity, perturbations: Perturbations, spec: G2Spec, digest
     need("replicate kappa", integrity.replicate_kappa, lambda v: v >= spec.min_replicate_kappa)
     need("quote failure rate", integrity.quote_failure_rate, lambda v: v <= spec.max_quote_failure_rate)
     need("missing rate", integrity.missing_rate, lambda v: v <= spec.max_missing_rate)
-    if integrity.substituted_calls != 0:
-        reasons.append(f"G2: {integrity.substituted_calls} measurement call(s) not served by the requested model "
-                       "(None: not recorded)")
+    if integrity.substituted_calls is None:
+        reasons.append("G2: the served model of the measurement calls was not recorded")
+    elif integrity.substituted_calls != 0:
+        reasons.append(f"G2: {integrity.substituted_calls} measurement call(s) not served by the requested model")
     if digest not in (prereg.get("instrument_digests") or {}).values():
         reasons.append("G2: the instrument digest is not the preregistered one")
     need("P-wrong-window false-link rate", _rate(perturbations.wrong_window),
@@ -307,6 +312,8 @@ def _g3(calibration: Calibration, integrity: Integrity, spec: G3Spec, g1: G1Spec
                for s, n in calibration.planned.items() if calibration.achieved.get(s, 0) < n]
     if not calibration.planned:
         reasons.append("G3: no verification plan")
+    reasons += [f"G3: stratum {s} has {n} unverified unit(s) and no phase-2 sample verdict (not planned or not "
+                "verified; its estimate would be the prior)" for s, n in sorted(calibration.uncalibrated.items())]
     if not calibration.audit:
         reasons.append("G3: no audit of machine negatives")
     reasons += [f"G3: audit stratum {s} has {n} < {spec.min_audit_per_stratum}"
@@ -336,7 +343,10 @@ def _g4(calibration: Calibration, spec: G4Spec) -> tuple[dict[str, str], list[st
     if e4:
         out["E4"] = "G4: " + "; ".join(e4)
     notes = []
-    if calibration.scorer_kappa is None or calibration.scorer_kappa < spec.min_scorer_kappa:
+    if calibration.scorer_kappa is None:
+        notes.append("G4: E6 scorer kappa not available (no human codes); E6 H1/H2 rest on unvalidated "
+                     "scorer labels and are not final")
+    elif calibration.scorer_kappa < spec.min_scorer_kappa:
         notes.append(f"G4: E6 scorer kappa {_fmt(calibration.scorer_kappa)} < {spec.min_scorer_kappa}; "
                      "E6 uses two-phase-corrected outcomes")
     return out, notes
@@ -385,11 +395,6 @@ def ledger_append(path: Path, record: Mapping[str, Any]) -> None:
 
 def _records(path: Path) -> list[dict[str, Any]]:
     return read_jsonl(path) if Path(path).is_file() else []
-
-
-def ledger_count(path: Path, digest: str) -> int:
-    """How many times the test set was scored by instrument ``digest``."""
-    return sum(1 for r in _records(path) if r.get("instrument_digest") == digest)
 
 
 def ledger_summary(path: Path, digest: str, prereg_sha256: str) -> LedgerSummary:
