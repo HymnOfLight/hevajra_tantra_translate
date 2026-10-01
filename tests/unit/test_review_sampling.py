@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,8 @@ from hevajra_matrix.review.sampling import (
     largest_remainder,
     machine_strata,
     make_item,
+    note_rows,
+    stratum_class,
     queue,
     read_plan,
     write_plan,
@@ -109,12 +112,17 @@ def test_census_classes_are_never_capped():
     census = [i for i in items if i.stratum.startswith(("pos:absent", "pos:reversal", "pos:witness_only", "unresolved"))]
     assert len(census) == 30 + 3 + 1 + 4                       # 38 > cap 10, all kept
     assert all(i.inclusion_prob == 1.0 for i in census)
-    assert not [i for i in items if "abridged" in i.stratum or "generalised" in i.stratum]   # no room left
+    # no room left under the cap, but every sampled stratum keeps its floor min(|U_h|, 20)
+    pool = Counter(machine_strata(cells, topics_for(cells), KINDS).values())
+    sampled = Counter(i.stratum for i in items if "abridged" in i.stratum or "generalised" in i.stratum)
+    assert sampled and all(n == min(pool[s], 20) for s, n in sampled.items())
+    assert set(sampled) == {s for s in pool if "abridged" in s or "generalised" in s}
 
 
 def test_sampled_classes_at_the_preregistered_fraction():
     cells = population()
-    spec = VerificationSpec(SPEC.census_classes, SPEC.sampled_classes, cap_units=60, sampled_fraction=0.5, seed=3)
+    spec = VerificationSpec(SPEC.census_classes, SPEC.sampled_classes, cap_units=60, sampled_fraction=0.5, seed=3,
+                            min_per_sampled_stratum=0)       # the fraction alone, without the floor
     topics = topics_for(cells)
     items = draw_verification(cells, topics, spec, ref_kinds=KINDS)
     strata = machine_strata(cells, topics, KINDS)
@@ -127,11 +135,14 @@ def test_sampled_classes_at_the_preregistered_fraction():
 
 def test_fraction_is_shrunk_to_the_room_under_the_cap():
     cells = population()
-    spec = VerificationSpec(SPEC.census_classes, SPEC.sampled_classes, cap_units=13 + 10, sampled_fraction=0.5, seed=3)
+    spec = VerificationSpec(SPEC.census_classes, SPEC.sampled_classes, cap_units=13 + 10, sampled_fraction=0.5, seed=3,
+                            min_per_sampled_stratum=0)       # the room share alone, without the floor
     items = draw_verification(cells, topics_for(cells), spec, ref_kinds=KINDS)
     sampled = [i for i in items if i.priority == 8]
     assert len(sampled) == 10
     assert len(items) == 23
+    floored = draw_verification(cells, topics_for(cells), replace(spec, min_per_sampled_stratum=20), ref_kinds=KINDS)
+    assert len(floored) > 23, "the room share falls below the floor of 20 per sampled stratum"
 
 
 def test_draw_is_reproducible_from_the_seed():
@@ -149,6 +160,25 @@ def test_verified_units_leave_the_pool():
     done = {c.unit_id for c in cells if c.relation == "no_counterpart"}
     items = draw_verification(cells, topics, SPEC, ref_kinds=KINDS, verified=done)
     assert not done & {i.unit_id for i in items}
+
+
+def test_sampled_strata_never_get_zero_items_when_the_census_floods_the_cap():
+    # ~510 orphan rows filled the census and left the sampled classes no room at all:
+    # their strata had no phase-2 verdict and E1 was not estimable.
+    cells = population(n_absent=500)
+    items = draw_verification(cells, topics_for(cells), SPEC, ref_kinds=KINDS)
+    sampled = Counter(i.stratum for i in items if i.priority == 8)
+    pool = Counter(machine_strata(cells, topics_for(cells), KINDS).values())
+    assert {s for s in pool if stratum_class(s) in SPEC.sampled_classes} == set(sampled)
+    assert all(n == min(pool[s], SPEC.min_per_sampled_stratum) for s, n in sampled.items())
+    assert all(i.inclusion_prob == pytest.approx(sampled[i.stratum] / pool[i.stratum]) for i in items if i.priority == 8)
+
+
+def test_witness_only_claims_on_ingest_notes_are_note_rows():
+    note = Cell("+T0892:0601c01.n1", W, Status.NA, Grade.B, relation="translator_note", wit_ids=("T0892:0601c01.n1",))
+    content = Cell("+T0892:0601c01.2", W, Status.NA, Grade.B, relation="addition", wit_ids=("T0892:0601c01.2",))
+    kinds = {"T0892:0601c01.n1": "note", "T0892:0601c01.2": "prose"}
+    assert note_rows([note, content, cell(0, "abridged")], kinds) == {note.unit_id}
 
 
 def test_unknown_positive_class_is_an_error():

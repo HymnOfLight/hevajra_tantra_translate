@@ -43,10 +43,12 @@ from ..core.types import Relation, Segment, Verdict, WitnessOnlyKind
 
 COLUMNS: tuple[str, ...] = (
     "batch_id", "item_id", "task", "stratum", "inclusion_prob", "unit_id", "fingerprint",
-    "instrument_digest", "machine_relation", "machine_status", "blind_relation", "blind_wit_ids",
+    "instrument_digest", "machine_relation", "machine_status", "machine_polarity_flip", "blind_relation",
+    "blind_wit_ids",
     "final_relation", "final_wit_ids", "polarity_flip", "flags", "quote_ref", "quote_zh",
     "annotator", "blind_date", "final_date", "minutes", "note",
 )
+LEGACY_OPTIONAL = frozenset({"machine_polarity_flip"})   # absent from files written before 2026-10-01
 TASKS: tuple[str, ...] = ("gold", "verify", "audit", "resolve")
 REVIEW_TASKS: tuple[str, ...] = ("verify", "audit", "resolve")
 
@@ -134,7 +136,8 @@ def from_row(row: Mapping[str, str]) -> VerdictRecord:
         fingerprint=v["fingerprint"], stratum=v["stratum"],
         inclusion_prob=_float(v["inclusion_prob"], "inclusion_prob"),
         instrument_digest=v["instrument_digest"], machine_relation=v["machine_relation"],
-        machine_status=v["machine_status"], blind_relation=v["blind_relation"],
+        machine_status=v["machine_status"], machine_polarity_flip=parse_bool(v["machine_polarity_flip"]),
+        blind_relation=v["blind_relation"],
         blind_wit_ids=parse_ids(v["blind_wit_ids"]), final_relation=v["final_relation"],
         final_wit_ids=parse_ids(v["final_wit_ids"]), polarity_flip=parse_bool(v["polarity_flip"]),
         flags=parse_flags(v["flags"]), annotator=v["annotator"], blind_date=v["blind_date"],
@@ -151,6 +154,7 @@ def to_row(v: Verdict) -> dict[str, str]:
         "inclusion_prob": "" if v.inclusion_prob is None else f"{v.inclusion_prob:.6g}",
         "unit_id": v.unit_id, "fingerprint": v.fingerprint, "instrument_digest": v.instrument_digest,
         "machine_relation": v.machine_relation, "machine_status": v.machine_status,
+        "machine_polarity_flip": "true" if v.machine_polarity_flip else "false",
         "blind_relation": v.blind_relation, "blind_wit_ids": ID_SEPARATOR.join(v.blind_wit_ids),
         "final_relation": v.final_relation, "final_wit_ids": ID_SEPARATOR.join(v.final_wit_ids),
         "polarity_flip": "true" if v.polarity_flip else "false", "flags": format_flags(v.flags),
@@ -162,14 +166,16 @@ def to_row(v: Verdict) -> dict[str, str]:
 
 # --------------------------------------------------------------------------- files
 def read_file(path: Path) -> list[VerdictRecord]:
-    """Read one committed verdict CSV; the header must be exactly ``COLUMNS`` (any order)."""
+    """Read one committed verdict CSV; the header must be exactly ``COLUMNS`` (any order;
+    a file written before ``machine_polarity_flip`` was committed may lack that column,
+    which then reads as false)."""
     with Path(path).open(encoding="utf-8-sig", newline="") as fh:
         reader = csv.DictReader(fh)
         header = list(reader.fieldnames or ())
         rows = list(reader)
-    if sorted(header) != sorted(COLUMNS):
-        extra = sorted(set(header) - set(COLUMNS))
-        missing = sorted(set(COLUMNS) - set(header))
+    extra = sorted(set(header) - set(COLUMNS))
+    missing = sorted(set(COLUMNS) - set(header) - LEGACY_OPTIONAL)
+    if extra or missing or len(header) != len(set(header)):
         raise VerdictError(f"{path}: wrong columns (unexpected {extra}, missing {missing}); "
                            f"a committed verdict file holds no text columns")
     out = []
@@ -189,12 +195,17 @@ def read_file(path: Path) -> list[VerdictRecord]:
     return out
 
 
+PLAN_FILE_PREFIX = "plan_"         # review plans committed beside the verdicts (pipeline.human_data)
+
+
 def load(directory: Path) -> list[VerdictRecord]:
-    """All verdicts under ``directory`` (``<witness>/<batch>.csv``), files in path order."""
+    """All verdicts under ``directory`` (``<witness>/<batch>.csv``), files in path order;
+    the review plans committed beside them (``plan_<batch>.csv``) are skipped."""
     root = Path(directory)
     if not root.is_dir():
         return []
-    return [v for path in sorted(root.rglob("*.csv")) for v in read_file(path)]
+    return [v for path in sorted(root.rglob("*.csv")) if not path.name.startswith(PLAN_FILE_PREFIX)
+            for v in read_file(path)]
 
 
 def save(verdicts: Iterable[Verdict], path: Path) -> None:

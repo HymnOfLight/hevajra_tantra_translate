@@ -35,11 +35,11 @@ from ..config import ConfigError, from_mapping
 from ..core.io import read_yaml
 from ..core.types import (
     REASON_INVALID,
-    REASON_REFUSED,
     REASON_SUBSTITUTED_MODEL,
     REASON_TRUNCATED,
     Relation,
     WitnessOnlyKind,
+    failure_reason,
 )
 from ..llm.client import DEFAULT_MODEL, LLMClient, LLMRequest, LLMResponse, canonical_json, sha256_text
 from ..llm.schema import strict, validate
@@ -281,7 +281,7 @@ def parse(response: LLMResponse, window: Window) -> Parsed:
         hint = _raw(response.data, window) if response.status == "ok" else None
         return Unresolved(window.key, REASON_SUBSTITUTED_MODEL, hint if isinstance(hint, RawCollation) else None)
     if response.status == "refusal":
-        return Unresolved(window.key, f"{REASON_REFUSED}:{response.refusal_category or 'unspecified'}")
+        return Unresolved(window.key, failure_reason(response.status, response.refusal_category))
     if response.status == "truncated":
         return Unresolved(window.key, REASON_TRUNCATED)
     if response.status != "ok":

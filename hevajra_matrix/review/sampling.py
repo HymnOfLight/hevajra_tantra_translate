@@ -8,7 +8,10 @@ gold and verdicts for sampling), so sampling and estimation can never disagree:
     neg:<B|C>:<topic>     machine negative (audit strata)
     unresolved            UNALIGNED, including every grade X cell (census class grade_x;
                           these items get task ``resolve``: there is no proposal to verify)
-    pos:witness_only      orphan rows (witness-only claims; census class witness_only)
+    pos:witness_only      orphan rows (witness-only claims; census class witness_only),
+                          except rows on a witness ``note`` segment (``note_rows``): those
+                          notes are classified deterministically at ingest, so they are
+                          neither verified nor counted in E5 (a descriptive count instead)
 
 Units already decided by a human (``verified``) are removed from every pool first: the
 pool U_h of stratum h is its unverified units, and an item's inclusion probability is
@@ -21,6 +24,10 @@ Verification (machine positives)
                      ceil(sampled_fraction * |U_h|) per stratum, and if even that exceeds the
                      room left under the cap, the room is shared out proportionally to |U_h|
                      (largest remainder). The cap never touches a census class.
+    floor            every sampled stratum gets at least min(|U_h|, ``min_per_sampled_stratum``)
+                     (default 20) units, even when the census alone exceeds ``cap_units``:
+                     a stratum with no phase-2 verdict could not be estimated (it would be
+                     uncalibrated), so the floor may take the plan above the cap.
 Audit (machine negatives)
     the four strata grade (B, C) x topic (sensitive, other) get min(min_per_stratum, |U_h|)
     each; the rest of ``total`` is shared proportionally to |U_h| x (grade_c_oversample for
@@ -96,6 +103,7 @@ class VerificationSpec:
     cap_units: int
     sampled_fraction: float
     seed: int
+    min_per_sampled_stratum: int = 20   # floor per sampled stratum, applied even above the cap
 
     @classmethod
     def from_config(cls, prereg: Mapping[str, Any]) -> "VerificationSpec":
@@ -157,6 +165,17 @@ def machine_strata(cells: Iterable[Cell], topics: Mapping[str, str], ref_kinds: 
         else:
             out[cell.unit_id] = stratum_of(cell, topics.get(cell.unit_id, ""), kinds.get(cell.unit_id, ""))
     return out
+
+
+NOTE_KIND = "note"
+
+
+def note_rows(cells: Iterable[Cell], witness_kinds: Mapping[str, str]) -> set[str]:
+    """Orphan row ids whose witness segments are all ``note`` segments (``witness_kinds``:
+    witness segment id -> kind). Such notes are classified at ingest (``ingest.notes``);
+    a machine witness-only claim on one adds nothing to verify."""
+    return {c.unit_id for c in cells if is_orphan(c.unit_id) and c.wit_ids
+            and all(witness_kinds.get(w) == NOTE_KIND for w in c.wit_ids)}
 
 
 def stratum_class(stratum: str) -> str:
@@ -240,6 +259,7 @@ def draw_verification(cells: Iterable[Cell], topics: Mapping[str, str], spec: Ve
         sizes = {s: math.ceil(spec.sampled_fraction * len(u)) for s, u in sampled.items()}
         if sum(sizes.values()) > room:
             sizes = largest_remainder(room, {s: float(len(u)) for s, u in sampled.items()}, sizes)
+        sizes = {s: max(n, min(len(sampled[s]), spec.min_per_sampled_stratum)) for s, n in sizes.items()}
     drawn = _draw(sampled, sizes, spec.seed if seed is None else seed)
     items = []
     for stratum, units in census.items():
@@ -330,7 +350,7 @@ def format_coverage(cov: Mapping[str, Mapping[str, int]]) -> list[str]:
 
 # --------------------------------------------------------------------------- plan files
 def write_plan(items: Iterable[ReviewItem], path: Path) -> None:
-    """``review/plan_<batch>.csv``: the drawn items with strata and inclusion probabilities."""
+    """``plan_<batch>.csv``: the drawn items with strata and inclusion probabilities."""
     write_csv(Path(path), [{"item_id": i.item_id, "task": i.task, "unit_id": i.unit_id, "stratum": i.stratum,
                             "inclusion_prob": f"{i.inclusion_prob:.6g}", "priority": i.priority} for i in items],
               PLAN_COLUMNS)

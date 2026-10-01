@@ -1,8 +1,12 @@
 """Read the committed human annotations (gold, verdicts, topic labels) and the run's
 review plans, in the form the stages need them.
 
-Committed files live under ``data/annotations/`` (ids and short quotes only); review plans
-(with strata and inclusion probabilities) live in the run directory under ``review/``.
+Committed files live under ``data/annotations/`` (ids and short quotes only). Review plans
+(``plan_<batch>.csv``: item ids, strata and inclusion probabilities) and their frozen strata
+(``strata_<batch>.json``) are committed next to the verdicts they calibrate, under
+``data/annotations/verdicts/<witness>/``, so a new run directory still finds them. Runs made
+before plans were committed kept them under ``<run>/review/``; those are read as a fallback
+for any batch with no committed plan.
 """
 
 from __future__ import annotations
@@ -103,25 +107,47 @@ def load_topics(ctx: RunContext, texts: Texts) -> Topics:
     return Topics(current, stale, len(texts.units))
 
 
-def review_plans(ctx: RunContext) -> list[sampling.ReviewItem]:
-    """Every item of every ``review/plan_<batch>.csv`` of this run."""
-    items: list[sampling.ReviewItem] = []
-    for path in sorted(ctx.path("review").glob("plan_*.csv")) if ctx.path("review").is_dir() else []:
-        items.extend(sampling.read_plan(path))
-    return items
+PLAN_PREFIX, STRATA_PREFIX = "plan_", "strata_"
 
 
-def plan_path(ctx: RunContext, batch: str) -> Path:
-    return ctx.path("review", f"plan_{batch}.csv")
+def _design_files(ctx: RunContext, witness: str, prefix: str, suffix: str) -> list[Path]:
+    """Committed design files of ``witness``, then run-directory ones of batches not committed."""
+    committed = sorted(verdict_dir(ctx, witness).glob(f"{prefix}*{suffix}")) if verdict_dir(ctx, witness).is_dir() else []
+    names = {p.name for p in committed}
+    review = ctx.path("review")
+    legacy = [p for p in sorted(review.glob(f"{prefix}*{suffix}")) if p.name not in names] if review.is_dir() else []
+    return committed + legacy
+
+
+def review_plans(ctx: RunContext, texts: Texts) -> list[sampling.ReviewItem]:
+    """Every item of every plan (committed ``plan_<batch>.csv``; old runs: ``<run>/review/``),
+    without witness-only rows on ``note`` segments that a plan drawn before they were left
+    out may hold (they are never exported, so G3 must not wait for them)."""
+    notes = {orphan_row_id(s.id) for s in texts.witness if s.kind == sampling.NOTE_KIND}
+    return [i for path in _design_files(ctx, texts.witness_id, PLAN_PREFIX, ".csv") for i in sampling.read_plan(path)
+            if i.unit_id not in notes]
+
+
+def plan_path(ctx: RunContext, witness: str, batch: str) -> Path:
+    """Where plan ``batch`` is committed (``data/annotations/verdicts/<witness>/plan_<batch>.csv``)."""
+    return verdict_dir(ctx, witness) / f"{PLAN_PREFIX}{batch}.csv"
+
+
+def find_plan(ctx: RunContext, witness: str, batch: str) -> Path:
+    """The committed plan of ``batch``, else the run directory's (runs made before plans
+    were committed); the committed path when neither exists."""
+    committed = plan_path(ctx, witness, batch)
+    legacy = ctx.path("review", f"{PLAN_PREFIX}{batch}.csv")
+    return legacy if not committed.is_file() and legacy.is_file() else committed
 
 
 # --------------------------------------------------------------------------- frozen strata
-def strata_path(ctx: RunContext, batch: str) -> Path:
-    """``review/strata_<batch>.json``: every unit's stratum when plan ``batch`` was drawn."""
-    return ctx.path("review", f"strata_{batch}.json")
+def strata_path(ctx: RunContext, witness: str, batch: str) -> Path:
+    """``strata_<batch>.json`` beside the plan: every unit's stratum when the plan was drawn."""
+    return verdict_dir(ctx, witness) / f"{STRATA_PREFIX}{batch}.json"
 
 
-def write_strata_snapshot(ctx: RunContext, batch: str, strata: Mapping[str, str],
+def write_strata_snapshot(ctx: RunContext, witness: str, batch: str, strata: Mapping[str, str],
                           items: Iterable[sampling.ReviewItem], topics_complete: bool) -> Path:
     """Freeze the strata of a plan (synthesis 6.2: strata are fixed at sampling time).
 
@@ -129,7 +155,7 @@ def write_strata_snapshot(ctx: RunContext, batch: str, strata: Mapping[str, str]
     verification plan, ``neg`` for an audit): the snapshot fixes the units of those families.
     """
     families = sorted({i.stratum.split(":")[0] for i in items if i.stratum})
-    path = strata_path(ctx, batch)
+    path = strata_path(ctx, witness, batch)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"families": families, "topics_complete": topics_complete,
                                 "strata": dict(sorted(strata.items()))}, indent=1, sort_keys=True) + "\n",
@@ -137,7 +163,7 @@ def write_strata_snapshot(ctx: RunContext, batch: str, strata: Mapping[str, str]
     return path
 
 
-def sampling_strata(ctx: RunContext, current: Mapping[str, str]) -> dict[str, str]:
+def sampling_strata(ctx: RunContext, witness: str, current: Mapping[str, str]) -> dict[str, str]:
     """Unit -> stratum, frozen at sampling time where a plan's snapshot fixes it.
 
     ``current`` (``sampling.machine_strata`` on today's topic labels) covers the units no
@@ -145,8 +171,7 @@ def sampling_strata(ctx: RunContext, current: Mapping[str, str]) -> dict[str, st
     whose topic label changed after sampling would fall into a stratum no verdict calibrates.
     """
     out = dict(current)
-    review = ctx.path("review")
-    for path in sorted(review.glob("strata_*.json")) if review.is_dir() else []:
+    for path in _design_files(ctx, witness, STRATA_PREFIX, ".json"):
         doc = json.loads(path.read_text(encoding="utf-8"))
         families = set(doc.get("families") or ())
         out.update({u: s for u, s in (doc.get("strata") or {}).items() if s.split(":")[0] in families})

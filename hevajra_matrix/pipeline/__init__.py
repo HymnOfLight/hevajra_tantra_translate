@@ -15,15 +15,16 @@ Run directory ``runs/<UTC timestamp>-<git short hash>/``::
                                 claude.r<k>.jsonl (replicates), claude.jsonl (consensus),
                                 shuffled.jsonl (P2)
     collation/                  r<k>.json (UNALIGNED reasons, diagnostics, hints, overlap),
-                                replicates.json, consensus.json, integrity.json,
+                                replicates.json (incl. request keys), consensus.json, integrity.json,
                                 diagnostics.jsonl, dry_run.json
     matrix/                     cells.csv, units.csv, wide_status.csv, stale_verdicts.csv,
                                 cells.jsonl (human decisions applied), machine_cells.jsonl
     evaluation/                 scores.json, gate.json, sentinels.jsonl (the gating evaluation: Claude on
                                 test gold), scores.<set>[_baselines].json (every evaluation), perturbations.json
     topics/prelabels.jsonl      T3 hints
-    review/                     plan_<batch>.csv, strata_<batch>.json (strata frozen at sampling) and the
-                                sheets (licensed text; never committed)
+    review/                     the sheets (licensed text; never committed); review plans and their
+                                frozen strata are committed under data/annotations/verdicts/<witness>/
+                                (older runs kept plan_<batch>.csv, strata_<batch>.json here)
     stats/                      estimates.json, details.json (Manski bounds, revision rates, E4 tests and
                                 diagnostics), power.json (MDE on the real topic labels)
     components/                 components.jsonl, rendering_profile.csv, diagnostics.jsonl

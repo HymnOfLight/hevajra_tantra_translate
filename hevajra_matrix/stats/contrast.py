@@ -21,6 +21,7 @@ and ``overlap_diagnostics`` reports how many strata and units the estimator actu
 
 from __future__ import annotations
 
+import bisect
 import math
 import random
 from dataclasses import dataclass
@@ -59,18 +60,23 @@ def _cmh(rows: Iterable[list[list[float]]]) -> float | None:
 
 
 def tertile_strata(lengths: Mapping[str, float], chapter_of: Mapping[str, str]) -> dict[str, str]:
-    """Stratum "chapter|t1..t3": the chapter and the tertile of reference length over the text.
+    """Stratum "chapter|t1..t3": the chapter and the rank tertile of reference length.
 
-    Tertile cut points are taken over all units (so "t1" means short everywhere); log length
-    has the same tertiles as length.
+    Rank-based with ties kept together: a unit's tertile is that of the mid-rank of its
+    length, f = (#shorter + #equal / 2) / n, so t1 for f < 1/3, t2 for f < 2/3, else t3.
+    Ranks are taken over all units (so "t1" means short everywhere); log length has the
+    same tertiles as length. Value cut points degenerated on the real text, where 2503 of
+    3042 units have 7 syllables: both cuts fell on 7, t2 was empty and t3 mixed the 7s with
+    the long units. With mid-ranks the 7s form t2 and the shorter and longer units t1, t3.
     """
     values = sorted(lengths.values())
     if not values:
         return {}
-    cut1, cut2 = values[len(values) // 3], values[(2 * len(values)) // 3]
-    out = {}
+    n, out = len(values), {}
     for unit, length in lengths.items():
-        t = 1 if length < cut1 else 2 if length < cut2 else 3
+        f = (bisect.bisect_left(values, length) + (bisect.bisect_right(values, length)
+                                                    - bisect.bisect_left(values, length)) / 2) / n
+        t = 1 if f < 1 / 3 else 2 if f < 2 / 3 else 3
         out[unit] = f"{chapter_of[unit]}|t{t}"
     return out
 

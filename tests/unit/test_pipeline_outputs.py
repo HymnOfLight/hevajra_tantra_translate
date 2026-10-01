@@ -104,14 +104,13 @@ def test_review_exports_say_what_they_wrote_and_never_overwrite_a_sheet(finished
     sheet.write_text(sheet.read_text(encoding="utf-8-sig") + "reviewer work\n", encoding="utf-8-sig")
     capsys.readouterr()
     assert cli(root, run, "review", "export", "--task", "verify") == 2
-    assert "may hold a reviewer's work" in capsys.readouterr().err
+    assert "holds 1 item(s) without an imported verdict" in capsys.readouterr().err
     assert "reviewer work" in sheet.read_text(encoding="utf-8-sig"), "the filled sheet survived"
     assert cli(root, run, "review", "export", "--task", "verify", "--force") == 0
 
     capsys.readouterr()
-    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify") == 2, "already exported"
-    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify", "--force") == 0
-    assert re.search(r"review export reveal: 5 items -> .*verify\.reveal\.csv", capsys.readouterr().out)
+    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify") == 2
+    assert "every imported blind verdict of verify.csv is revealed" in capsys.readouterr().err
     assert cli(root, run, "topics", "export") == 0
     assert re.search(r"review export topics: 10 units -> .*topics_first\.csv", capsys.readouterr().out)
 
@@ -161,6 +160,19 @@ def test_e4_diagnostics_and_the_mde_on_real_labels(finished) -> None:
     assert design_mde(ctx) is None, "G4 then reports the MDE as not reached"
     (run / "stats" / "power.json").write_text(json.dumps({**power, "mde_on_labels": 0.14}), encoding="utf-8")
     assert design_mde(ctx) == 0.14, "the larger of the preregistered and the simulated MDE"
+
+
+def test_design_mde_uses_the_simulated_mde_when_none_is_preregistered(tmp_path) -> None:
+    # With stats.mde unset the simulated MDE was discarded and G4 saw no MDE at all.
+    from types import SimpleNamespace
+    (tmp_path / "stats").mkdir()
+    (tmp_path / "stats" / "power.json").write_text(json.dumps({"mde_on_labels": 0.12}), encoding="utf-8")
+    ctx = SimpleNamespace(settings=SimpleNamespace(prereg={"stats": {}}), path=tmp_path.joinpath)
+    assert design_mde(ctx) == 0.12
+    ctx.settings.prereg["stats"]["mde"] = 0.1
+    assert design_mde(ctx) == 0.12
+    ctx.settings.prereg["stats"]["mde"] = 0.15
+    assert design_mde(ctx) == 0.15
 
 
 def test_e4_names_the_uncalibrated_stratum_rather_than_missing_verdicts(finished) -> None:
@@ -221,3 +233,57 @@ def test_an_auth_token_counts_as_credentials(monkeypatch) -> None:
     assert not has_api_key()
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "token")
     assert has_api_key()
+
+
+# --------------------------------------------------------------------------- ingest-classified notes
+def test_witness_only_claims_on_ingest_notes_stay_out_of_the_census_and_e5(ingested, capsys) -> None:
+    # The T1 prompt lists the Chinese notes as witness-only translator_note; ~510 such rows
+    # flooded the verification census and E5 although ingest already classifies every note.
+    from hevajra_matrix.llm.cache import CachedClient
+    from hevajra_matrix.llm.fake import FakeClient
+    from hevajra_matrix.pipeline import plan_collation
+    from test_pipeline_support import _lines, echo_script
+
+    def with_notes(request):
+        answer = echo_script(request)
+        answer["witness_only"] = [{"wit": [h], "kind": "translator_note", "wit_quote": text}
+                                  for h, kind, text in _lines(request.context or "") if kind == "note"]
+        return answer
+
+    root, run = ingested
+    cache = CachedClient(FakeClient(with_notes), context(root, run).settings.path("cache"))
+    for _, _, request in plan_collation(context(root, run)).requests():
+        cache.complete(request)
+    assert main(["run", "--offline", "--root", str(root), "--run-dir", str(run)]) == 0
+    ctx = context(root, run, offline=True)
+    texts = load_texts(ctx)
+    orphans = [c for c in read_built_cells(ctx, machine=True) if c.unit_id.startswith("+")]
+    notes = sampling.note_rows(orphans, texts.wit_kinds)
+    assert notes, "the fixture has witness-only claims on notes"
+    capsys.readouterr()
+    assert cli(root, run, "sample", "verification") == 0
+    assert f"{len(notes)} witness-only claims on ingest-classified notes left out" in capsys.readouterr().out
+    plan = sampling.read_plan(root / "data" / "annotations" / "verdicts" / "zh_T0892_song" / "plan_verify.csv")
+    assert not {i.unit_id for i in plan} & notes
+    assert cli(root, run, "stats") == 0
+    details = json.loads((run / "stats" / "details.json").read_text(encoding="utf-8"))
+    assert details["ingest_notes"] == {"witness_only_rows": len(notes)}
+
+
+# --------------------------------------------------------------------------- G2 substitution
+def test_g2_substitution_counts_only_the_calls_that_fed_the_consensus(finished) -> None:
+    # A substituted perturbation (or any other collate-task) call used to fail G2 although
+    # it never fed the consensus; only the latest collate's requests are measurement calls.
+    from hevajra_matrix.pipeline.measure import _integrity
+    root, run = finished
+    ctx = context(root, run, offline=True)
+    texts = load_texts(ctx)
+    keys = json.loads((run / "collation" / "replicates.json").read_text(encoding="utf-8"))["request_keys"]
+    audit = run / "llm_audit.jsonl"
+    lines = read_jsonl(audit)
+    assert keys and {r["key"] for r in lines if r["task"] == "collate"} >= set(keys)
+    swap = {"task": "collate", "requested_model": "claude-opus-5-5", "served_model": "other", "fallback_used": True}
+    write_jsonl(audit, [*lines, {**swap, "key": "perturbation-call"}])
+    assert _integrity(ctx, texts, None, None).substituted_calls == 0
+    write_jsonl(audit, [*lines, {**swap, "key": keys[0]}])
+    assert _integrity(ctx, texts, None, None).substituted_calls == 1

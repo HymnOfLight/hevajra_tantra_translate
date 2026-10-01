@@ -108,6 +108,15 @@ def test_deletion_recall_scores_only_the_units_of_the_perturbed_window() -> None
     assert deletion_recall(truth, expected, result) == Rate(1, 1)
 
 
+def test_units_shared_by_consecutive_chunks_are_scored_once() -> None:
+    # The last overlap_next units of a chunk open the next chunk too; both perturbed chunks
+    # used to score them, so deletion recall counted them twice.
+    from dataclasses import replace
+    w = replace(window(), overlap_next=1)
+    _, truth = delete_segments(w, 0.3, 0)
+    assert truth.units == tuple(u.id for u in w.units[:-1]) and w.units[-1].id not in truth.units
+
+
 def test_deletion_recall_counts_unresolved_as_a_miss() -> None:
     truth = DeletionTruth(("z1",))
     expected = alignment(Link("u1", ("z1",), Relation.EQUIVALENT))

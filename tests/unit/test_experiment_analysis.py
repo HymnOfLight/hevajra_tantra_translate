@@ -229,8 +229,24 @@ def test_sheet_ids_resolve_back_to_trials_in_the_analysis(tmp_path):
     results = analyse(rows, PARAMS, codes)
     assert results.scorer.n == 10 and results.scorer.kappa_y_over == pytest.approx(1.0)
     assert results.outcome_basis == "scorer"
-    with pytest.raises(AnalysisError, match="unknown response ids"):
-        analyse(rows, PARAMS, [HumanCode("Rnope", "A", codes[0].coding)])
+    other_phase = analyse(rows, PARAMS, [HumanCode("Rnope", "A", codes[0].coding)])
+    assert other_phase.human_codes_set_aside == 1 and other_phase.outcome_basis == "unvalidated"
+
+
+def test_codes_of_the_other_phase_are_set_aside_not_fatal():
+    """human_codes.csv holds pilot and main codes; scoring one phase keeps only its own."""
+    main = [outcome(f"s{k}", "sensitive", "E0", y=k % 2 == 0) for k in range(10)]
+    pilot = [outcome(f"p{k}", "sensitive", "E0", y=False) for k in range(4)]
+
+    def code(o: TrialOutcome) -> HumanCode:
+        return HumanCode(sheet_id(o.trial_id, PARAMS.seed), "consensus",
+                         Coding({**{c: "not_mentioned" for c in SCORER_CLASSES},
+                                 "content_motive": "asserted" if o.y_over else "rejected"}, "none", False))
+
+    results = analyse(main, PARAMS, [code(o) for o in main + pilot])
+    assert results.human_codes_set_aside == 4 and results.scorer.n == 10
+    pilot_results = analyse(pilot, PARAMS, [code(o) for o in main + pilot])
+    assert pilot_results.human_codes_set_aside == 10 and pilot_results.scorer.n == 4
 
 
 def test_allocation_never_falls_short_of_n():
@@ -349,3 +365,29 @@ def test_low_scorer_kappa_switches_h1_h2_to_two_phase_corrected_outcomes():
     assert results.test("H2[scorer]").role == "sensitivity"
     no_codes = analyse(rows, params)
     assert no_codes.outcome_basis == "unvalidated" and no_codes.test("H1").estimate == pytest.approx(raw.estimate)
+
+
+def test_a_stratum_without_human_codes_makes_h1_h2_not_estimable():
+    """Below the G4 kappa, a stratum with measured trials but no human code is not imputed
+    from the Beta(1/2, 1/2) prior: H1/H2 are not estimable and the strata are listed."""
+    rows = []
+    for k in range(20):
+        for arm in ("sensitive", "neutral"):
+            for cond in CONDITIONS:
+                rows.append(outcome(f"{arm[0]}{k}", arm, cond, y=cond == "EW" and k % 2 == 0))
+    params = AnalysisParams(n_boot=50, n_perm=50, seed=3, n_draws=50)
+
+    def code(o: TrialOutcome, y: bool) -> HumanCode:
+        stances = {c: "not_mentioned" for c in SCORER_CLASSES}
+        stances["content_motive"] = "asserted" if y else "rejected"
+        return HumanCode(o.trial_id, "consensus", Coding(stances, "none", False))
+
+    coded = [o for o in rows if o.arm == "sensitive"][:30]          # no neutral trial is coded
+    results = analyse(rows, params, [code(o, not o.y_over) for o in coded])   # kappa far below the floor
+    assert results.outcome_basis == "uncalibrated"
+    assert results.uncalibrated and all(h.split("|")[1] == "neutral" for h in results.uncalibrated)
+    for name in ("H1", "H2", "H1[premise_ok]", "H2[real_only]"):
+        t = results.test(name)
+        assert t.estimate is None and "no human code in stratum" in t.not_estimable, name
+    assert results.test("H1[scorer]").estimate is not None
+    assert results.refusal_bounds["H1"] == (None, None)

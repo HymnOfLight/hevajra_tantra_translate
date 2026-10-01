@@ -39,7 +39,9 @@ labelled "unvalidated instrument output", printed beside the controls.
 3. *Humans decide.* Annotators make blind gold for validation, then verify a census or sample
    of machine positives and audit a stratified sample of machine negatives, first blind and
    then after seeing the machine output. Gold and every final human decision are re-applied on
-   every build (grade A) while the unit's text fingerprint still matches.
+   every build (grade A) while the unit's text fingerprint still matches. Witness-only claims on
+   CBETA `note` segments are not verified and not counted in E5: ingest already classifies every
+   note deterministically (`review/sampling.py: note_rows`; `stats` reports their number).
 
 **Status comes from the relation only** (`matrix/status.py`); length never decides it. Prevalence
 is estimated by a two-phase posterior-predictive imputation over the human verification
@@ -70,10 +72,11 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `pipeline/store.py` | - | JSON forms of segments, alignments, collations, cells, estimates, gate reports, sentinel results (pure `*_to_dict` / `*_from_dict` pairs) |
 | `pipeline/texts.py` | `fetch`, `ingest`, `baselines`, `baselines_import` | Claude-free; G0 and ingest-stage sentinels |
 | `pipeline/instrument.py` | `collate` (incl. `--dry-run`), `perturb`, `components_stage`, `claude_check` | every stage that calls Claude except topics and the experiment |
-| `pipeline/measure.py` | `build`, `evaluate` | Claude-free |
+| `pipeline/measure.py` | `build`, `evaluate` | Claude-free; G2-G4 facts (`_integrity`, `_calibration`, `design_mde`), ledger deduplication (`already_ledgered`) |
 | `pipeline/results.py` | `stats`, `report` | Claude-free |
+| `pipeline/e4.py` | - | E4 for `stats`: Delta with its diagnostics (`contrast_with_diagnostics`) and the MDE simulated on the real topic labels (`mde_on_labels`) |
 | `pipeline/review.py` | `topics_prelabel`, `sample`, `review_export`, `review_import`, `review_status` | human-work stages |
-| `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans |
+| `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans and frozen strata (committed beside the verdicts; run-directory fallback for old runs) |
 | `pipeline/experiment.py` | `experiment_plan`, `experiment_run`, `experiment_score` | the over-attribution experiment |
 
 ### Core (`core/`, no I/O except `core/io.py`)
@@ -140,8 +143,8 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `matrix/status.py` | relation -> status -> outcome: the only status derivation (frozen contract) | `RELATION_STATUS`, `status_of`, `outcome_class`, `deviates`, `cell_outcome`, `cell_deviates`, `RELATION_PRIORITY` |
 | `matrix/build.py` | cells with precedence gold > final verdict > consensus; `d_len`, `d_lit`, `d_ord`; orphan rows | `build_cells`, `StaleVerdict` |
 | `matrix/export.py` | `cells.csv`, `units.csv`, `wide_status.csv`, `stale_verdicts.csv` | `write_matrix` |
-| `review/sampling.py` | verification and audit plans, review queue, coverage | `draw_verification`, `draw_audit`, `queue`, `coverage`, `machine_strata`, `write_plan` / `read_plan` |
-| `review/sheets.py` | blind, reveal and resolve sheets; import strips text | `export`, `import_` |
+| `review/sampling.py` | verification and audit plans, review queue, coverage | `draw_verification`, `draw_audit`, `queue`, `coverage`, `machine_strata`, `note_rows`, `write_plan` / `read_plan` |
+| `review/sheets.py` | blind, reveal and resolve sheets (resolve: substituted-model hint column); import strips text | `export`, `import_`, `hint_text` |
 | `review/gold_sheets.py` | blind gold sheets | `export_gold`, `import_gold` (via `sheets`) |
 | `review/topic_sheets.py` | topic sheets (second coder without prelabels) | `export_topics`, `import_topics`, `merge_topic_labels` |
 | `review/verdicts.py` | committed verdict CSVs | `load`, `save`, `validate`, `decision`, `COLUMNS` |
@@ -151,8 +154,8 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `evaluation/windows.py` | dev regions and test-window draw | `dev_region_units`, `draw_test_windows` |
 | `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages | `load`, `check` |
 | `evaluation/gate.py` | G0-G4, report level, confirmatory flag, ledger | `evaluate`, `check_g1`, `GateSpecs.from_prereg`, `ledger_append`, `ledger_summary` |
-| `stats/twophase.py` | strata, posterior-predictive draws, E1/E2, Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate` |
-| `stats/contrast.py` | Delta (E4), permutation test, TOST, matching, diagnostics | `delta`, `permutation_p`, `tost`, `matched_rd`, `overlap_diagnostics`, `misclassification_table` |
+| `stats/twophase.py` | strata, posterior-predictive draws, E1/E2, Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata` |
+| `stats/contrast.py` | Delta (E4), permutation test, TOST, matching, diagnostics; length strata are mid-rank tertiles | `delta`, `tertile_strata`, `permutation_p`, `tost`, `matched_rd`, `overlap_diagnostics`, `misclassification_table` |
 | `stats/decompose.py` | E3 classes, O / E / O-E, excess fractions, NOT_ESTIMABLE gate | `decompose`, `excess`, `e3`, `not_estimable_reason` |
 | `stats/power.py` | planning simulations | `simulate_delta`, `simulate_experiment` |
 | `stats/distance.py` | witness distance and UPGMA (>= 3 witnesses; not wired into a stage) | `witness_distance`, `distance_matrix`, `average_linkage_newick` |
@@ -168,8 +171,8 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `run.py` | T4 subject and T5 scorer requests and the run loop | `subject_request`, `scorer_request`, `run_trials` |
 | `score.py` | answer verification and outcomes | `parse_subject`, `parse_scorer`, `trial_outcome` |
 | `lexical.py` | negation-aware lexical motive baseline (comparison only) | `load_motive_lexicon`, `lexical_motive` |
-| `analysis.py` | H1/H2 with Holm, exploratory H3, Manski refusal bounds, two-phase correction below the G4 scorer kappa | `analyse`, `two_phase`, `refusal_bounds` |
-| `human.py` | human sample (condition x arm x scorer Y_over), blind coding sheet with opaque ids, human codes, scorer agreement | `human_sample`, `write_coding_sheet`, `write_sample`, `load_human_codes`, `resolve_codes`, `scorer_agreement` |
+| `analysis.py` | H1/H2 with Holm, exploratory H3, contrast-wise Manski refusal bounds, two-phase correction below the G4 scorer kappa (not estimable while a stratum has no human code) | `analyse`, `two_phase`, `refusal_bounds`, `uncalibrated_strata` |
+| `human.py` | human sample (condition x arm x scorer Y_over), blind coding sheet with opaque ids, human codes, scorer agreement; codes of the other phase are set aside | `human_sample`, `write_coding_sheet`, `write_sample`, `load_human_codes`, `resolve_codes`, `scorer_agreement` |
 
 The experiment depends only on `core`, `llm` and the topic codebook and never feeds the matrix.
 
@@ -191,38 +194,47 @@ ingest   -> ingest/segments_<witness>.jsonl, footnotes.jsonl, variants.csv,
   baselines              -> alignments/dp_zero.jsonl (P1), dp_anchor.jsonl (B0)
   baselines import --tsv -> alignments/external_<name>.jsonl
   collate (T1, k reps)   -> alignments/claude.r<k>.jsonl, collation/r<k>.json,
-                            collation/replicates.json, llm_audit.jsonl, cache entries
+                            collation/replicates.json (incl. the request keys), llm_audit.jsonl,
+                            cache entries, <cache>/llm_spend.jsonl
     build                -> alignments/claude.jsonl (consensus), alignments/shuffled.jsonl (P2),
                             collation/consensus.json, integrity.json, diagnostics.jsonl,
                             matrix/cells.csv, units.csv, wide_status.csv, stale_verdicts.csv,
                             matrix/cells.jsonl (human decisions applied), machine_cells.jsonl
       perturb (T1)       -> evaluation/perturbations.json
       components (T2)    -> components/components.jsonl, rendering_profile.csv, diagnostics.jsonl
-      sample verification|audit -> review/plan_<batch>.csv
+      sample verification|audit -> data/annotations/verdicts/<witness>/plan_<batch>.csv and
+                            strata_<batch>.json (committed; ids and strata only)
   topics prelabel (T3)   -> topics/prelabels.jsonl
   sample windows         -> data/annotations/gold/<witness>/windows.csv (committed)
   review export          -> review/ sheets (text; never committed)
   review import|reveal   -> data/annotations/{gold,verdicts,topics}/ (committed; no text)
-evaluate -> evaluation/scores.json, gate.json, sentinels.jsonl;
-            data/ledger/test_evaluations.jsonl (only when Claude is scored on test gold)
-stats    -> stats/estimates.json, stats/details.json
+evaluate -> evaluation/scores.<set>[_baselines].json; when gating (test gold, Claude scored):
+            scores.json, gate.json, sentinels.jsonl and one line in
+            data/ledger/test_evaluations.jsonl (not appended for an identical re-scoring)
+stats    -> stats/estimates.json, stats/details.json, stats/power.json (complete topic labels)
 report   -> summary.md, status_strip.svg, chapter_heatmap.svg
 
-experiment overattribution plan|run|score -> experiments/overattribution/*
+experiment overattribution plan|run|score [--phase pilot]
+         -> experiments/overattribution/ (pilot: experiments/overattribution/pilot/):
+            trials.jsonl, responses.jsonl, results.json, human_coding_sheet.csv, human_sample.json
 claude-check -> claude_check.json
 every stage  -> manifest.json (rewritten after each stage)
 ```
 
 `ingest`, `run` and `claude-check` create a new run directory; every other command uses the
 latest one unless `--run-dir` is given. Committed human data (`data/annotations/`,
-`data/ledger/`) is shared by all runs. The LLM response cache (`run.yaml: paths.cache`,
+`data/ledger/`) is shared by all runs, including the review plans and their frozen strata
+(runs made before plans were committed kept them under `review/`; they are still read for any
+batch with no committed plan). The LLM response cache (`run.yaml: paths.cache`,
 default `runs/llm-cache/`) is shared by all runs and makes any finished run replayable with
 `--offline`. Exact file formats are in [data-formats.md](data-formats.md).
 
 Order of a research campaign (a checklist, not code): ingest and G0; dev gold blind; prompt
 and effort development on dev gold; `sample windows`; blind test gold; `prereg freeze`; full
 collation with replicates, controls and perturbations; `evaluate` once on test gold (ledgered);
-topic labelling; verification and audit samples; blind-then-reveal review; `stats`, `report`.
+topic labelling (before sampling: strata freeze when a plan is drawn); verification and audit
+samples; blind-then-reveal review (`review export --hours` chunks: export, fill, import, repeat);
+`stats`, `report`.
 
 ## 5. Key invariants
 
@@ -242,10 +254,10 @@ topic labelling; verification and audit samples; blind-then-reveal review; `stat
 4. **Substituted-model output is never measured.** A response whose served model differs from
    the requested one, or that carries a fallback signal, has `LLMResponse.substituted_model`
    True and `usable` False. T1 turns the window's units UNALIGNED(`substituted_model`) and keeps
-   the parsed proposal only as a reviewer hint; T2 marks such codes `substituted_model` and
-   leaves them out of the rendering profile; T3 shows them as sheet hints but never commits
-   them; the experiment excludes them from every statistic. Gate G2 fails while any collate
-   call in the run's audit log was substituted.
+   the parsed proposal only as a reviewer hint (the resolve sheet's `hint_other_model` column);
+   T2 marks such codes `substituted_model` and leaves them out of the rendering profile; T3
+   shows them as sheet hints but never commits them; the experiment excludes them from every
+   statistic. Gate G2 fails while any collate request that fed the consensus was substituted.
 5. **No LLM attributes motives in the pipeline.** Pipeline schemas (T1, T2, T3) have no
    free-text fields; relations describe text, never causes; prompts never ask the model to show
    or explain its reasoning (tests assert both). Motive attribution is only the *object* of the
@@ -277,14 +289,17 @@ Implemented in `evaluation/gate.py`, thresholds from `config/preregistration.yam
 |---|---|
 | G0 integrity | 521 notes and 181 footnotes (T0892), 26 variants and 3 paratext segments (Derge), 0 duplicate ids, 0 unclassified notes, verified ingest sentinels pass |
 | G1 validity | on test windows: link F1 >= 0.80 and the paired window-cluster bootstrap of F1(Claude) - F1(best control) has CI_low > 0; status kappa >= 0.70, >= 0.8 x human kappa, and the same paired rule; witness-only recall >= 0.70 when gold has >= 10 witness-only segments; NULL precision/recall >= 0.70 when gold has >= 20 NULLs, else deferred to G3 |
-| G2 instrument | replicate Fleiss kappa >= 0.80; quote failures <= 2%; missing units <= 1%; no substituted collate call; collate digest = preregistered digest; P-wrong-window false links <= 0.10; P-deletion recall >= 0.70; verified proposal-stage sentinels pass |
-| G3 calibration | every stratum reached its planned n; every machine-negative stratum audited >= 40; deferred NULL metrics; unresolved units resolved or Manski width <= 0.05; verified final-stage sentinels pass |
-| G4 estimands | E3: a Sanskrit manuscript column and a co-witness other than the reference; E4: topic labels complete, human-human topic kappa >= 0.70, MDE <= 0.10; E6: scorer kappa >= 0.80, else two-phase-corrected outcomes |
+| G2 instrument | replicate Fleiss kappa >= 0.80; quote failures <= 2%; missing units <= 1%; no substituted call among the collate requests that fed the consensus (`collation/replicates.json: request_keys`; perturbation calls do not count); collate digest = preregistered digest; P-wrong-window false links <= 0.10; P-deletion recall >= 0.70 (each unit scored once, chunk overlaps included); verified proposal-stage sentinels pass |
+| G3 calibration | a verification plan exists and every stratum reached its planned n; no stratum holds unverified units without a phase-2 sample verdict (an uncalibrated stratum would be estimated from the prior; `twophase.uncalibrated_strata`); every machine-negative stratum audited >= 40 (a fully verified smaller census meets it); deferred NULL precision (blind verdicts on machine-ABSENT units) and NULL recall (two-phase imputation on the blind column) >= 0.70 when G1 deferred them; unresolved units resolved or Manski width <= 0.05; verified final-stage sentinels pass |
+| G4 estimands | E3: a Sanskrit manuscript column and a co-witness other than the reference; E4: topic labels complete, human-human topic kappa >= 0.70, MDE <= 0.10 (the larger of `stats.mde` and the MDE simulated on the labels, `stats/power.json`; the simulated one alone when `stats.mde` is unset); E6: scorer kappa >= 0.80, else two-phase-corrected outcomes |
 
 Level 0 (DESCRIPTIVE) if any of G0-G2 fails, 1 (VALIDATED) if G0-G2 pass, 2 (CALIBRATED) if G3
 passes too. A report is *confirmatory* only when the preregistration is frozen, the collate
 digest is the preregistered one, the ledger lines for that digest carry the current prereg
-sha256, and the test set was scored exactly once for that digest. `report/markdown.py` enforces
+sha256, and the test set was scored exactly once for that digest. Re-running `evaluate` on the
+same output and gold (e.g. to refresh G2/G3 after review) appends nothing: a ledger line with
+the same digest, preregistration, gate outcome and metrics (topic-group breakdowns aside) is
+already there (`pipeline/measure.py: already_ledgered`). `report/markdown.py` enforces
 what each level may print; human-verified (grade A) counts are printed at every level.
 
 ## 7. Review defects of 2026-09-30 and their resolution
@@ -317,7 +332,7 @@ parentheses).
 | 19 | `models.yaml` vLLM flags and MITRA repository names | File deleted; MITRA facts corrected in the Chinese method document | `docs-zh/01-method.md` | none (documentation) |
 | 20 | Topic vocabularies disagreed; no `neutral` | One codebook `data/codebook/topics.yaml`, equal to constants in code, used by T3, labels, E4 and the experiment | `topics/codebook.py` | `unit/test_topics_codebook.py` (`test_vocabulary_is_tokushiges_eight_plus_three_controls`, `test_codebook_that_disagrees_with_the_code_is_refused`); `unit/test_topics_labels.py` (`test_unknown_topic_error_lists_the_allowed_values`) |
 | 21 | Tangut/Chinese lacuna logic spanned clauses | Deleted with the transfer module | - | none (code removed) |
-| 22 | Sanskrit numerals matched as substrings | Whole-word numeral matching with exclusions | `core/textnorm.py`, `data/lexicon/numerals.yaml` | `unit/test_core_textnorm.py` (`test_numerals` over `data/fixtures/core_numerals.yaml`: laksana, advitiya, kasta, ratri, ksatriya) |
+| 22 | Sanskrit numerals matched as substrings | Whole-word numeral matching with exclusions | `core/textnorm.py`, `data/lexicon/numerals.yaml` | `unit/test_core_textnorm.py` (`test_numerals` over `data/fixtures/core_numerals.yaml`: laksana, advitiya, kasta, ratri, ksatriya; Tibetan fused-particle look-alikes bcos, brgyas, khrir) |
 | 23 | Pure-Python embedding cost | Deleted | - | none (code removed) |
 | 24 | `__version__` mismatch; manifest lacked the commit | `__version__` from `importlib.metadata`; manifest with git commit, dirty flag, config and input sha256, instrument digests, served models | `__init__.py`, `core/io.py`, `pipeline/context.py` | `unit/test_core_io.py` (`test_manifest_keys_and_values`); `unit/test_pipeline_e2e.py` (`test_offline_replay_is_all_cache_hits_and_the_manifest_records_it`) |
 | 25 | `DATA_DIR` needed an editable install | Root found from the working directory or `--root`; paths from `run.yaml: paths` | `config.py`, `cli.py` | `unit/test_cli.py` (`test_root_option_works_from_any_directory_and_later_stages_reuse_the_latest_run`) |
@@ -336,15 +351,12 @@ realdata) are named in their tests; the others are covered by the rows above.
 | Drift canary | **Cut**; the evaluation ledger lets instrument versions be compared |
 | Effort sweep on dev gold | **Not automated**; change `config/llm.yaml: tasks.collate.effort` and rerun `collate --chapters ...` + `evaluate --gold dev` (each effort is a new cache key and digest) |
 | P-negation perturbation | Builder and scorer exist (`collate/perturb.py`); the `perturb` stage does not run it (needs negated gold pairs); never gated |
-| Deferred NULL recall for G3 | **Not built**: `pipeline/measure.py` passes NULL precision from blind verdicts on machine-ABSENT units but `null_recall=None`, so while G1 defers the NULL metrics (fewer than 20 gold NULLs) G3 cannot pass |
 | Confidence reliability (Brier score) | **Not implemented**; T1 confidence is stored on links only |
-| Per-relation recall in `scores.json` | `evaluation.scores.relation_recall` exists but is not in `METRICS`, so it is not written |
 | E3 circular-shift null and per-manuscript odds ratios | **Deferred** until manuscript readings exist; O, E, O-E and phi against the independence base rate are implemented |
 | A pipeline stage for Sanskrit references and readings | Loaders exist (`ingest/sanskrit.py`); no stage uses them; E3 always prints NOT_ESTIMABLE |
-| E4 robustness and diagnostics in the `stats` output | `stats/contrast.py` implements caliper matching (`matched_rd`), the misclassification table by chapter and length tertile (critique B13) and, through `twophase.known_outcomes`, "Delta from human-verified status only"; the `stats` stage writes only Delta, its permutation p, the TOST result and the stratum-overlap diagnostic. The naive machine-label Delta (attenuation check) is not printed either |
+| E4 "Delta from human-verified status only" | `twophase.known_outcomes` gives the verified outcomes; the `stats` stage does not compute this Delta. Every other E4 diagnostic is written (`stats/details.json: e4`, see [data formats](data-formats.md)) |
 | Witness distance / UPGMA | Kept in `stats/distance.py`; not wired into a stage (needs >= 3 witnesses) |
 | `d_comp` cell dimension from T2 | **Deferred** until per-code precision and recall on double-coded dev pairs are reported |
 | Chinese report `summary.zh.md` | **Dropped** by researcher decision; reports are English only |
 | Automatic retry or window split after refusal/truncation | **Not built by design**: units go to the human `resolve` queue |
 | Second witness column, Them spangs ma Kangyur, Tangut, Ming witnesses | Out of scope for v0.3 (registry entries only) |
-| Dev regions I.1 and the II.11 tail (critique A5) | Supported by `evaluation/windows.py` (`last_units`, shared `id`); not yet listed in `config/preregistration.yaml: gold.dev_regions`, which currently names I.7, II.3 (+/-20 around D418:17b.6), II.9 (first 56) and II.12 |

@@ -310,7 +310,7 @@ def test_missing_duplicate_context_and_unknown_handles(cb, settings):
 
 @pytest.mark.parametrize("make, reason", [
     (lambda req: refusal_response(req, category="cyber", explanation="x"), "refused:cyber"),
-    (lambda req: refusal_response(req), "refused"),
+    (lambda req: refusal_response(req), "refused:unspecified"),     # one reason string for every task
     (lambda req: truncated_response(req), "truncated"),
     (lambda req: invalid_response(req), "invalid"),
 ])

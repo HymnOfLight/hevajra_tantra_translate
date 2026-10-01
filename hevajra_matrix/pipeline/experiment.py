@@ -109,8 +109,13 @@ def experiment_score(ctx: RunContext, n_boot: int = 10000, phase: str = "main") 
     record_stage(ctx, "experiment-score")
     basis = results.outcome_basis
     caveat = {"unvalidated": "; unvalidated scorer labels (no human codes): not final (G4)",
-              "two_phase": "; two-phase corrected (scorer kappa below the floor)"}.get(basis, "")
+              "two_phase": "; two-phase corrected (scorer kappa below the floor)",
+              "uncalibrated": "; H1/H2 not estimable: scorer kappa below the floor and no human code in "
+                              f"stratum {', '.join(results.uncalibrated)}"}.get(basis, "")
     print(f"experiment score ({phase}): outcome basis {basis}{caveat}")
+    if results.human_codes_set_aside:
+        print(f"experiment score ({phase}): {results.human_codes_set_aside} human codes set aside "
+              f"(their ids are no {phase} trial)")
     for t in results.tests:
         if t.role in ("confirmatory", "exploratory"):
             role = t.role if phase == "main" else f"pilot, {t.role} test not interpreted"

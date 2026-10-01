@@ -29,8 +29,16 @@ prior ``stats.twophase`` uses; drawn here with ``random.betavariate`` so the exp
 stays independent of the matrix packages). The corrected H1/H2 become the confirmatory tests (estimate and
 permutation p on the posterior-mean outcomes; CI over imputation draws x item bootstrap) and
 the scorer-label tests are kept as ``H1[scorer]``/``H2[scorer]`` sensitivity rows.
-``outcome_basis`` records which basis H1/H2 use: "scorer" (kappa passed), "two_phase", or
-"unvalidated" (no human codes yet: the scorer labels are not validated and E6 is not final).
+``outcome_basis`` records which basis H1/H2 use: "scorer" (kappa passed), "two_phase",
+"uncalibrated", or "unvalidated" (no human codes yet: the scorer labels are not validated and
+E6 is not final). "uncalibrated" is the two-phase case in which a stratum holds measured
+trials but no human code: imputing it would report the Beta(1/2, 1/2) prior as data, so (as
+``stats.twophase.UncalibratedStrata`` does for the matrix) H1/H2 and their sensitivity rows
+are not estimable, the refusal bounds are not computed, and ``uncalibrated`` lists the strata
+(stratum -> uncoded trials). The scorer-label rows ``H1[scorer]``/``H2[scorer]`` are kept.
+
+Human codes are read for both phases from one file; codes whose id is no trial of the scored
+phase are set aside (``human_codes_set_aside`` counts them).
 """
 
 from __future__ import annotations
@@ -62,7 +70,7 @@ from .score import TrialOutcome
 
 RefusalCoding = Literal["exclude", "as0", "as1"] | Callable[[TrialOutcome], float]
 Keep = Callable[[TrialOutcome], bool]
-OutcomeBasis = Literal["scorer", "two_phase", "unvalidated"]
+OutcomeBasis = Literal["scorer", "two_phase", "uncalibrated", "unvalidated"]
 SCOPE = ("results are specific to the requested model at the campaign date; responses from a substituted "
          "model are excluded; evidence lines are synthetic and outputs are never philological evidence")
 
@@ -120,6 +128,8 @@ class ExperimentResults:
     served_models: tuple[str, ...]
     refusal_uniform: Mapping[str, tuple[float | None, float | None]] = field(default_factory=dict)  # (as 0, as 1)
     outcome_basis: OutcomeBasis = "unvalidated"   # what H1/H2 are computed on (gate G4)
+    uncalibrated: Mapping[str, int] = field(default_factory=dict)   # stratum -> uncoded trials, no human code
+    human_codes_set_aside: int = 0     # codes whose id is no trial of the scored phase
     scope: str = SCOPE
 
     def test(self, name: str) -> TestResult:
@@ -326,6 +336,12 @@ def _phase2(outcomes: Sequence[TrialOutcome], human: Sequence[HumanCode],
     return known, dict(pools), {h: (counts[h][0] + 0.5, counts[h][1] + 0.5) for h in pools}
 
 
+def uncalibrated_strata(outcomes: Sequence[TrialOutcome], human: Sequence[HumanCode]) -> dict[str, int]:
+    """Stratum -> uncoded measured trials, for strata with no human code (nothing calibrates them)."""
+    _, pools, alpha = _phase2(outcomes, human)
+    return {h: len(ids) for h, ids in sorted(pools.items()) if alpha[h] == (0.5, 0.5)}
+
+
 def _posterior_mean_y(outcomes: Sequence[TrialOutcome], human: Sequence[HumanCode]) -> dict[str, float]:
     known, pools, alpha = _phase2(outcomes, human)
     return {**known, **{t: alpha[h][0] / sum(alpha[h]) for h, ids in pools.items() for t in ids}}
@@ -377,17 +393,28 @@ def analyse(outcomes: Sequence[TrialOutcome], params: AnalysisParams,
     ``human`` may use sheet ids or trial ids (``resolve_codes``). Below the G4 kappa the
     confirmatory H1/H2 are the two-phase-corrected ones.
     """
+    n_codes = len(human or ())
     human = resolve_codes(human, outcomes, params.seed) if human else None
+    set_aside = n_codes - len(human or ())
+    human = human or None
     scorer = scorer_agreement(outcomes, human, params.min_scorer_kappa) if human else None
     basis: OutcomeBasis = "unvalidated" if scorer is None else "scorer" if scorer.scorer_primary else "two_phase"
+    uncalibrated = uncalibrated_strata(outcomes, human) if basis == "two_phase" and human else {}
+    if uncalibrated:
+        basis = "uncalibrated"
     tests = run_tests(outcomes, params)
     basis_outcomes: Sequence[TrialOutcome] = outcomes
-    if basis == "two_phase":
+    reason = "no human code in stratum " + ", ".join(f"{h} ({n} uncoded)" for h, n in uncalibrated.items())
+    if basis in ("two_phase", "uncalibrated"):
         assert human is not None
-        corrected = {t.name: t for t in two_phase(outcomes, human, params)}
+        if basis == "two_phase":
+            corrected = {t.name: t for t in two_phase(outcomes, human, params)}
+            basis_outcomes = _with_y(outcomes, _posterior_mean_y(outcomes, human))
+        else:
+            corrected = {t.name: replace(t, estimate=None, ci_low=None, ci_high=None, p_value=None,
+                                         not_estimable=reason) for t in tests if t.name in ("H1", "H2")}
         raw = [replace(t, name=f"{t.name}[scorer]", role="sensitivity") for t in tests if t.name in corrected]
         tests = [corrected.get(t.name, t) for t in tests] + raw
-        basis_outcomes = _with_y(outcomes, _posterior_mean_y(outcomes, human))
     adjusted = holm({t.name: t.p_value for t in tests if t.role == "confirmatory"})
     tests = [replace(t, p_holm=adjusted.get(t.name)) for t in tests]
     sensitivity = {
@@ -396,11 +423,17 @@ def analyse(outcomes: Sequence[TrialOutcome], params: AnalysisParams,
     }
     for label, keep in sensitivity.items():
         for t in run_tests(basis_outcomes, params, keep=keep, names=("H1", "H2")):
+            if uncalibrated:
+                t = replace(t, estimate=None, ci_low=None, ci_high=None, p_value=None, not_estimable=reason)
             tests.append(replace(t, name=f"{t.name}[{label}]", role="sensitivity"))
-    bounds, uniform = refusal_bounds(basis_outcomes, params)
+    if uncalibrated:
+        bounds = uniform = {name: (None, None) for name in _SIDES}
+    else:
+        bounds, uniform = refusal_bounds(basis_outcomes, params)
     measured = [o for o in outcomes if o.measured and o.lexical is not None]
     lexical = cohen_kappa([(o.lexical == "asserted", bool(o.y_any)) for o in measured])
     return ExperimentResults(
         tests=tuple(tests), refusal_bounds=bounds, refusal_uniform=uniform, cells=cell_summaries(outcomes),
-        scorer=scorer, lexical_kappa_y_any=lexical, outcome_basis=basis,
+        scorer=scorer, lexical_kappa_y_any=lexical, outcome_basis=basis, uncalibrated=uncalibrated,
+        human_codes_set_aside=set_aside,
         served_models=tuple(sorted({o.served_model for o in outcomes if o.served_model})))

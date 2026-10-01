@@ -128,7 +128,7 @@ def test_strata_are_frozen_when_the_plan_is_drawn(finished, capsys) -> None:
     verify_all_absent(root, run)
     out = capsys.readouterr().out
     assert "WARNING topic labels are incomplete (0/10)" in out
-    snapshot = json.loads((run / "review" / "strata_verify.json").read_text(encoding="utf-8"))
+    snapshot = json.loads((root / "data" / "annotations" / "verdicts" / "zh_T0892_song" / "strata_verify.json").read_text(encoding="utf-8"))
     assert snapshot["families"] == ["pos"] and snapshot["topics_complete"] is False
     assert len(snapshot["strata"]) == 10
     audit(root, run, ["equivalent", "equivalent", "equivalent"])      # two negatives stay unverified
@@ -150,3 +150,32 @@ def test_strata_are_frozen_when_the_plan_is_drawn(finished, capsys) -> None:
     # verdict calibrates (NOT_ESTIMABLE, or before that fix: imputed from the prior alone)
     assert after["not_estimable"] is None and after["point"] == before["point"]
     assert calibration(root, run).uncalibrated == {}
+
+
+def test_plans_and_strata_are_committed_and_survive_a_new_run(finished, tmp_path) -> None:
+    # Plans and strata snapshots lived only in the run directory: a new run lost them, so
+    # G3 saw no plan and the frozen strata were gone.
+    root, run = finished
+    verify_all_absent(root, run)
+    committed = root / "data" / "annotations" / "verdicts" / "zh_T0892_song"
+    plan, strata = committed / "plan_verify.csv", committed / "strata_verify.json"
+    assert plan.is_file() and strata.is_file() and not (run / "review" / "plan_verify.csv").exists()
+    assert plan.read_text(encoding="utf-8").splitlines()[0] == "item_id,task,unit_id,stratum,inclusion_prob,priority"
+    ctx = context(root, run, offline=True)
+    texts = load_texts(ctx)
+    assert {v.batch_id for v in ann.review_verdicts(ctx, texts)} == {"verify"}, "a plan is not a verdict file"
+
+    run2 = tmp_path / "run2"
+    assert main(["ingest", "--root", str(root), "--run-dir", str(run2)]) == 0
+    assert main(["run", "--offline", "--root", str(root), "--run-dir", str(run2)]) == 0
+    assert cli(root, run2, "sample", "verification") == 2, "the committed plan is drawn once for every run"
+    assert calibration(root, run2).planned == calibration(root, run).planned == {"pos:absent:other": 5}
+
+    # a run made before plans were committed: its plan and strata are read from the run dir
+    (run / "review").mkdir(exist_ok=True)
+    plan.rename(run / "review" / "plan_verify.csv")
+    strata.rename(run / "review" / "strata_verify.json")
+    assert calibration(root, run).planned == {"pos:absent:other": 5}
+    assert calibration(root, run2).planned == {}
+    frozen = json.loads((run / "review" / "strata_verify.json").read_text(encoding="utf-8"))["strata"]
+    assert ann.sampling_strata(ctx, texts.witness_id, {}) == {u: s for u, s in frozen.items() if s.startswith("pos:")}

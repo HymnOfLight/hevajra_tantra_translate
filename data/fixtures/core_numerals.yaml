@@ -57,6 +57,10 @@ cases:
   - {lang: bo, text: "གཙོ་བོ་དཔེ་བྱད་བརྒྱད་ཅུར་ལྡན།", expected: [80]}       # was 8
   - {lang: bo, text: "སོར་མོ་ཉི་ཤུའམ་དེ་ཡི་ཕྱེད།", expected: [20]}        # a fused particle ends the numeral
   - {lang: bo, text: "གཉིས་ཀྱིས", expected: [2]}                           # final s of gnyis is not a particle
+  - {lang: bo, text: "མ་བཅོས་པ", expected: []}                  # "uncontrived": bcos is not 10 + instr.
+  - {lang: bo, text: "བཅོས་མ", expected: []}                          # "artificial"
+  - {lang: bo, text: "རྒྱན་གྱིས་བརྒྱས་པ", expected: []}       # "adorned with ornaments": not 100
+  - {lang: bo, text: "ཁྲིར་འདུག", expected: []}                        # "sits on the throne": not 10,000
   # Multiples: "X phrag Y" and "Y X" for X >= 100
   - {lang: bo, text: "འབུམ་ཕྲག་བདུན་གྱིས་ལྷ་མ་ཡིན།", expected: [700000]}  # D417:13b.5.1; the zh parallel reads 700,000
   - {lang: bo, text: "བརྒྱ་ཕྲག་གཅིག་གིས་སྔགས་པ་ཉིད།", expected: [100]}

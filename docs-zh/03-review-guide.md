@@ -62,27 +62,34 @@ hevajra-matrix review import --task gold --file <填好的 .ref.csv> --annotator
 
 ## 3 核验、抽检与"解决"
 
-金标准之外，全经的机器判断通过"两阶段"方式校正：
+金标准之外，全经的机器判断通过"两阶段"方式校正。
+
+**先做主题标注（第 4 节），再抽样。** 分层（`pos:<类>:<主题组>`、`neg:<等级>:<主题组>`）在抽样那一刻冻结，随计划一起保存；之后再导入的主题标签不会改变已冻结单元的分层。若在主题标注完成之前抽样，未标注的单元一律按"其他"分层，并一直如此，敏感段落就得不到自己的误差率。`sample` 在主题标签不完整时会打印警告。
 
 | 任务 | 抽什么 | 命令 |
 |---|---|---|
-| `verify` 核验 | 机器判为偏移的单元：罕见要类（无对应、反转、替换、类名略去、越窗、仅见于汉文、X 级）**全部**核验，常见类（部分、概括、散文音写）按预注册比例抽样 | `hevajra-matrix sample verification` |
+| `verify` 核验 | 机器判为偏移的单元：罕见要类（无对应、反转、替换、类名略去、越窗、仅见于汉文、X 级）**全部**核验，常见类（部分、概括、散文音写）按预注册比例抽样，每层至少 min(该层单元数, 20)。落在夹注上的"仅见于汉文"声明不核验（夹注在切分时已分类） | `hevajra-matrix sample verification` |
 | `audit` 抽检 | 机器判为无偏移的单元，按"证据等级 B/C × 主题组敏感/其他"分 4 层，每层至少 40、C 级加倍 | `hevajra-matrix sample audit` |
 | `resolve` 解决 | 机器未能判断的单元（被拒、截断、核验失败、模型被替换、无多数） | 包含在核验计划里 |
 
-流程：
+计划（`plan_<批次>.csv`）与冻结的分层（`strata_<批次>.json`）写在 `data/annotations/verdicts/<见证>/` 下、与裁决放在一起，请一并提交；新的运行目录也会读取它们。计划只抽一次（`--force` 才会重抽）。
+
+流程（`--hours` 循环：每次出一批，填完导入后再出下一批）：
 
 ```bash
-hevajra-matrix review export --task verify --hours 4 --competence bo,zh   # 按优先级出 4 小时的题
+hevajra-matrix review export --task verify --hours 4 --competence bo,zh   # 按优先级出 4 小时的题（已盲判的条目跳过）
 # 盲判：填 <批次>.blind.csv 的 blind_relation / blind_wit_loci / blind_flags
 hevajra-matrix review import --task verify --file <填好的盲表> --annotator 姓名 --minutes 用时
-hevajra-matrix review export --task reveal --batch <批次>                # 导出揭示表
+hevajra-matrix review export --task reveal --batch <批次>                # 导出揭示表（只含尚未揭示的条目）
 # 看机器结论后填 final_relation / final_wit_loci / final_flags；如果改判，在 revised_reason 写原因
 hevajra-matrix review reveal --file <填好的揭示表> --annotator 姓名
 hevajra-matrix review status                                              # 看各层完成度
+# 再次 review export --task verify --hours 4，得到下一批；如此循环直到各层完成
 ```
 
-`resolve` 任务没有揭示步骤：盲判即终裁。
+同一批次的盲表和揭示表文件名固定（`<批次>.blind.csv`、`<批次>.reveal.csv`）。表中所有条目都已导入后，下一批会直接覆盖它；只要表中还有**未导入**的条目，导出就会拒绝覆盖并列出这些条目——先导入，或确认放弃后加 `--force`。
+
+`resolve` 任务没有揭示步骤：盲判即终裁。解决表多一列 `hint_other_model`：如果服务器端 fallback 让另一个模型回答了该窗口，这里显示那个模型提出的关系和汉文片段（明确标为"FROM ANOTHER MODEL"，不是测量工具的结论，从不计入测量），仅供参考；导入时这一列被剥去。
 
 **重要：** 抽检样本的分层是在"只有机器结论"的矩阵上算的，所以请先跑一次不带人工裁决的 `build`，再 `sample`；导入裁决后再 `build`，裁决会以 A 级覆盖机器结论。
 

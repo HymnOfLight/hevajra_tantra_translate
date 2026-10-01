@@ -205,6 +205,10 @@ class Texts:
         return {s.id: s.kind for s in self.units}
 
     @cached_property
+    def wit_kinds(self) -> dict[str, str]:
+        return {s.id: s.kind for s in self.witness}
+
+    @cached_property
     def chapter_of(self) -> dict[str, str]:
         return {s.id: str(s.chapter) for s in self.units}
 

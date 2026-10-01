@@ -280,7 +280,12 @@ def _integrity(ctx: RunContext, texts: Texts, claude: Alignment | None, cells: l
         results["final"] = sentinel_checks.check(loaded, "final", everything, cells=cells)
     collation = _read_json(ctx.path("collation", "integrity.json")) if claude is not None else {}
     audit = [r for r in read_jsonl(ctx.path(AUDIT_LOG))] if ctx.path(AUDIT_LOG).is_file() else []
-    measured = [r for r in audit if r.get("task") == "collate"]
+    # G2 looks only at the calls that fed the consensus: the requests of the latest collate
+    # (``replicates.json: request_keys``), not perturbation or other collate-task calls.
+    # Runs written before the keys were recorded fall back to every collate call.
+    keys = _read_json(ctx.path("collation", "replicates.json")).get("request_keys")
+    fed = None if keys is None else set(keys)
+    measured = [r for r in audit if r.get("task") == "collate" and (fed is None or r.get("key") in fed)]
     substituted = sum(1 for r in measured if r.get("fallback_used") or r.get("served_model") != r.get("requested_model"))
     return gates.Integrity(
         ingest_reports=_read_json(require(ctx.path("ingest", "report.json"), "ingest")), sentinels=results,
@@ -301,7 +306,7 @@ def _perturbations(ctx: RunContext) -> gates.Perturbations:
 def _calibration(ctx: RunContext, texts: Texts, cells: list[Cell] | None, topics: ann.Topics) -> gates.Calibration:
     """Two-phase facts for G3 and estimand facts for G4 (see ``evaluation.gate.Calibration``)."""
     verdicts = ann.current_verdicts(ann.review_verdicts(ctx, texts), texts)
-    plan = ann.review_plans(ctx)
+    plan = ann.review_plans(ctx, texts)
     coverage = sampling.coverage(plan, verdicts)
     planned = {s: c["planned"] for s, c in coverage.items()}
     achieved = {s: c["final"] for s, c in coverage.items()}
@@ -324,7 +329,8 @@ def _calibration(ctx: RunContext, texts: Texts, cells: list[Cell] | None, topics
         machine_path = ctx.path("matrix", "machine_cells.jsonl")
         if machine_path.is_file():
             machine = [c for c in read_cells(machine_path) if not is_orphan(c.unit_id)]
-            strata = ann.sampling_strata(ctx, sampling.machine_strata(machine, topics.groups(), texts.ref_kinds))
+            strata = ann.sampling_strata(ctx, texts.witness_id,
+                                         sampling.machine_strata(machine, topics.groups(), texts.ref_kinds))
             uncalibrated = twophase.uncalibrated_strata(units, verdicts, strata, "final", texts.ref_kinds)
             null_recall = deferred_null_recall(machine, units, verdicts, strata, texts.ref_kinds,
                                                ctx.settings.prereg.get("stats") or {})
@@ -364,13 +370,16 @@ def deferred_null_recall(machine: Sequence[Cell], cells: Sequence[Cell], verdict
 def design_mde(ctx: RunContext) -> float | None:
     """MDE for G4: the preregistered one, or the larger one simulated on the real topic labels
     (``stats/power.json``, written by the stats stage) once it exists; None when the
-    simulation found no detectable effect within its grid."""
+    simulation found no detectable effect within its grid. With ``stats.mde`` unset the
+    simulated MDE is used alone (the maximum of the values present)."""
     mde = (ctx.settings.prereg.get("stats") or {}).get("mde")
     power = _read_json(ctx.path("stats", "power.json"))
     if "mde_on_labels" not in power:
         return mde
     computed = power["mde_on_labels"]
-    return None if computed is None or mde is None else max(float(mde), float(computed))
+    if computed is None:
+        return None
+    return max(float(x) for x in (mde, computed) if x is not None)
 
 
 def read_gate(ctx: RunContext) -> gates.GateReport | None:

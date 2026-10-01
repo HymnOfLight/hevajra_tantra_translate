@@ -14,6 +14,14 @@ rows become verdicts only in memory (`evaluation.gold.to_verdicts`), which is wh
 gold precedence and makes them visible to G1 scoring. Do not copy gold rows into this
 directory: `review.verdicts.load` refuses them.
 
+The review plans live here too: `sample verification|audit` writes `plan_<batch>.csv` (the
+sampled items with their stratum and inclusion probability) and `strata_<batch>.json` (every
+unit's stratum when the plan was drawn, frozen for estimation) beside the verdicts they
+calibrate, so every later run finds them. They hold ids and strata only. Commit them with the
+verdicts; never edit them by hand (`--force` redraws a plan). `review.verdicts.load` skips the
+`plan_*.csv` files, so a batch name may not start with `plan_` or `strata_`. Witness-only
+claims on CBETA notes (classified at ingest) are never sampled.
+
 Licence rule: these files hold ids, decisions and short quotes only. The text the annotator
 read is in the review sheets under `runs/<id>/review/`, which are never committed. Quotes are
 cut to `config/run.yaml: review.quote_max_chars` (30 Chinese / 60 Tibetan characters) and
@@ -21,8 +29,9 @@ never exceed 60 characters.
 
 ## Columns
 
-Exactly these 23 columns, UTF-8 (a byte-order mark is tolerated). Lists of ids are separated
-by spaces, lists of flags by `;`.
+Exactly these 24 columns, UTF-8 (a byte-order mark is tolerated). Lists of ids are separated
+by spaces, lists of flags by `;`. Files written before `machine_polarity_flip` was added (23
+columns) still load; the missing column reads as `false`.
 
 | Column | Content |
 |---|---|
@@ -36,6 +45,7 @@ by spaces, lists of flags by `;`.
 | `instrument_digest` | digest of the instrument whose output was revealed (empty before reveal) |
 | `machine_relation` | the machine proposal shown at reveal (`UNALIGNED:<reason>` when there was none) |
 | `machine_status` | status of that proposal (`PRESENT`, `PARTIAL`, `ABSENT`, `UNALIGNED`, `NA`) |
+| `machine_polarity_flip` | `true` when that proposal flagged a polarity flip (from the reveal sheet; used by the E4 misclassification table), else `false` |
 | `blind_relation` | the decision made before seeing any machine output |
 | `blind_wit_ids` | witness segment ids of the blind decision |
 | `final_relation` | the decision after reveal (resolve: a copy of the blind one, since resolve has no reveal) |

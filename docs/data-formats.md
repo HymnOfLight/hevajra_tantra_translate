@@ -20,9 +20,9 @@ Where things live:
 |---|---|---|
 | `config/` | yes | run parameters, Claude settings, pre-registration |
 | `data/registry/`, `data/lexicon/`, `data/codebook/`, `data/sentinels/` | yes | research data, YAML |
-| `data/annotations/`, `data/ledger/`, `data/experiments/` | yes | human decisions and the test ledger (ids, labels, short quotes only) |
+| `data/annotations/`, `data/ledger/`, `data/experiments/` | yes | human decisions, review plans and their frozen strata, and the test ledger (ids, labels, strata, short quotes only) |
 | `data/raw/`, `data/reference/` | **no** | source texts and Sanskrit TSVs (licensed) |
-| `runs/<run>/`, `runs/llm-cache/` | **no** | run outputs and the LLM response cache (contain source text) |
+| `runs/<run>/`, `runs/llm-cache/` | **no** | run outputs, the LLM response cache (contain source text) and the spend ledger `llm_spend.jsonl` at the cache root |
 
 A run directory is named `<UTC yyyymmddThhmmssZ>-<git short hash>` (suffix `-2`, `-3` when the
 name is taken).
@@ -121,7 +121,7 @@ reversal, category_name_omitted, transliterated, no_counterpart`. Witness-only k
 | File | Content |
 |---|---|
 | `r<k>.json` | per replicate: `unresolved` (unit id -> UNALIGNED reason), `diagnostics` (list of `{kind, ref_ids, wit_ids, detail}`), `hints` (links of substituted-model answers, same fields as an alignment link), `overlap` (`{compared, agreed, disagreeing}`, the V10 statistic) |
-| `replicates.json` | `{tags, chapters, windows}` of the latest `collate` invocation; `build` reads these replicates |
+| `replicates.json` | `{tags, chapters, windows, request_keys}` of the latest `collate` invocation; `build` reads these replicates; `request_keys` (sorted `LLMRequest.key()` of every request) are the measurement calls whose audit lines G2 checks for substitution (a file without them: every collate call counts) |
 | `consensus.json` | `{grades: unit -> B, C or X, reasons: unit -> UNALIGNED reason}` |
 | `integrity.json` | `replicates, units, quote_failures, quote_failure_rate, missing_units, missing_rate, fleiss_kappa, mean_link_jaccard, class_jaccard` (gate G2) |
 | `diagnostics.jsonl` | `{replicate, kind, ref_ids, wit_ids, detail}` for every replicate's diagnostics |
@@ -171,10 +171,11 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 
 | File | Content |
 |---|---|
-| `scores.json` | `gold_set`, `baselines_only`, `human_kappa`, `sources`: source -> `{counts, metrics, intervals}`. `counts`: `units, windows, excluded, gold_links, gold_null, gold_witness_only, unresolved`. `metrics`: `link_precision, link_recall, link_f1, null_precision, null_recall, witness_only_recall, witness_only_kind_agreement, status_kappa, dany_kappa, quote_failure_rate, invalid_handle_rate, refusal_rate`. `intervals`: metric -> an `Estimate` (below) with its 95% window-cluster bootstrap interval |
-| `gate.json` | `level` (0, 1, 2), `confirmatory`, `passed` (gate -> bool), `reasons`, `deferred_null`, `not_estimable` (estimand -> reason), `scope_note` |
-| `sentinels.jsonl` | sentinel results of every stage checked (as in `ingest/`) |
-| `perturbations.json` | `wrong_window` and `deletion` as `{hits, n}`, `negation` (null: not run), `fraction`, `seed`, `windows` |
+| `scores.<set>.json` | one per evaluation, never overwritten by another kind: `scores.test.json`, `scores.dev.json`, `scores.<set>_baselines.json` (`--baselines-only`). Keys: `gold_set`, `baselines_only`, `human_kappa`, `sources`: source -> `{counts, metrics, intervals}`. `counts`: `units, windows, excluded, gold_links, gold_null, gold_witness_only, unresolved`. `metrics`: the scalars `link_precision, link_recall, link_f1, null_precision, null_recall, witness_only_recall, witness_only_kind_agreement, status_kappa, dany_kappa, quote_failure_rate, invalid_handle_rate, refusal_rate`, then keyed metrics `<breakdown>:<key>`: `status_agreement:<status>`, `dany_agreement:dev` / `:nondev`, `relation_recall:<relation>`, `refusal_rate:<topic group>` (`evaluation/scores.py: METRICS, BREAKDOWNS`). `intervals`: metric -> an `Estimate` (below) with its 95% window-cluster bootstrap interval |
+| `scores.json` | the same content as the scores file of the evaluation that wrote `gate.json` |
+| `gate.json` | `level` (0, 1, 2), `confirmatory`, `passed` (gate -> bool), `reasons`, `deferred_null`, `not_estimable` (estimand -> reason), `scope_note`, `gating` (true only for the Claude consensus scored on test gold), `gold_set`, `baselines_only`. Once a gating evaluation exists, dev-gold and baselines-only evaluations write only their `scores.<set>.json` and leave `gate.json`, `scores.json` and `sentinels.jsonl` alone |
+| `sentinels.jsonl` | sentinel results of every stage checked (as in `ingest/`), written with `gate.json` |
+| `perturbations.json` | `wrong_window` and `deletion` as `{hits, n}`, `negation` (null: not run), `fraction`, `seed`, `windows`. Deletion scores each unit once: the units a chunk shares with the next chunk are scored in the next one only |
 
 ### Other run files
 
@@ -182,16 +183,18 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 |---|---|
 | `llm_audit.jsonl` | one line per LLM call (section 2) |
 | `topics/prelabels.jsonl` | T3 hints: `unit_id, topics, cues ([topic, cue] pairs), flags, reason` |
-| `review/plan_<batch>.csv` | `item_id, task, unit_id, stratum, inclusion_prob, priority` (section 4) |
+| `review/plan_<batch>.csv`, `review/strata_<batch>.json` | runs made before plans were committed only; now committed (section 3), read here as a fallback for a batch with no committed plan |
 | `review/` sheets | section 4; contain source text |
-| `stats/estimates.json` | estimand name -> `Estimate`: `name, point, lo, hi, n, scope, sources, level, not_estimable`. Names: `E1_any, E1_cov, E1_absent, E1_partial, E2_any`, the blind-column sensitivity `E1_any_blind, E1_cov_blind, E2_any_blind`, `E3`, `E4`, `E5` |
-| `stats/details.json` | `revision` (stratum -> `{stratum, n, relation_changed, outcome_changed}`), `manski` (`any`/`cov` -> `[lo, hi]`), `e4` (`permutation_p, equivalent_within_margin, margin, overlap {n_strata, n_overlap_strata, n_units, n_used, dropped}`) |
+| `stats/estimates.json` | estimand name -> `Estimate`: `name, point, lo, hi, n, scope, sources, level, not_estimable`. Names: `E1_any, E1_cov, E1_absent, E1_partial, E2_any`, the blind-column sensitivity `E1_any_blind, E1_cov_blind, E2_any_blind`, the prior sensitivity `E1_<primary>_prior` (primary outcome of `preregistration.yaml: primary_outcome`, Dirichlet prior symmetric in D; only when the final column has draws), `E3`, `E4`, `E5`. E5 counts human-verified witness-only rows except those on CBETA `note` segments |
+| `stats/details.json` | `revision` (stratum -> `{stratum, n, relation_changed, outcome_changed}`); `manski` (`any`/`cov` -> `[lo, hi]`); `uncalibrated` (`final`/`blind` -> stratum -> unverified units, when a stratum has no phase-2 sample verdict and E1/E2 are not estimable); `ingest_notes` (`{witness_only_rows}`: witness-only rows on CBETA `note` segments, classified at ingest and left out of verification and E5; descriptive); `e4`: `margin` always, `power` (the content of `stats/power.json`) when computed, and when Delta is computed also `permutation_p, equivalent_within_margin, overlap {n_strata, n_overlap_strata, n_units, n_used, dropped}, naive` (Delta on the machine labels), `attenuation` (corrected minus naive), `matched_rd {difference, pairs}`, `misclassification` (list of `{stratum, factor (chapter or tertile), level, n, errors, rate}`), `negative_control` (an `Estimate` of frame vs neutral) |
+| `stats/power.json` | written by `stats` once topic labels are complete (`pipeline/e4.py: mde_on_labels`): `mde_on_labels` (smallest Delta on the grid detected with `target_power`; null: none), `target_power, p0, chapters, units, exposed, power_curve` (effect -> power), `n_sim`. Gate G4 uses the larger of it and `stats.mde` (the simulated MDE alone when `stats.mde` is unset) |
 | `components/components.jsonl` | T2 slot codes: `ref_id, wit_ids, slot, code, ref_quote, wit_quote, polarity_flip, flags, reason` |
 | `components/rendering_profile.csv` | `source_quote, rendering_quote, count, n_units, units, codes, slots` (descriptive) |
 | `components/diagnostics.jsonl` | `{kind, ref_ids, wit_ids, detail}` |
+| `experiments/overattribution/` | the main phase; the pilot writes the same files under `experiments/overattribution/pilot/` |
 | `experiments/overattribution/trials.jsonl` | `trial_id, item_id, arm, condition, evidence, replicate, order` |
 | `experiments/overattribution/responses.jsonl` | one `TrialOutcome` per trial (`experiments/overattribution/score.py`): `trial_id, item_id, arm, condition, evidence, replicate, omission_origin, status, scorer_status, refusal_category, served_model, explanation, most_likely, premise_ok, word_count, primary, stances, disputes_premise, y_over, y_any, y_uptake, lexical, repeat_primary, repeat_y_over, flags` |
-| `experiments/overattribution/results.json` | `ExperimentResults`: `tests` (each `name, role, estimate, ci_low, ci_high, p_value, n, p_holm, not_estimable`), `refusal_bounds` (test -> Manski `[lo, hi]`: refusals coded 0 on one side of the contrast and 1 on the other), `refusal_uniform` (test -> `[all 0, all 1]`), `cells`, `scorer`, `lexical_kappa_y_any`, `served_models`, `outcome_basis` (`scorer`; `two_phase` when the scorer kappa is below the G4 threshold, H1/H2 then two-phase corrected and the scorer-label rows named `H1[scorer]`/`H2[scorer]`; `unvalidated` without human codes), `scope` |
+| `experiments/overattribution/results.json` | `ExperimentResults`: `tests` (each `name, role, estimate, ci_low, ci_high, p_value, n, p_holm, not_estimable`), `refusal_bounds` (test -> Manski `[lo, hi]`: refusals coded 0 on one side of the contrast and 1 on the other), `refusal_uniform` (test -> `[all 0, all 1]`), `cells`, `scorer`, `lexical_kappa_y_any`, `served_models`, `outcome_basis` (`scorer`; `two_phase` when the scorer kappa is below the G4 threshold, H1/H2 then two-phase corrected and the scorer-label rows named `H1[scorer]`/`H2[scorer]`; `uncalibrated` when, below that threshold, a stratum condition x arm x scorer Y_over holds measured trials but no human code: H1/H2 and their sensitivity rows are not estimable and the refusal bounds null, as in `stats.twophase.UncalibratedStrata`; `unvalidated` without human codes of this phase), `uncalibrated` (stratum -> uncoded trials), `human_codes_set_aside` (codes in `human_codes.csv` whose id is no trial of this phase, e.g. the other phase's), `scope`, `phase` (`main` or `pilot`) |
 | `experiments/overattribution/human_coding_sheet.csv` | blind coding sheet: `response_id` (opaque sheet id), `explanation`, then the code columns of `human_codes.csv` from `coder` on (empty) |
 | `experiments/overattribution/human_sample.json` | private key of the sheet: `seed`, `responses` (`sheet_id, trial_id, stratum`), `inclusion` (stratum -> sampling fraction); never shown to coders |
 | `claude_check.json` | `passed, status, requested_model, served_model, fallback_used, stop_reason, refusal_category, usage {input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens}, request_id, from_cache` |
@@ -268,18 +271,42 @@ Details: [`data/annotations/gold/README.md`](../data/annotations/gold/README.md)
 ### Review verdicts (`data/annotations/verdicts/<witness>/<batch>.csv`)
 
 Details: [`data/annotations/verdicts/README.md`](../data/annotations/verdicts/README.md). Code:
-`review/verdicts.py` (`COLUMNS`, `load`, `save`, `validate`, `decision`). Exactly 23 columns:
+`review/verdicts.py` (`COLUMNS`, `load`, `save`, `validate`, `decision`). Exactly 24 columns (a file
+written before `machine_polarity_flip` existed, with the other 23, still loads; the column then
+reads `false`):
 
 `batch_id, item_id, task, stratum, inclusion_prob, unit_id, fingerprint, instrument_digest,
-machine_relation, machine_status, blind_relation, blind_wit_ids, final_relation, final_wit_ids,
-polarity_flip, flags, quote_ref, quote_zh, annotator, blind_date, final_date, minutes, note`
+machine_relation, machine_status, machine_polarity_flip, blind_relation, blind_wit_ids,
+final_relation, final_wit_ids, polarity_flip, flags, quote_ref, quote_zh, annotator, blind_date,
+final_date, minutes, note`
 
 `task` is `verify`, `audit` or `resolve`. Decision values for a reference unit are a relation,
 `lacuna` or `unresolved`; for an orphan row a witness-only kind or `has_counterpart`. Quotes
 are truncated on import to `run.yaml: review.quote_max_chars` (zh 30, bo 60, sa 60) and never
 exceed 60 characters. The matrix applies the final columns (resolve copies blind to final on
 import); estimation uses `final_*` as primary and `blind_*` for the automation-bias sensitivity
-estimate (critique A1).
+estimate (critique A1). `machine_polarity_flip` is the machine's polarity call from the reveal
+sheet (`true`/`false`), kept for the E4 misclassification table.
+
+### Review plans and frozen strata (`data/annotations/verdicts/<witness>/`)
+
+Written by `sample verification|audit` (`pipeline/review.py`, `pipeline/human_data.py`) beside
+the verdicts they calibrate; ids and strata only, no text. `review.verdicts.load` skips the
+`plan_*.csv` files, so a batch name may not start with `plan_` or `strata_`.
+
+- **`plan_<batch>.csv`** (`review/sampling.py: PLAN_COLUMNS`): `item_id, task, unit_id, stratum,
+  inclusion_prob, priority`. Strata: `pos:<class>:<topic>` (class one of `absent, reversal,
+  substitution, category_name_omitted, relocated, abridged, generalised, transliterated_prose`;
+  topic `sensitive` or `other`), `neg:<B|C>:<topic>`, `unresolved`, `pos:witness_only`.
+  `inclusion_prob` = n_h / |U_h| (1.0 for census strata). A plan is drawn once (`--force`
+  redraws it). Witness-only claims on CBETA `note` segments are never in a plan.
+- **`strata_<batch>.json`**: `{families, topics_complete, strata}`: `strata` maps every unit to
+  its stratum when the plan was drawn; `families` (`pos`, `unresolved`, `neg`) are the stratum
+  prefixes the plan samples, whose units keep the frozen stratum in every later `stats` and
+  `evaluate` (topic labels imported later do not move them).
+
+Runs made before plans were committed hold both files under `<run>/review/`; they are read
+for any batch that has no committed plan.
 
 ### Topic labels (`data/annotations/topics/<reference>.csv`)
 
@@ -330,20 +357,21 @@ Written by `review export` under `runs/<run>/review/` (`review/sheets.py`, `gold
 |---|---|---|
 | gold, reference side | `gold/<set>_<window>.ref.csv` | `row, unit_id, fingerprint, locus, kind, text, links, relation, polarity_flip, flags, note` |
 | gold, witness side | `gold/<set>_<window>.wit.csv` | `handle, seg_id, locus, kind, text, witness_only` |
-| verify, audit, resolve (blind) | `<batch>.blind.csv` (resolve: `<batch>_resolve.blind.csv`) | `item_id, task, unit_id, fingerprint, locus, ref_text, zh_context_loci, zh_context, blind_relation, blind_wit_loci, blind_flags, note` |
+| verify, audit (blind) | `<batch>.blind.csv` | `item_id, task, unit_id, fingerprint, locus, ref_text, zh_context_loci, zh_context, blind_relation, blind_wit_loci, blind_flags, note` |
+| resolve | `<batch>_resolve.blind.csv` | the blind columns, then `hint_other_model`: the proposal of a substituted model for the unit (`collation/r<k>.json: hints`), as `FROM ANOTHER MODEL (substituted; not the instrument, never measured): <relation> [<witness loci>]`, distinct hints joined by ` \| `; empty without a hint |
 | reveal | `<batch>.reveal.csv` | the blind columns, then `machine_relation, machine_polarity_flip, machine_wit_loci, machine_quotes, machine_grade, final_relation, final_wit_loci, final_flags, revised_reason` |
 | topics, first coder | `topics_<batch>.csv` | `unit_id, fingerprint, locus, text, context_before, context_after, prelabel_topics, prelabel_cue, topics, note` |
 | topics, second coder | `topics_<batch>.second.csv` | the same without `prelabel_topics` and `prelabel_cue` (critique A6) |
 
 Import (`review import`, `review reveal`, `topics import`) drops every text column
-(`text, ref_text, zh_context, context_before, context_after, machine_quotes`) and writes the
-committed files of section 3. A blind sheet never contains a `machine_*` column.
+(`text, ref_text, zh_context, context_before, context_after, machine_quotes`) and the
+`hint_other_model` column, and writes the committed files of section 3. A blind verify or audit
+sheet never contains a `machine_*` column.
 
-Review plans `review/plan_<batch>.csv` (`review/sampling.py: PLAN_COLUMNS`): `item_id, task,
-unit_id, stratum, inclusion_prob, priority`. Strata: `pos:<class>:<topic>` (class one of
-`absent, reversal, substitution, category_name_omitted, relocated, abridged, generalised,
-transliterated_prose`; topic `sensitive` or `other`), `neg:<B|C>:<topic>`, `unresolved`,
-`pos:witness_only`. `inclusion_prob` = n_h / |U_h| (1.0 for census strata).
+Export never overwrites a blind or reveal sheet that holds an item without an imported verdict
+(blind: no committed blind decision; reveal: no committed final decision) unless `--force` is
+given; once every item on it is imported, the next `--hours` chunk replaces it. A reveal sheet
+holds only the batch's items not revealed yet. Review plans and strata: section 3.
 
 ---
 
@@ -489,9 +517,9 @@ See [llm-tasks.md](llm-tasks.md).
 | `gates.g2` | `min_replicate_kappa, max_quote_failure_rate, max_missing_rate, max_wrong_window_false_link_rate, min_deletion_recall` |
 | `gates.g3` | `min_audit_per_stratum, max_manski_width` |
 | `gates.g4` | `min_manuscripts_per_unit, min_topic_kappa, max_mde, min_scorer_kappa` |
-| `verification` | `census_classes, sampled_classes, cap_units, sampled_fraction, seed` |
+| `verification` | `census_classes, sampled_classes, cap_units, sampled_fraction, seed`, optional `min_per_sampled_stratum` (default 20): every sampled stratum gets at least min(|U_h|, it) units even when the census exceeds `cap_units` (`review/sampling.py`) |
 | `audit` | `total, min_per_stratum, grade_c_oversample, seed` |
-| `stats` | `n_draws, n_permutations, seed, mde, tost_margin` |
+| `stats` | `n_draws, n_permutations, seed, mde` (`mde` is also the TOST margin of E4; a legacy `tost_margin` is ignored, with a warning when it differs) |
 | `experiment` | `items_per_arm, pilot_items_per_arm, replicates, conditions, seed, human_coded_responses` |
 | `amendments` | list of `{date, reason, changed, was_frozen}`, appended by `prereg freeze --amend` |
 

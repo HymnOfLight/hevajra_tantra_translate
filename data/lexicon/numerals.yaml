@@ -101,6 +101,11 @@ bo:
     - གཉིས་མེད      # non-dual (D417/418: 2)
     - གཉིས་སུ་མེད    # non-dual (D417/418: 1)
     - བྱེ་བར          # "split" (verb + terminative), not koti (D417/418: 1, "not split")
+    # Vowel-final numeral syllables plus a final -s or -r that are other words (a fused
+    # particle is read only on a numeral; these are not; 0 hits in D417/418, found 2026-10-01):
+    - བཅོས          # bcos "made, contrived" (ma bcos pa, bcos ma), not bco (teen "ten") + instr.
+    - བརྒྱས        # brgyas "adorned, expanded" (rgyan gyis brgyas pa), not 100 + instr.
+    - ཁྲིར          # khrir "onto the throne" (khrir 'dug), not 10,000 + term.
 
 sa:
   # Word-initial IAST stems; the longest stem that begins a word wins, so sandhi forms

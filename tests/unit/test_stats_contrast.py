@@ -32,6 +32,17 @@ def test_tertile_strata():
     assert ct.tertile_strata({}, {}) == {}
 
 
+def test_tertiles_stay_meaningful_when_most_units_share_one_length():
+    # Real text: 2503 of 3042 units have 7 syllables; value cut points put both cuts on 7,
+    # left t2 empty and merged the 7s with the long units in t3.
+    lengths = {f"s{i}": 5.0 for i in range(300)} | {f"m{i}": 7.0 for i in range(2503)} \
+        | {f"l{i}": 11.0 for i in range(239)}
+    s = ct.tertile_strata(lengths, {u: "I.1" for u in lengths})
+    assert {s[u] for u in lengths if u[0] == "s"} == {"I.1|t1"}
+    assert {s[u] for u in lengths if u[0] == "m"} == {"I.1|t2"}
+    assert {s[u] for u in lengths if u[0] == "l"} == {"I.1|t3"}
+
+
 def _world(rng: random.Random, n_chapters=20, per_chapter=150, p0=0.10, rd=0.11, share=0.3):
     truth, exposure, chapter = {}, {}, {}
     for c in range(n_chapters):

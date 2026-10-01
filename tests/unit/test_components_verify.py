@@ -280,7 +280,7 @@ def test_identical_slot_entries_are_merged_with_a_flag(lexicon):
 # --------------------------------------------------------------------------- response status
 @pytest.mark.parametrize("response, reason", [
     (lambda r, a: refusal_response(r, category="bio"), "refused:bio"),
-    (lambda r, a: refusal_response(r), "refused"),
+    (lambda r, a: refusal_response(r), "refused:unspecified"),     # as collate (T1) and topics (T3)
     (lambda r, a: truncated_response(r), "truncated"),
     (lambda r, a: invalid_response(r), "invalid"),
     (lambda r, a: dataclasses.replace(ok_response(r, a), data={"pairs": [{"pair": "p01"}]}), "invalid"),

@@ -90,7 +90,7 @@ def test_verification_blind_reveal_and_back_into_the_matrix(finished, capsys) ->
     assert "| absent (no counterpart) | 5 |" in text.split("## Human-verified counts (grade A)")[1]
 
     assert cli(root, run, "sample", "audit") == 0
-    plan = (run / "review" / "plan_audit.csv").read_text(encoding="utf-8").splitlines()
+    plan = (root / "data" / "annotations" / "verdicts" / WITNESS / "plan_audit.csv").read_text(encoding="utf-8").splitlines()
     assert len(plan) == 1 + 5 and all(",audit," in line for line in plan[1:])
     assert cli(root, run, "evaluate") == 0
     gate = json.loads((run / "evaluation" / "gate.json").read_text(encoding="utf-8"))
@@ -152,6 +152,35 @@ def test_a_blind_sheet_reimported_after_the_reveal_keeps_the_final_decisions(fin
     assert cli(root, run, *args) == 2
     assert "a blind decision is fixed once revealed" in capsys.readouterr().err
     assert committed.read_text(encoding="utf-8") == revealed, "nothing was imported"
+
+
+def test_hours_chunks_replace_an_imported_sheet_and_reveal_only_what_is_new(finished, capsys) -> None:
+    # `review export --hours` used to refuse the next chunk because the imported sheet of the
+    # previous chunk still existed; the reveal sheet had the same problem.
+    root, run = finished
+    assert cli(root, run, "sample", "verification") == 0
+    blind = run / "review" / "verify.blind.csv"
+    reveal = run / "review" / "verify.reveal.csv"
+    chunk = ("review", "export", "--task", "verify", "--hours", "0.125")      # 3 items of 2.5 minutes
+    assert cli(root, run, *chunk) == 0 and fill(blind, blind_relation="no_counterpart") == 3
+    capsys.readouterr()
+    assert cli(root, run, *chunk) == 2, "un-imported work on the sheet is never overwritten"
+    assert "holds 3 item(s) without an imported verdict" in capsys.readouterr().err
+    imp = ("review", "import", "--task", "verify", "--file", str(blind), "--annotator", "ann")
+    assert cli(root, run, *imp) == 0
+    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify") == 0
+    assert fill(reveal) == 3
+    assert cli(root, run, *chunk) == 0, "the imported chunk is replaced by the next one"
+    assert fill(blind, blind_relation="no_counterpart") == 2
+    assert cli(root, run, *imp) == 0
+    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify") == 2, "reveal not imported"
+    assert cli(root, run, "review", "reveal", "--file", str(reveal)) == 0
+    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify") == 0
+    assert fill(reveal) == 2, "only the items not revealed yet"
+    assert cli(root, run, "review", "reveal", "--file", str(reveal)) == 0
+    committed = root / "data" / "annotations" / "verdicts" / WITNESS / "verify.csv"
+    saved = verdict_files.read_file(committed)
+    assert len(saved) == 5 and all(v.final_relation == "no_counterpart" for v in saved)
 
 
 def test_topic_prelabels_first_and_blind_second_coder(finished) -> None:

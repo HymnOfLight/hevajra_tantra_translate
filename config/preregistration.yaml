@@ -71,8 +71,7 @@ stats:
   n_draws: 500
   n_permutations: 2000
   seed: 20260930
-  mde: 0.10                            # replace with the value computed on human topic labels before freezing
-  tost_margin: 0.10
+  mde: 0.10                            # also the TOST margin; replace with the value computed on human topic labels before freezing
 
 experiment:
   items_per_arm: 60

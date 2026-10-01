@@ -195,6 +195,28 @@ def test_import_resolve_copies_blind_to_final(tmp_path: Path):
     assert (v.final_relation, v.final_wit_ids, v.final_date) == ("abridged", (WITS[4].id,), "2026-10-03")
 
 
+def test_resolve_sheet_shows_substituted_model_hints_and_import_strips_them(tmp_path: Path):
+    # Hints from a substituted model were stored in collation/r<k>.json but no sheet showed them.
+    _, cells = machine()
+    hint = Link(REFS[4].id, (WITS[4].id, WITS[5].id), Relation.ABRIDGED, source="m:collate.v1:r1:hint")
+    items = [make_item("resolve", REFS[4].id, "unresolved"), make_item("resolve", REFS[5].id, "unresolved")]
+    path = sheets.export(items, "resolve", tmp_path, SEGMENTS, cells, batch="b8_resolve",
+                         hints={REFS[4].id: [hint, hint]})[0]
+    header, rows = read(path)
+    assert tuple(header) == sheets.RESOLVE_COLUMNS
+    assert rows[0]["hint_other_model"] == f"{sheets.HINT_LABEL}abridged [{WITS[4].id} {WITS[5].id}]"
+    assert "another model" in rows[0]["hint_other_model"].lower() and rows[1]["hint_other_model"] == ""
+    rows[0].update(blind_relation="equivalent", blind_wit_loci=WITS[4].id)
+    write_rows(path, header, rows)
+    v = sheets.import_(path, "resolve", params=PARAMS, date="2026-10-03")[0]
+    save([v], tmp_path / "committed" / "zh_wit" / "b8_resolve.csv")
+    committed = (tmp_path / "committed" / "zh_wit" / "b8_resolve.csv").read_text(encoding="utf-8")
+    assert "hint" not in committed.splitlines()[0] and "abridged" not in committed
+    verify_sheet = sheets.export([make_item("verify", REFS[4].id, "pos:absent:other")], "verify", tmp_path, SEGMENTS,
+                                 cells, batch="b8", hints={REFS[4].id: [hint]})[0]
+    assert "hint_other_model" not in read(verify_sheet)[0], "blind verify sheets stay blind"
+
+
 def test_import_reports_every_problem(tmp_path: Path):
     path, items = _filled_blind(tmp_path)
     header, rows = read(path)

@@ -43,10 +43,13 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     texts = load_texts(ctx)
     cells = [c for c in read_built_cells(ctx) if not is_orphan(c.unit_id)]
     orphans = [c for c in read_built_cells(ctx) if is_orphan(c.unit_id)]
+    notes = sampling.note_rows(orphans, texts.wit_kinds)     # classified at ingest: outside E5
+    orphans = [c for c in orphans if c.unit_id not in notes]
     machine = [c for c in read_built_cells(ctx, machine=True) if not is_orphan(c.unit_id)]
     topics = ann.load_topics(ctx, texts)
     verdicts = ann.current_verdicts(ann.review_verdicts(ctx, texts), texts)
-    strata = ann.sampling_strata(ctx, sampling.machine_strata(machine, topics.groups(), texts.ref_kinds))
+    strata = ann.sampling_strata(ctx, texts.witness_id, sampling.machine_strata(machine, topics.groups(),
+                                                                                texts.ref_kinds))
     params = ctx.settings.prereg.get("stats") or {}
     n_draws, seed = int(params.get("n_draws", 500)), int(params.get("seed", 0))
     scope = "; ".join(str(s) for s in ctx.settings.prereg.get("scope") or [])
@@ -85,6 +88,7 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     est["E4"], extra["e4"] = _e4(ctx, texts, cells, machine, topics, verdicts, draws.get("final"), primary, seed,
                                  scope, no_draws or NO_PHASE2)
     est["E5"] = _e5(orphans, texts, scope)
+    extra["ingest_notes"] = {"witness_only_rows": len(notes)}   # descriptive: notes classified at ingest
     out = ctx.path("stats")
     out.mkdir(parents=True, exist_ok=True)
     (out / "estimates.json").write_text(json.dumps({k: estimate_to_dict(v) for k, v in est.items()}, indent=1,

@@ -11,7 +11,10 @@ in full ("<segment id> TAB <kind> TAB <text>") for searching.
     gold           <batch>.ref.csv + <batch>.wit.csv  yes: no machine output at all
                                                       (``review.gold_sheets``)
     verify, audit  <batch>.blind.csv                  yes: no machine_* column
-    resolve        <batch>.blind.csv                  yes, and there is no reveal step
+    resolve        <batch>.blind.csv                  yes, and there is no reveal step; one
+                                                      extra column ``hint_other_model`` shows
+                                                      what a substituted model proposed
+                                                      (stripped on import)
     reveal         <batch>.reveal.csv                 blind answers + machine output + final
     topics         topics_<batch>.csv                 reference text only, with prelabels
     topics_second  topics_<batch>.second.csv          reference text only, NO prelabel
@@ -63,6 +66,9 @@ BLIND_COLUMNS = ("item_id", "task", "unit_id", "fingerprint", "locus", "ref_text
 REVEAL_COLUMNS = BLIND_COLUMNS + ("machine_relation", "machine_polarity_flip", "machine_wit_loci", "machine_quotes",
                                   "machine_grade",
                                   "final_relation", "final_wit_loci", "final_flags", "revised_reason")
+HINT_COLUMN = "hint_other_model"
+RESOLVE_COLUMNS = BLIND_COLUMNS + (HINT_COLUMN,)
+HINT_LABEL = "FROM ANOTHER MODEL (substituted; not the instrument, never measured): "
 TEXT_COLUMNS = frozenset({"text", "ref_text", "zh_context", "context_before", "context_after", "machine_quotes"})
 SHEET_TASKS = ("gold", "verify", "audit", "resolve", "reveal", "topics", "topics_second")
 BLIND_TASKS = ("verify", "audit", "resolve")
@@ -77,7 +83,7 @@ _CONTEXT_LINE = re.compile(r"^\[([^\]\s]+)\] ?(.*)$")
 def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequence[Segment],
            cells: Sequence[Cell], *, batch: str | None = None, links: Mapping[str, Link] | None = None,
            blind: Sequence[Verdict] = (), prelabels: Mapping[str, Prelabel] | None = None,
-           witness_chapters: Sequence[str] = ()) -> list[Path]:
+           witness_chapters: Sequence[str] = (), hints: Mapping[str, Sequence[Link]] | None = None) -> list[Path]:
     """Write the sheet(s) of one batch; returns the written paths (sheets first).
 
     ``segments``  reference and witness segments (both texts; topics sheets use only the
@@ -88,6 +94,8 @@ def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequ
     ``blind``     the committed blind verdicts of the batch (reveal only)
     ``prelabels`` T3 prelabels by unit id (topics only)
     ``witness_chapters``  witness local chapters shown on a gold wit sheet (the core window)
+    ``hints``     reference unit id -> substituted-model hint links (``Collation.hints``;
+                  resolve only): shown as relation and witness loci in ``hint_other_model``
     """
     if task not in SHEET_TASKS:
         raise ValueError(f"unknown sheet task {task!r}; expected one of {SHEET_TASKS}")
@@ -111,10 +119,21 @@ def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequ
         if any(i.task != task for i in items):
             raise ValueError(f"every item of a {task} sheet must have task {task}")
         rows = [_blind_row(i, index, ref, wit, cells) for i in items]
+        columns = BLIND_COLUMNS
+        if task == "resolve":
+            columns = RESOLVE_COLUMNS
+            for row in rows:
+                row[HINT_COLUMN] = hint_text((hints or {}).get(row["unit_id"], ()))
         path = out / f"{batch}.blind.csv"
-        write_csv(path, rows, BLIND_COLUMNS, bom=True)
+        write_csv(path, rows, columns, bom=True)
         paths = [path]
     return paths + write_witness_text(wit, out / "witness_text")
+
+
+def hint_text(links: Sequence[Link]) -> str:
+    """``hint_other_model`` cell: each distinct hint as "<relation> [<witness loci>]"."""
+    shown = dict.fromkeys(f"{link.relation} [{' '.join(link.wit_ids)}]" for link in links)
+    return HINT_LABEL + " | ".join(shown) if shown else ""
 
 
 def split_texts(items: Sequence[ReviewItem], segments: Sequence[Segment],
@@ -268,7 +287,9 @@ def import_(path: Path, task: str, *, params: ReviewParams, annotator: str = "",
         from .gold_sheets import import_gold
         out = import_gold(Path(path), rows, header, params, annotator, date, ref_lang, wit_lang, minutes, errors)
     elif task in BLIND_TASKS:
-        expect_columns(header, BLIND_COLUMNS, path)
+        # resolve sheets carry the hint column (sheets exported before it existed do not)
+        expect_columns(header, RESOLVE_COLUMNS if task == "resolve" and HINT_COLUMN in header else BLIND_COLUMNS,
+                       path)
         plan = {i.item_id: i for i in items}
         out = [v for n, row in enumerate(rows, start=2)
                if (v := _import_blind(row, n, task, plan, params, annotator, date, ref_lang, wit_lang,

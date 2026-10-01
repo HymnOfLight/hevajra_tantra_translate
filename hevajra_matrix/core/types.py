@@ -99,7 +99,8 @@ class OutcomeClass(StrEnum):
     ABSENT = "absent"
 
 
-# Prefixes of UNALIGNED reasons. A refusal reason is "refused:<category>".
+# Prefixes of UNALIGNED reasons. A refusal reason is "refused:<category>", or
+# "refused:unspecified" when the API gives no category (every task: T1, T2, T3).
 REASON_UNASSESSED = "unassessed"
 REASON_REFUSED = "refused"
 REASON_TRUNCATED = "truncated"
@@ -108,13 +109,14 @@ REASON_SUBSTITUTED_MODEL = "substituted_model"
 REASON_VERIFICATION_FAILED = "verification_failed"
 REASON_NO_MAJORITY = "no_majority"
 REASON_UNMAPPED_CHAPTER = "unmapped_chapter"
+REFUSAL_UNSPECIFIED = "unspecified"
 
 
 def failure_reason(status: str, refusal_category: str | None = None) -> str:
     """The UNALIGNED reason of an unusable LLM answer with ``status`` (refusal, truncated,
-    anything else -> invalid): ``refused:<category>`` or ``refused`` without a category."""
+    anything else -> invalid): ``refused:<category>``, ``refused:unspecified`` without one."""
     if status == "refusal":
-        return f"{REASON_REFUSED}:{refusal_category}" if refusal_category else REASON_REFUSED
+        return f"{REASON_REFUSED}:{refusal_category or REFUSAL_UNSPECIFIED}"
     return REASON_TRUNCATED if status == "truncated" else REASON_INVALID
 
 

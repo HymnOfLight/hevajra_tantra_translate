@@ -78,7 +78,7 @@ the budget stop (`BudgetExceeded`).
 
 | Task | Fallback | What a substituted answer becomes |
 |---|---|---|
-| T1 `collate` | on | the window's units are UNALIGNED(`substituted_model`); the parsed proposal is kept only as a reviewer hint (`collation/r<k>.json: hints`, flag `substituted_model_hint`); gate G2 fails while any collate call in the run's audit log was substituted |
+| T1 `collate` | on | the window's units are UNALIGNED(`substituted_model`); the parsed proposal is kept only as a reviewer hint (`collation/r<k>.json: hints`, flag `substituted_model_hint`), shown in the `hint_other_model` column of the resolve sheet; gate G2 fails while any of the collate requests that fed the consensus (`collation/replicates.json: request_keys`) was substituted |
 | T2 `components` | on | codes are verified as usual but carry reason `substituted_model`; the rendering profile skips them |
 | T3 `topics` | on | verified prelabels with reason `substituted_model`: shown on the sheet as hints, never committed to `prelabel_topics` |
 | T4 `subject`, T5 `scorer` | **off** (settings refuse `fallback: true`) | excluded from every statistic; counted per cell |
@@ -225,7 +225,8 @@ UNALIGNED with a reason; non-fatal ones keep the link with a flag (any flag exce
 
 Witness-only records are checked for V2, V4 and V5 as well. A refusal, truncation, invalid
 answer or substituted model makes every unit of the window UNALIGNED with reason
-`refused:<category>`, `truncated`, `invalid` or `substituted_model`.
+`refused:<category>` (`refused:unspecified` without a category, as in T2 and T3), `truncated`,
+`invalid` or `substituted_model`.
 
 **Consensus** (`collate/consensus.py`): per unit, a class (or "unresolved") needs two thirds of
 the k replicates; the relation is the most frequent among the majority (ties broken by

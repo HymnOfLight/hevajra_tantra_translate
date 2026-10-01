@@ -136,7 +136,9 @@ def collate(ctx: RunContext, chapters: str | None = None, replicates: int | None
               f"UNALIGNED, overlap agreement {overlap.rate if overlap.rate is None else round(overlap.rate, 3)}")
     ctx.path("collation", "replicates.json").write_text(
         json.dumps({"tags": list(cplan.tags), "chapters": sorted({w.chapter for w in cplan.windows}),
-                    "windows": [w.key for w in cplan.windows]}, indent=1) + "\n", encoding="utf-8")
+                    "windows": [w.key for w in cplan.windows],
+                    "request_keys": sorted(r.key() for _, _, r in cplan.requests())}, indent=1) + "\n",
+        encoding="utf-8")
     record_stage(ctx, "collate")
     return summary
 

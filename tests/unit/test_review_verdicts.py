@@ -44,6 +44,21 @@ def test_round_trip(tmp_path: Path) -> None:
     assert isinstance(load(tmp_path)[0], Verdict)
 
 
+def test_machine_polarity_flip_is_committed_and_old_files_still_load(tmp_path: Path) -> None:
+    # The reveal sheet exported and imported machine_polarity_flip, but the committed format
+    # dropped it, so the misclassification table lost the machine's polarity call.
+    path = tmp_path / "zh_wit" / "verify_1.csv"
+    save([record(machine_relation="paraphrase", machine_status="PRESENT", machine_polarity_flip=True)], path)
+    assert "machine_polarity_flip" in path.read_text(encoding="utf-8").splitlines()[0]
+    assert read_file(path)[0].machine_polarity_flip is True
+    legacy = [c for c in COLUMNS if c != "machine_polarity_flip"]
+    lines = path.read_text(encoding="utf-8").splitlines()
+    index = COLUMNS.index("machine_polarity_flip")
+    old = [",".join(legacy)] + [",".join(v for k, v in enumerate(line.split(",")) if k != index) for line in lines[1:]]
+    path.write_text("\n".join(old) + "\n", encoding="utf-8")
+    assert read_file(path)[0].machine_polarity_flip is False
+
+
 def test_load_missing_directory_is_empty(tmp_path: Path) -> None:
     assert load(tmp_path / "none") == []
 

@@ -2,7 +2,7 @@
 
     sample = human_sample(outcomes, n=150, seed)        # stratified, seeded
     write_coding_sheet(path, outcomes, sample, seed)    # opaque response ids only
-    codes = resolve_codes(load_human_codes(csv), outcomes, seed)   # sheet id -> trial id
+    codes = resolve_codes(load_human_codes(csv), outcomes, seed)   # sheet id -> trial id (this phase)
 
 Blinding. A trial id is ``<item>:<condition>:<replicate>``, so it would show the coder the
 condition and the item. The sheet therefore carries an opaque id (``sheet_id``: a seeded
@@ -90,13 +90,12 @@ def sheet_id(trial_id: str, seed: int) -> str:
 
 def resolve_codes(codes: Sequence[HumanCode], outcomes: Sequence[TrialOutcome], seed: int) -> list[HumanCode]:
     """Codes keyed by trial id: sheet ids are mapped back; ids that already are trial ids
-    are kept. Raises ``AnalysisError`` for an id that matches no trial."""
+    are kept. A code whose id matches no trial of ``outcomes`` (the phase being scored) is
+    set aside: ``human_codes.csv`` holds the codes of both phases (pilot and main), so the
+    caller reports ``len(codes) - len(result)`` instead of failing."""
     trial_of = {sheet_id(o.trial_id, seed): o.trial_id for o in outcomes}
-    trial_ids = {o.trial_id for o in outcomes}
-    unknown = sorted({c.response_id for c in codes if c.response_id not in trial_of and c.response_id not in trial_ids})
-    if unknown:
-        raise AnalysisError(f"human codes for unknown response ids {unknown[:10]}")
-    return [HumanCode(trial_of.get(c.response_id, c.response_id), c.coder, c.coding) for c in codes]
+    trial_of.update({o.trial_id: o.trial_id for o in outcomes})
+    return [HumanCode(trial_of[c.response_id], c.coder, c.coding) for c in codes if c.response_id in trial_of]
 
 
 # --------------------------------------------------------------------------- scorer agreement

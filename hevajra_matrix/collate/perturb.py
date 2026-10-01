@@ -55,7 +55,8 @@ class WrongWindowTruth:
 @dataclass(frozen=True)
 class DeletionTruth:
     deleted: tuple[str, ...]          # witness segment ids removed from the text (content and notes)
-    units: tuple[str, ...] = ()       # reference units of the perturbed window (empty: not restricted)
+    units: tuple[str, ...] = ()       # reference units scored for this window (empty: not restricted);
+                                      # the units shared with the next chunk are left to that chunk
 
 
 @dataclass(frozen=True)
@@ -86,8 +87,11 @@ def delete_segments(window: Window, fraction: float, seed: int) -> tuple[Window,
     chosen |= {s.id for s in window.text if s.kind == "note" and s.extra.get("host") in chosen}
     kept = tuple(s for s in window.text if s.id not in chosen)
     deleted = tuple(s.id for s in window.text if s.id in chosen)
+    # The last ``overlap_next`` units open the next chunk too; they are scored there only, so
+    # deletion recall counts every unit once.
+    shared = set(window.overlap_ids)
     return (replace(window, key=f"{window.key}-del{seed}", text=kept),
-            DeletionTruth(deleted, tuple(u.id for u in window.units)))
+            DeletionTruth(deleted, tuple(u.id for u in window.units if u.id not in shared)))
 
 
 def remove_negators(window: Window, gold_pairs: Sequence[tuple[str, str]], negators: Negators,

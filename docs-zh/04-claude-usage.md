@@ -36,8 +36,8 @@ hevajra-matrix collate                   # 全经，每品 3 次重复
 
 ## 4 拒绝与模型替换
 
-- 如果安全分类器拒绝某个请求（`stop_reason == "refusal"`），该窗口的单元记为 `UNALIGNED(refused:<类别>)`，排到人工复核最前面，**不会自动重试或拆分**；需要时可以改小窗口重跑（这会产生新的缓存键）。
-- 按您的决定：对勘、组件、主题这类流水线任务开启服务器端 fallback，实验关闭。由于 fallback 对同一内容约一小时内是"粘性"的，凡是实际服务模型不是 `claude-opus-5-5` 的响应，一律标为 `substituted_model`，其单元记为 `UNALIGNED(substituted_model)`；替代模型的草案只在复核表里作提示，**永不进入测量**，而且门控 G2 会因此不通过。若希望严格到底，可以把 `config/llm.yaml` 里相应任务的 `fallback` 改为 `false`。
+- 如果安全分类器拒绝某个请求（`stop_reason == "refusal"`），该窗口的单元记为 `UNALIGNED(refused:<类别>)`（API 未给类别时为 `refused:unspecified`；组件与主题任务用同样的写法），排到人工复核最前面，**不会自动重试或拆分**；需要时可以改小窗口重跑（这会产生新的缓存键）。
+- 按您的决定：对勘、组件、主题这类流水线任务开启服务器端 fallback，实验关闭。由于 fallback 对同一内容约一小时内是"粘性"的，凡是实际服务模型不是 `claude-opus-5-5` 的响应，一律标为 `substituted_model`，其单元记为 `UNALIGNED(substituted_model)`；替代模型的草案只在解决表（`resolve`）的 `hint_other_model` 列里作提示，**永不进入测量**；只要构成共识的对勘请求中有一次被替换，门控 G2 就不通过（扰动测试等其他调用不计入）。若希望严格到底，可以把 `config/llm.yaml` 里相应任务的 `fallback` 改为 `false`。
 - 拒绝率按任务和主题分别报告。如果敏感段落被拒得更多，这本身就是需要写进论文的发现。
 
 ## 5 冻结预注册
@@ -49,7 +49,7 @@ hevajra-matrix prereg freeze             # 把当前五个任务的工具指纹�
 hevajra-matrix prereg freeze --amend "修改原因"   # 冻结后的任何改动都必须追加修订记录
 ```
 
-测试集每被评估一次，都会追加到 `data/ledger/test_evaluations.jsonl`；报告会写明"测试集已被 K 个工具版本评过 N 次"。
+测试集每被评估一次，都会追加到 `data/ledger/test_evaluations.jsonl`；报告会写明"测试集已被 K 个工具版本评过 N 次"。对同一工具指纹、同一预注册、同一得分与门控结果的**重复评分不会追加**（例如复核之后为刷新 G2/G3 再跑 `evaluate`，并没有重新评估测试集），程序会打印"already recorded; not appended again"。按主题组拆分的拒绝率不参与这一比较，因为主题标签通常在测试评分之后才导入。
 
 ## 6 Claude 在这里不做什么
 
