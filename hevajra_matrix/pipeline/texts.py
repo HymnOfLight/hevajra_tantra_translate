@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -15,13 +15,14 @@ from ..align.anchors import load_anchor_lexicon
 from ..align.dp import SOURCE_ANCHOR, SOURCE_ZERO, DPParams, align_groups
 from ..align.external import load_tsv
 from ..align.similarity import AnchorSimilarity, ZeroSimilarity
+from ..core.ids import REF_CHAPTERS
 from ..core.io import sha256_file, write_csv, write_jsonl
-from ..core.types import Alignment
+from ..core.types import Alignment, Segment
 from ..evaluation import gate as gates
 from ..evaluation import sentinels as sentinel_checks
-from ..ingest import cbeta, derge
+from ..ingest import cbeta, derge, sanskrit
 from ..registry import load_concordance
-from .context import CONCORDANCE_FILE, RunContext, StageError, Texts, load_texts, record_stage, segments_file
+from .context import CONCORDANCE_FILE, RunContext, StageError, all_segments, load_texts, record_stage, segments_file
 from .store import sentinel_result_to_dict, write_alignment, write_segments
 
 # Source files (synthesis 2, stage 1); URLs as in v0.2 (commit 1f9474c). The Derge URL is the
@@ -42,6 +43,7 @@ SOURCES: Mapping[str, Mapping[str, str]] = {
 SENTINELS_FILE = Path("sentinels") / "sentinels.yaml"
 VARIANT_COLUMNS = ("segment_id", "locus", "reading", "alternative", "kind")
 EXTERNAL_PREFIX = "external:"
+GAP_KIND = "gap"          # a Sanskrit reference unit flagged LACUNA or ABSENT: no text, no matrix row
 
 
 # --------------------------------------------------------------------------- fetch
@@ -88,44 +90,80 @@ def raw_paths(ctx: RunContext, raw_dir: Path | None = None) -> dict[str, Path]:
 
 
 def ingest(ctx: RunContext, raw_dir: Path | None = None) -> dict[str, Mapping[str, Any]]:
-    """Parse both texts; write ``ingest/*`` and report G0 and the ingest-stage sentinels.
+    """Parse the texts; write ``ingest/*`` and report G0 and the ingest-stage sentinels.
 
-    Returns witness -> ingest report. The reference segments get their reference chapter
-    from the concordance.
+    Returns witness -> ingest report. The Derge segments get their reference chapter from
+    the concordance. When ``data/reference/<witnesses.sanskrit_reference>.tsv`` exists, its
+    units are written too and become the reference of the run (``RunContext.sanskrit_mode``);
+    units flagged LACUNA or ABSENT have no text and are kept with kind ``gap`` (no matrix row).
     """
     paths = raw_paths(ctx, raw_dir)
     data = ctx.data_dir
     toh = list(ctx.settings.run["witnesses"].get("derge_toh") or [])
-    zh = cbeta.parse(paths["cbeta"], ctx.witness, data)
-    bo = derge.parse(paths["derge"], toh, ctx.reference, data)
+    zh = cbeta.parse(paths["cbeta"], ctx.default_witness, data)
+    bo = derge.parse(paths["derge"], toh, ctx.derge, data)
     conc = load_concordance(data / CONCORDANCE_FILE)
-    reference = conc.assign_reference_chapters(bo.segments, ctx.reference)
-    write_segments(segments_file(ctx, ctx.reference), reference)
-    write_segments(segments_file(ctx, ctx.witness), zh.segments)
+    tibetan = conc.assign_reference_chapters(bo.segments, ctx.derge)
+    write_segments(segments_file(ctx, ctx.derge), tibetan)
+    write_segments(segments_file(ctx, ctx.default_witness), zh.segments)
     out = ctx.path("ingest")
     write_jsonl(out / "footnotes.jsonl", (asdict(f) for f in zh.footnotes))
     write_csv(out / "variants.csv", [asdict(v) for v in (*bo.variants, *zh.variants)], VARIANT_COLUMNS)
-    reports = {ctx.reference: dict(bo.report), ctx.witness: dict(zh.report)}
-    _write_json(out / "witness_meta.json", {ctx.reference: dict(bo.metadata), ctx.witness: dict(zh.metadata)})
+    reports = {ctx.derge: dict(bo.report), ctx.default_witness: dict(zh.report)}
+    _write_json(out / "witness_meta.json", {ctx.derge: dict(bo.metadata), ctx.default_witness: dict(zh.metadata)})
+    inputs = {"raw:cbeta": paths["cbeta"], "raw:derge": paths["derge"]}
+    sa_units = sanskrit_reference(ctx)
+    if sa_units is not None:
+        reports[ctx.sanskrit_reference] = sanskrit_report(sa_units)
+        inputs[f"reference:{ctx.sanskrit_reference}"] = sanskrit_path(ctx)
     _write_json(out / "report.json", reports)
-    texts = Texts(tuple(reference), tuple(zh.segments), conc)
-    results = ingest_sentinels(ctx, texts)
+    texts = load_texts(ctx)
+    results = ingest_sentinels(ctx)
     g0 = g0_reasons(reports, results, ctx.settings.prereg)
     _write_json(out / "g0.json", {"passed": not g0, "reasons": g0})
-    record_stage(ctx, "ingest", {"raw:cbeta": paths["cbeta"], "raw:derge": paths["derge"]})
+    record_stage(ctx, "ingest", inputs)
     for witness, report in reports.items():
         print(f"ingest  {witness}: {report.get('segments')} segments, {report.get('content_segments')} content")
-    print(f"ingest  {len(texts.units)} reference units in {len(texts.units_by_chapter())} chapters; "
-          f"{len(zh.footnotes)} footnotes")
+    print(f"ingest  reference {texts.reference_id}: {len(texts.units)} units in {len(texts.units_by_chapter())} "
+          f"chapters; aligned witnesses {', '.join(ctx.witnesses)}; {len(zh.footnotes)} footnotes")
     _print_sentinels(results)
     print("G0      passed" if not g0 else "G0      failed:\n  " + "\n  ".join(g0))
     return reports
 
 
-def ingest_sentinels(ctx: RunContext, texts: Texts) -> list[sentinel_checks.SentinelResult]:
-    """Check the ingest-stage sentinels and write ``ingest/sentinels.jsonl``."""
+def sanskrit_path(ctx: RunContext) -> Path:
+    return ctx.settings.path("reference") / f"{ctx.sanskrit_reference}.tsv"
+
+
+def sanskrit_reference(ctx: RunContext) -> list[Segment] | None:
+    """Load the Sanskrit reference into the run when its TSV exists, else make sure no stale
+    copy is left (the run is then in Derge mode)."""
+    target = segments_file(ctx, ctx.sanskrit_reference)
+    path = sanskrit_path(ctx)
+    if not path.is_file():
+        target.unlink(missing_ok=True)
+        return None
+    try:
+        units = sanskrit.load_reference(path, ctx.sanskrit_reference)
+    except ValueError as exc:
+        raise StageError(str(exc)) from exc
+    units = [replace(u, kind=GAP_KIND) if u.extra.get("flag") else u for u in units]
+    write_segments(target, units)
+    return units
+
+
+def sanskrit_report(units: list[Segment]) -> dict[str, Any]:
+    """Ingest counts of the Sanskrit reference (``report.json``)."""
+    content = [u for u in units if u.kind != GAP_KIND]
+    return {"segments": len(units), "content_segments": len(content),
+            "chapters": sorted({str(u.chapter) for u in content}, key=REF_CHAPTERS.index),
+            "flagged": dict(Counter(u.extra["flag"] for u in units if u.kind == GAP_KIND)), "duplicate_ids": []}
+
+
+def ingest_sentinels(ctx: RunContext) -> list[sentinel_checks.SentinelResult]:
+    """Check the ingest-stage sentinels on every ingested text; write ``ingest/sentinels.jsonl``."""
     results = sentinel_checks.check(sentinel_checks.load(ctx.data_dir / SENTINELS_FILE), "ingest",
-                                    [*texts.reference, *texts.witness])
+                                    all_segments(ctx))
     write_jsonl(ctx.path("ingest", "sentinels.jsonl"), (sentinel_result_to_dict(r) for r in results))
     return results
 

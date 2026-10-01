@@ -27,6 +27,13 @@ Where things live:
 A run directory is named `<UTC yyyymmddThhmmssZ>-<git short hash>` (suffix `-2`, `-3` when the
 name is taken).
 
+Under the Sanskrit reference (`data/reference/<witnesses.sanskrit_reference>.tsv` present at
+ingest) the run aligns two witnesses. Files of the target (T0892) keep the paths below; the
+Derge writes the same files under `witnesses/bo_derge_D417_418/` (e.g.
+`witnesses/bo_derge_D417_418/matrix/cells.jsonl`). `ingest/`, `manifest.json`,
+`llm_audit.jsonl`, `topics/`, `experiments/` and `claude_check.json` are shared
+(`pipeline/context.py: SHARED_ENTRIES`).
+
 ---
 
 ## 1. Run directory
@@ -47,7 +54,7 @@ Rewritten after every stage by `pipeline.context.record_stage` (`core.io.write_m
 | `run_id` | the run directory name |
 | `offline` | whether the stage ran with `--offline` |
 | `stages` | stages run so far, in order of their latest run |
-| `instrument_digests` | task (`collate`, `topics`, `components`, `subject`, `scorer`) -> digest (see [llm-tasks.md](llm-tasks.md)) |
+| `instrument_digests` | task (`collate`, `topics`, `components`, `subject`, `scorer`, and `collate:<ref>-<wit>` per extra language pair with its own examples) -> digest (see [llm-tasks.md](llm-tasks.md)) |
 | `llm` | summary of `llm_audit.jsonl`: `calls`, `cache_hits`, `cache_misses`, `served_models` (task -> list), `substituted_calls` (task -> count), `est_usd_uncached` |
 
 ### `ingest/`
@@ -55,7 +62,11 @@ Rewritten after every stage by `pipeline.context.record_stage` (`core.io.write_m
 Written by `ingest` (`pipeline/texts.py`).
 
 **`segments_<witness>.jsonl`**: one `core.types.Segment` per line, all kinds, in document order
-(`pipeline/store.py: segment_to_dict`).
+(`pipeline/store.py: segment_to_dict`). Under the Sanskrit reference also
+`segments_<sanskrit reference>.jsonl`: its units with id, start and end the Snellgrove id
+(`I.1.p01`), `local_chapter` = `chapter` = `I.1`, kind `prose` or `verse`, and kind `gap` for a unit
+flagged `LACUNA` or `ABSENT` (empty text, `extra.flag`; no matrix row). Its presence is what
+puts the run in Sanskrit mode.
 
 | Field | Content |
 |---|---|
@@ -86,7 +97,8 @@ term glosses), `prefix`, `witness`.
 `content_segments`, `kinds`, `chapters`, `chapter_ordinal_mismatches`, `colophon_roles`,
 `paratext`, `variants`, `variant_pairs`, `duplicate_ids`. T0892 keys: `segments`,
 `content_segments`, `kinds`, `chapters`, `notes`, `note_classes`, `unclassified_notes`,
-`footnotes`, `footnote_sources`, `variants`, `duplicate_ids`.
+`footnotes`, `footnote_sources`, `variants`, `duplicate_ids`. Sanskrit reference keys: `segments`,
+`content_segments`, `chapters`, `flagged` (`LACUNA`/`ABSENT` -> count), `duplicate_ids`.
 
 **`g0.json`**: `{"passed": bool, "reasons": [str]}`.
 
@@ -171,11 +183,11 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 
 | File | Content |
 |---|---|
-| `scores.<set>.json` | one per evaluation, never overwritten by another kind: `scores.test.json`, `scores.dev.json`, `scores.<set>_baselines.json` (`--baselines-only`). Keys: `gold_set`, `baselines_only`, `human_kappa`, `sources`: source -> `{counts, metrics, intervals}`. `counts`: `units, windows, excluded, gold_links, gold_null, gold_witness_only, unresolved`. `metrics`: the scalars `link_precision, link_recall, link_f1, null_precision, null_recall, witness_only_recall, witness_only_kind_agreement, status_kappa, dany_kappa, quote_failure_rate, invalid_handle_rate, refusal_rate`, then keyed metrics `<breakdown>:<key>`: `status_agreement:<status>`, `dany_agreement:dev` / `:nondev`, `relation_recall:<relation>`, `refusal_rate:<topic group>` (`evaluation/scores.py: METRICS, BREAKDOWNS`). `intervals`: metric -> an `Estimate` (below) with its 95% window-cluster bootstrap interval |
+| `scores.<set>.json` | one per evaluation, never overwritten by another kind: `scores.test.json`, `scores.dev.json`, `scores.<set>_baselines.json` (`--baselines-only`). Keys: `gold_set`, `baselines_only`, `human_kappa`, `sources`: source -> `{counts, metrics, intervals}`. `counts`: `units, windows, excluded, gold_links, gold_null, gold_witness_only, unresolved`. `metrics`: the scalars `link_precision, link_recall, link_f1, null_precision, null_recall, witness_only_recall, witness_only_kind_agreement, status_kappa, dany_kappa, quote_failure_rate, invalid_handle_rate, refusal_rate`, then keyed metrics `<breakdown>:<key>`: `status_agreement:<status>`, `dany_agreement:dev` / `:nondev`, `relation_recall:<relation>`, `refusal_rate:<topic group>` (`evaluation/scores.py: METRICS, BREAKDOWNS`). `intervals`: metric -> an `Estimate` (below) with its 95% window-cluster bootstrap interval. `reliability` (`evaluation/scores.py: confidence_reliability`; null for a source without confidences): `outcome` (`status_correct`), `n` (units with a confidence), `accuracy`, `brier` (nominal probabilities high 0.9, medium 0.7, low 0.5), `brier_constant` (constant predictor at the observed accuracy), `beats_constant`, `table` (label -> `{n, correct, accuracy, nominal}`) |
 | `scores.json` | the same content as the scores file of the evaluation that wrote `gate.json` |
 | `gate.json` | `level` (0, 1, 2), `confirmatory`, `passed` (gate -> bool), `reasons`, `deferred_null`, `not_estimable` (estimand -> reason), `scope_note`, `gating` (true only for the Claude consensus scored on test gold), `gold_set`, `baselines_only`. Once a gating evaluation exists, dev-gold and baselines-only evaluations write only their `scores.<set>.json` and leave `gate.json`, `scores.json` and `sentinels.jsonl` alone |
 | `sentinels.jsonl` | sentinel results of every stage checked (as in `ingest/`), written with `gate.json` |
-| `perturbations.json` | `wrong_window` and `deletion` as `{hits, n}`, `negation` (null: not run), `fraction`, `seed`, `windows`. Deletion scores each unit once: the units a chunk shares with the next chunk are scored in the next one only |
+| `perturbations.json` | `wrong_window` and `deletion` as `{hits, n}`, `negation` (null: not run), `fraction`, `seed`, `windows`. Deletion scores each unit once: the units a chunk shares with the next chunk are scored in the next one only. `negation` is `{hits, n}` after `perturb --negation` (polarity recall over dev-gold `equivalent` pairs negated on both sides; windows keyed `<window>-neg`), null otherwise; never gated |
 
 ### Other run files
 
@@ -185,8 +197,8 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 | `topics/prelabels.jsonl` | T3 hints: `unit_id, topics, cues ([topic, cue] pairs), flags, reason` |
 | `review/plan_<batch>.csv`, `review/strata_<batch>.json` | runs made before plans were committed only; now committed (section 3), read here as a fallback for a batch with no committed plan |
 | `review/` sheets | section 4; contain source text |
-| `stats/estimates.json` | estimand name -> `Estimate`: `name, point, lo, hi, n, scope, sources, level, not_estimable`. Names: `E1_any, E1_cov, E1_absent, E1_partial, E2_any`, the blind-column sensitivity `E1_any_blind, E1_cov_blind, E2_any_blind`, the prior sensitivity `E1_<primary>_prior` (primary outcome of `preregistration.yaml: primary_outcome`, Dirichlet prior symmetric in D; only when the final column has draws), `E3`, `E4`, `E5`. E5 counts human-verified witness-only rows except those on CBETA `note` segments |
-| `stats/details.json` | `revision` (stratum -> `{stratum, n, relation_changed, outcome_changed}`); `manski` (`any`/`cov` -> `[lo, hi]`); `uncalibrated` (`final`/`blind` -> stratum -> unverified units, when a stratum has no phase-2 sample verdict and E1/E2 are not estimable); `ingest_notes` (`{witness_only_rows}`: witness-only rows on CBETA `note` segments, classified at ingest and left out of verification and E5; descriptive); `e4`: `margin` always, `power` (the content of `stats/power.json`) when computed, and when Delta is computed also `permutation_p, equivalent_within_margin, overlap {n_strata, n_overlap_strata, n_units, n_used, dropped}, naive` (Delta on the machine labels), `attenuation` (corrected minus naive), `matched_rd {difference, pairs}`, `misclassification` (list of `{stratum, factor (chapter or tertile), level, n, errors, rate}`), `negative_control` (an `Estimate` of frame vs neutral) |
+| `stats/estimates.json` | estimand name -> `Estimate`: `name, point, lo, hi, n, scope, sources, level, not_estimable`. Names: `E1_any, E1_cov, E1_absent, E1_partial, E2_any`, the blind-column sensitivity `E1_any_blind, E1_cov_blind, E2_any_blind`, the prior sensitivity `E1_<primary>_prior` (primary outcome of `preregistration.yaml: primary_outcome`, Dirichlet prior symmetric in D; only when the final column has draws), `E3` (when computed: `point` = deviating units decomposed, `n` = countable units; the counts are in `details.json: e3`), `E3.phi_V`, `E3.phi_S` (only when E3 is computed), `E4`, `E5`. E5 counts human-verified witness-only rows except those on CBETA `note` segments |
+| `stats/details.json` | `revision` (stratum -> `{stratum, n, relation_changed, outcome_changed}`); `manski` (`any`/`cov` -> `[lo, hi]`); `uncalibrated` (`final`/`blind` -> stratum -> unverified units, when a stratum has no phase-2 sample verdict and E1/E2 are not estimable); `ingest_notes` (`{witness_only_rows}`: witness-only rows on CBETA `note` segments, classified at ingest and left out of verification and E5; descriptive); `e4`: `margin` always, `power` (the content of `stats/power.json`) when computed, and when Delta is computed also `permutation_p, equivalent_within_margin, overlap {n_strata, n_overlap_strata, n_units, n_used, dropped}, naive` (Delta on the machine labels), `attenuation` (corrected minus naive), `matched_rd {difference, pairs}`, `misclassification` (list of `{stratum, factor (chapter or tertile), level, n, errors, rate}`), `negative_control` (an `Estimate` of frame vs neutral); `e3` (`pipeline/e3.py`): `manuscripts` (registry manuscripts with readings), `editions_ignored` (reading columns naming an edition), `cowitness`, `cowitness_revised`, `m_min`, `readings_units`, `unknown_units` (reading ids that are not reference units), `estimable`, `reason`, and once a manuscript column exists `units`, `n_deviating`, `counts` (class -> n; `shared_revised` when the co-witness is revised), `by_unit` (unit -> class), `translator_flagged`, `verified_deviating`, `vorlage` and `shared` (`{n, observed, expected, excess, case_rate, base_rate, phi}`), `bound` (A2: `{counts, by_unit, shared, unverified_shared}` with unverified shared units counted as not shared); `distance` (Sanskrit reference only): `{labels, matrix, newick}` over the reference, the Derge and T0892 |
 | `stats/power.json` | written by `stats` once topic labels are complete (`pipeline/e4.py: mde_on_labels`): `mde_on_labels` (smallest Delta on the grid detected with `target_power`; null: none), `target_power, p0, chapters, units, exposed, power_curve` (effect -> power), `n_sim`. Gate G4 uses the larger of it and `stats.mde` (the simulated MDE alone when `stats.mde` is unset) |
 | `components/components.jsonl` | T2 slot codes: `ref_id, wit_ids, slot, code, ref_quote, wit_quote, polarity_flip, flags, reason` |
 | `components/rendering_profile.csv` | `source_quote, rendering_quote, count, n_units, units, codes, slots` (descriptive) |
@@ -253,6 +265,12 @@ cumulative across run directories; the per-run audit log stays the provenance re
 
 Each directory has a README written for annotators; this section lists the exact formats and
 the code that enforces them.
+
+Under the Sanskrit reference every path below `data/annotations/` moves to
+`data/annotations/by_reference/<reference>/` with the same layout (gold, verdicts and topic labels
+are made against the reference units), and each (reference, witness) pair other than
+(Derge, T0892) has its own ledger `data/ledger/test_evaluations.<reference>.<witness>.jsonl`
+(`pipeline/human_data.py: annotations_dir`, `ledger_path`).
 
 ### Gold (`data/annotations/gold/<witness>/`)
 
@@ -489,7 +507,7 @@ which rejects unknown keys.
 |---|---|---|
 | `paths` | `data, raw, reference, runs, cache` (relative to the root) | `Settings.path` |
 | `sources` | `cbeta_file, derge_file` | `pipeline/texts.py` |
-| `witnesses` | `reference, target, derge_toh` | `pipeline/` |
+| `witnesses` | `reference, target, derge_toh`, optional `sanskrit_reference` (default `sa_snellgrove1959`): the Sanskrit reference used when `data/reference/<it>.tsv` exists | `pipeline/` |
 | `windows` | `max_ref_units, overlap, neighbours` | `collate/windows.WindowParams` |
 | `align` | `prior_11, prior_null, prior_12, prior_22, prior_13, length_weight, length_var, anchor_weight, anchor_conflict` | `align/dp.DPParams` |
 | `review` | `minutes` (task -> minutes per item), `competence` (task -> languages), `quote_max_chars` (lang -> chars) | `review/sampling.ReviewParams` |
@@ -535,8 +553,15 @@ Details: [`data/reference/README.md`](../data/reference/README.md). Code: `inges
 
 - **`<witness id>.tsv`**: `unit_id<TAB>text`, `#` comments; a unit with empty text and flag
   `LACUNA` or `ABSENT` in the third column. Unit ids follow Snellgrove (`I.1.p01`, `I.5.12`,
-  `I.5.12a`).
+  `I.5.12a`). `ingest` reads `<run.yaml: witnesses.sanskrit_reference>.tsv` (default
+  `sa_snellgrove1959`) and makes it the reference of the run.
 - **`readings/<chapter>.tsv`**: header `unit_id, ms, status, reading, source, note`; `status`
-  is `present, absent, variant, illegible, not_collated`.
+  is `present, absent, variant, illegible, not_collated`. `unit_id` is a reference unit id
+  (Snellgrove; Derge segment ids while the Derge is the reference). `ms` is a manuscript of
+  `data/registry/sa_manuscripts.yaml`, or an edition's witness id (set aside, never counted);
+  anything else stops `stats`. Read by `stats` for E3 (`pipeline/e3.py`).
 
-No pipeline stage reads these files yet (see [architecture.md](architecture.md), deferred items).
+Collator examples for the Sanskrit pairs are committed files, not licensed text:
+`data/codebook/collate_examples.sa-bo.yaml` and `collate_examples.sa-zh.yaml`, in the format of
+`collate_examples.yaml` with `reference_lang: sa` (not committed yet; see
+[llm-tasks.md](llm-tasks.md)).

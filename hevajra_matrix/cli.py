@@ -30,6 +30,7 @@ from .review.verdicts import VerdictError
 from .topics import TopicError
 
 NEW_RUN_COMMANDS = frozenset({"ingest", "run", "claude-check"})
+PER_WITNESS = frozenset({"collate", "build", "evaluate", "perturb", "stats", "report"})   # and baselines
 # Errors whose message is meant for the researcher (a file, a line and what is wrong):
 # printed without a traceback. Anything else is a bug and keeps its traceback.
 USER_ERRORS = (StageError, PreregError, ConfigError, LLMError, GoldError, VerdictError, TopicError, DesignError,
@@ -45,6 +46,9 @@ def _common() -> argparse.ArgumentParser:
                    help="run directory to use (default: new for ingest/run, else the latest)")
     p.add_argument("--offline", action="store_true", default=argparse.SUPPRESS,
                    help="answer LLM calls from the response cache only; never call the API")
+    p.add_argument("--witness", default=argparse.SUPPRESS,
+                   help="aligned witness to work on (default: every aligned witness for baselines, collate, "
+                        "build, perturb, evaluate, stats and report; the target for the other commands)")
     return p
 
 
@@ -82,7 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gold", choices=("dev", "test"), default="test", help="gold set to score (default: test)")
     p.add_argument("--baselines-only", action="store_true", help="score the controls only; no Claude output")
 
-    add("perturb", "Run the P-wrong-window and P-deletion perturbations (gate G2).")
+    p = add("perturb", "Run the P-wrong-window and P-deletion perturbations (gate G2).")
+    p.add_argument("--negation", action="store_true",
+                   help="also run P-negation on negated gold-equivalent pairs of dev gold (reported, never gated)")
     add("stats", "Compute the estimands (two-phase draws, Manski bounds, E3, E4, E5).")
     add("report", "Write the level-gated summary.md and the SVG figures.")
 
@@ -154,7 +160,9 @@ def _context(args: argparse.Namespace, settings: Settings) -> RunContext:
     run_dir = Path(run_dir).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"run directory: {run_dir}")
-    return RunContext(settings.root, run_dir, settings, offline=bool(getattr(args, "offline", False)))
+    ctx = RunContext(settings.root, run_dir, settings, offline=bool(getattr(args, "offline", False)))
+    witness = getattr(args, "witness", None)
+    return ctx.for_witness(witness) if witness else ctx
 
 
 def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
@@ -170,25 +178,28 @@ def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
     if command == "claude-check" and getattr(args, "offline", False):
         raise StageError("claude-check is a live check; it cannot run --offline")
     ctx = _context(args, settings)
-    stages: dict[str, Callable[[], object]] = {
-        "ingest": lambda: pipeline.ingest(ctx, args.raw_dir),
-        "collate": lambda: pipeline.collate(ctx, args.chapters, args.replicates, args.dry_run),
-        "build": lambda: pipeline.build(ctx),
-        "evaluate": lambda: pipeline.evaluate(ctx, args.gold, args.baselines_only),
-        "perturb": lambda: pipeline.perturb(ctx),
-        "stats": lambda: pipeline.stats(ctx),
-        "report": lambda: pipeline.report(ctx),
-        "components": lambda: pipeline.components_stage(ctx),
-        "sample": lambda: pipeline.sample(ctx, args.kind, args.batch, args.force),
+    stages: dict[str, Callable[[RunContext], object]] = {
+        "ingest": lambda c: pipeline.ingest(c, args.raw_dir),
+        "collate": lambda c: pipeline.collate(c, args.chapters, args.replicates, args.dry_run),
+        "build": pipeline.build,
+        "evaluate": lambda c: pipeline.evaluate(c, args.gold, args.baselines_only),
+        "perturb": lambda c: pipeline.perturb(c, negation=args.negation),
+        "stats": pipeline.stats,
+        "report": pipeline.report,
+        "components": pipeline.components_stage,
+        "sample": lambda c: pipeline.sample(c, args.kind, args.batch, args.force),
     }
     if command in stages:
-        stages[command]()
+        # Per-witness stages run once for every aligned witness unless --witness chose one.
+        for one in pipeline.witness_contexts(ctx) if command in PER_WITNESS else [ctx]:
+            stages[command](one)
         return 0
     if command == "baselines":
         if action == "import":
             pipeline.baselines_import(ctx, args.tsv, args.name)
         else:
-            pipeline.baselines(ctx)
+            for one in pipeline.witness_contexts(ctx):
+                pipeline.baselines(one)
         return 0
     if command == "topics":
         if action == "prelabel":

@@ -126,9 +126,13 @@ transport and skips when `anthropic` (or its HTTP mock) is not installed.
 
 ### Add a new witness
 
-The pipeline currently handles one reference (Derge, `run.yaml: witnesses.reference`) and one
-target (T0892, `witnesses.target`); `pipeline/texts.py` calls `ingest/derge.py` and
-`ingest/cbeta.py` directly. A new witness therefore needs code, not only data:
+The pipeline handles one reference and the witnesses of `RunContext.witnesses`: the Derge
+reference (`run.yaml: witnesses.reference`) with the target T0892 (`witnesses.target`), or,
+when `data/reference/<witnesses.sanskrit_reference>.tsv` exists, the Sanskrit reference with the
+Derge and T0892 as witnesses. Per-witness stages run once per witness through
+`RunContext.for_witness` (files of a witness other than the target go to
+`<run>/witnesses/<witness>/`). `pipeline/texts.py` calls `ingest/derge.py`, `ingest/cbeta.py`
+and `ingest/sanskrit.py` directly. A new witness therefore needs code, not only data:
 
 1. **Registry.** Add an entry to `data/registry/witnesses.yaml` (required `id, lang, layer, role,
    status, title`; say what is unverified in `notes`). For a Sanskrit manuscript that will feed
@@ -138,15 +142,17 @@ target (T0892, `witnesses.target`); `pipeline/texts.py` calls `ingest/derge.py` 
    counter), set `fingerprint` with `core.textnorm.fingerprint`, keep every note, footnote and
    resolved reading (`Footnote`, `Variant`, `kind="note"` or `"paratext"`), fill `report` with
    the counts G0 should check, and set `local_chapter`. Put any script-specific markers in
-   `data/lexicon/`. A Sanskrit reference already has `ingest/sanskrit.load_reference`.
+   `data/lexicon/`. The Sanskrit reference is read by `ingest/sanskrit.load_reference`.
 3. **Concordance.** Add the witness's `locals` and its `spans` for every reference chapter in
    `data/registry/concordance.yaml`, each with `status`, `evidence` and `source`.
 4. **Pipeline.** Extend `pipeline/texts.raw_paths` and `ingest` (and `run.yaml: sources`) to parse
-   the new file; for a new reference, switch `witnesses.reference` and make sure
-   `Concordance.assign_reference_chapters` sets `Segment.chapter`.
+   the new file, and add the witness to `RunContext.witnesses`; for a new reference, make sure
+   `Segment.chapter` is set (`Concordance.assign_reference_chapters`, or the unit ids themselves
+   as for Snellgrove ids).
 5. **Prompts.** T1's few-shot examples are tied to one language pair; `collator.build_request`
-   refuses a window whose languages differ from `data/codebook/collate_examples.yaml`. A new pair
-   needs its own synthetic examples (and a new instrument digest).
+   refuses a window whose languages differ from its examples. A new pair needs its own synthetic
+   examples in `data/codebook/collate_examples.<ref>-<wit>.yaml`, which also gives it its own
+   instrument digest `collate:<ref>-<wit>`.
 6. **Tests and G0.** A mini fixture in `data/fixtures/` with unit tests for each structure, a
    realdata test for the counts, ingest-stage sentinels for facts you have verified, and the
    expected counts in `config/preregistration.yaml: gates.g0.expected` (witness -> report key ->

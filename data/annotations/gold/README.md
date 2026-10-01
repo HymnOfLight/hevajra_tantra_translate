@@ -15,6 +15,10 @@ files are read by `hevajra_matrix.evaluation.gold.load` and written by `gold.sav
 `gold.write_windows` from the verdicts that `review import` makes of filled blind gold sheets
 (`gold.from_verdicts`).
 
+Under the Sanskrit reference (`data/reference/README.md`) the reference units are Sanskrit
+units, so these files live under `data/annotations/by_reference/<reference>/gold/` with the
+same layout, one directory per witness (T0892 and the Derge); files made against the Derge units are never applied to them.
+
 Licence rule: these files hold ids and decisions only, no text. The sheets the annotator
 filled in (with text) live under `runs/<id>/review/` and are never committed.
 

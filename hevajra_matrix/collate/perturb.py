@@ -30,7 +30,7 @@ from typing import Sequence
 
 from ..core.lexicon import Negators
 from ..core.textnorm import TSHEG, TSHEG_NB
-from ..core.types import Alignment, Relation
+from ..core.types import Alignment, Relation, Segment
 from ..ingest import CONTENT_KINDS
 from .windows import Window
 
@@ -121,6 +121,14 @@ def remove_negators(window: Window, gold_pairs: Sequence[tuple[str, str]], negat
         used.append((ref_id, wit_id))
     text = tuple(replace(s, text=changed[s.id]) if s.id in changed else s for s in window.text)
     return replace(window, key=f"{window.key}-neg", text=text), NegationTruth(tuple(used))
+
+
+def negated_pairs(pairs: Sequence[tuple[Segment, Segment]], negators: Negators) -> list[tuple[str, str]]:
+    """(reference unit id, witness segment id) of the given gold ``equivalent`` pairs in which
+    both sides hold a removable negator: the candidates of ``remove_negators``."""
+    return [(unit.id, seg.id) for unit, seg in pairs
+            if strip_negator(unit.text, unit.lang, negators) is not None
+            and strip_negator(seg.text, seg.lang, negators) is not None]
 
 
 def strip_negator(text: str, lang: str, negators: Negators) -> str | None:

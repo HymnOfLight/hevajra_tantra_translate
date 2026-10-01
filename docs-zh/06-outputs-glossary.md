@@ -13,16 +13,17 @@
 | `matrix/cells.csv` | 矩阵长表：每行一个（参照单元，见证）单元格 |
 | `matrix/units.csv`、`wide_status.csv` | 单元表；按状态的宽表 |
 | `matrix/stale_verdicts.csv` | 因原文指纹变化而**未被套用**的人工裁决 |
-| `evaluation/scores.<集>.json` | 每次评估各自的得分文件（`scores.test.json`、`scores.dev.json`、`scores.<集>_baselines.json`），互不覆盖 |
+| `evaluation/scores.<集>.json` | 每次评估各自的得分文件（`scores.test.json`、`scores.dev.json`、`scores.<集>_baselines.json`），互不覆盖；每个对齐器另有 `reliability`：置信度的 Brier 分数、常数预测的 Brier 分数、是否胜过常数、各档可靠性表（无置信度的对照为 null） |
 | `evaluation/scores.json`、`gate.json`、`sentinels.jsonl` | 门控所依据的那次评估的得分；门控结果与报告级别（`gating`、`gold_set`、`baselines_only` 说明它来自哪次评估：只有 Claude 在测试集上的评估才门控）；哨兵核对结果（每行一条） |
-| `evaluation/perturbations.json` | 扰动测试：错窗误链率、删句召回 |
-| `stats/estimates.json` | 各估计量（含区间、覆盖的误差来源、无法估计的原因）；另有先验敏感性 `E1_<主结局>_prior` |
-| `stats/details.json` | 改判率、Manski 界、未校正分层 `uncalibrated`、夹注上的仅见于汉文声明数 `ingest_notes`、Δ 的诊断（置换 p、TOST、重叠、机器标签的朴素 Δ 与衰减、匹配、按品/长度三分位的误判表、叙述框架句负对照、`power`） |
+| `evaluation/perturbations.json` | 扰动测试：错窗误链率、删句召回；`perturb --negation` 时另有去否定的极性召回 `negation`（只报告，不门控） |
+| `stats/estimates.json` | 各估计量（含区间、覆盖的误差来源、无法估计的原因）；另有先验敏感性 `E1_<主结局>_prior`；E3 可计算时另有 `E3.phi_V`、`E3.phi_S` |
+| `stats/details.json` | 改判率、Manski 界、未校正分层 `uncalibrated`、夹注上的仅见于汉文声明数 `ingest_notes`、Δ 的诊断（置换 p、TOST、重叠、机器标签的朴素 Δ 与衰减、匹配、按品/长度三分位的误判表、叙述框架句负对照、`power`）；分解 `e3`（写本列、被搁置的校勘本 `editions_ignored`、共同见证、各类计数与逐单元归类、O/E/O−E 与 φ、A2 界 `bound`）；梵文参照模式下的见证距离与 UPGMA 树 `distance` |
 | `stats/power.json` | 主题标签齐全后，在真实标签上模拟的最小可检测效应与功效曲线（G4 取它与预注册 `stats.mde` 的较大者） |
 | `experiments/overattribution/`（预实验在 `pilot/` 子目录） | 试次表 `trials.jsonl`、回答 `responses.jsonl`、结果 `results.json`（含 `phase`、`outcome_basis`、`human_codes_set_aside`）、盲编码表 `human_coding_sheet.csv`、其私钥 `human_sample.json` |
 | `summary.md`、`*.svg` | 分级报告与图 |
 | `llm_audit.jsonl` | 每次 LLM 调用的审计记录（不含原文） |
 | `review/` | 导出的复核表格（含原文，不提交）；解决表多一列 `hint_other_model`（另一模型的提示，导入时剥去） |
+| `witnesses/<见证>/` | 梵文参照模式下德格本一列的全部输出，布局与上面相同（`alignments/`、`matrix/`、`evaluation/`、`stats/`、`summary.md` 等）；`ingest/`、清单、审计日志共用 |
 
 ## 1b 运行目录之外
 
@@ -30,7 +31,9 @@
 |---|---|
 | `data/annotations/verdicts/<见证>/<批次>.csv` | 已提交的人工裁决（24 列，含揭示时记录的机器极性判断 `machine_polarity_flip`） |
 | `data/annotations/verdicts/<见证>/plan_<批次>.csv`、`strata_<批次>.json` | 核验/抽检计划与抽样时冻结的分层（只有 id 与分层，无原文；与裁决一起提交，新运行目录也读取；旧运行目录里的 `review/plan_*.csv` 仍作后备） |
-| `data/ledger/test_evaluations.jsonl` | 测试集评估账本；完全相同的重复评分不追加 |
+| `data/ledger/test_evaluations.jsonl` | 测试集评估账本；完全相同的重复评分不追加。梵文参照模式下按参照与见证分账：`test_evaluations.<参照>.<见证>.jsonl` |
+| `data/annotations/by_reference/<参照>/` | 梵文参照模式下的金标准、裁决与主题标签（布局同 `data/annotations/`） |
+| `data/reference/<梵文参照>.tsv`、`data/reference/readings/<品>.tsv` | 研究者自备的梵文参照与写本异读（不提交）；前者存在即进入梵文参照模式，后者供分解 E3 |
 | `runs/llm-cache/` | LLM 响应缓存（含原文，不提交） |
 | `runs/llm-cache/llm_spend.jsonl` | 跨运行累计的花费账本，每次未命中缓存的调用一行；预算上限按它累计 |
 
@@ -38,7 +41,7 @@
 
 | 英文 | 中文 | 说明 |
 |---|---|---|
-| reference unit | 参照单元 | 矩阵的行；现阶段是德格本的句/偈行，接入梵文后改为梵文单元 |
+| reference unit | 参照单元 | 矩阵的行；现阶段是德格本的句/偈行，接入梵文后（梵文参照模式）改为梵文单元 |
 | witness | 见证 | 矩阵的列，如宋译 T0892、德格本 |
 | link / alignment | 链接 / 对齐 | 参照单元与汉文片段的对应 |
 | relation | 关系 | equivalent 等价、paraphrase 意译、expanded 增补、generalised 概括、substitution 替换、reversal 反转、category_name_omitted 类名略去、transliterated 音写、abridged 部分、no_counterpart 无对应 |
@@ -64,3 +67,10 @@
 | E1–E6 | 估计量 | E1 偏移比例、E2 音节加权比例、E3 分解、E4 敏感-中性差 Δ、E5 仅见于汉文的材料、E6 实验效应 |
 | attested_vorlage / attested_translator | 夹注证明的底本缺文 / 译者替换说明 | 前者可归为底本，后者属译者一侧，不减少残余 |
 | shared_revised | 与修订后藏译共享 | 只有德格本（经宣奴贝修订）作共同见证时的标签 |
+| Sanskrit reference mode | 梵文参照模式 | 有梵文参照 TSV 时，以梵文单元为行，德格本与汉文同为见证列 |
+| co-witness | 共同见证 | 分解中判断"共享"偏移所用的另一个见证：汉文用德格本，德格本用汉文 |
+| manuscript / edition | 写本 / 校勘本 | 只有写本算分解的写本列；校勘本不是独立见证，从不计数 |
+| A2 bound | A2 界 | 未经两列人工核验的"共享"按"非共享"计，给出共享类的下界 |
+| Brier score | Brier 分数 | 置信度（high/medium/low 的名义概率 0.9/0.7/0.5）对"状态正确"的平方误差均值；须低于常数预测才算有信息 |
+| reliability table | 可靠性表 | 每档置信度的单元数、正确数与准确率 |
+| witness distance / UPGMA | 见证距离 / 平均连锁树 | 梵文参照、德格本、汉文三者之间的描述性距离与树 |

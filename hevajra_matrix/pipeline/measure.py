@@ -21,11 +21,12 @@ from ..matrix.export import write_matrix
 from ..matrix.status import cell_outcome
 from ..review import sampling
 from ..review.verdicts import is_orphan
-from ..stats import decompose, twophase
+from ..stats import twophase
 from ..topics import human_agreement
 from . import human_data as ann
-from .context import AUDIT_LOG, RunContext, StageError, Texts, load_texts, record_stage, require
-from .instrument import CONSENSUS_FILE, read_replicates
+from .context import AUDIT_LOG, RunContext, StageError, Texts, all_segments, load_texts, record_stage, require
+from .e3 import e3_reason
+from .instrument import CONSENSUS_FILE, collate_digest, read_replicates
 from .store import (
     diagnostic_from_dict,
     estimate_to_dict,
@@ -153,7 +154,7 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
                          "use --gold dev or --baselines-only until then")
     scores, human_kappa = _scores(ctx, texts, aligners, gold_set, topics.groups())
     integrity = _integrity(ctx, texts, claude, cells)
-    digest = _collate_digest(ctx)
+    digest = collate_digest(ctx, texts)
     prereg_sha = ctx.settings.shas.get("preregistration.yaml", "")
     ledger = ann.ledger_path(ctx)
     specs = gates.GateSpecs.from_prereg(ctx.settings.prereg)
@@ -176,7 +177,8 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
         "gold_set": gold_set, "baselines_only": baselines_only, "human_kappa": human_kappa,
         "sources": {src: {"counts": s.counts(), "metrics": s.metrics(),
                           "intervals": {k: estimate_to_dict(e) for k, e in
-                                        gold_sets.interval_estimates(s, specs.g1.n_boot, specs.seed).items()}}
+                                        gold_sets.interval_estimates(s, specs.g1.n_boot, specs.seed).items()},
+                          "reliability": gold_sets.confidence_reliability(s)}
                     for src, s in scores.items()}}
     own = out / f"scores.{gold_set}{'_baselines' if baselines_only else ''}.json"     # every evaluation keeps its own
     _write_json(own, scores_doc)
@@ -245,9 +247,6 @@ def _fmt(x: float | None) -> str:
     return "n/a" if x is None else f"{x:.3f}"
 
 
-def _collate_digest(ctx: RunContext) -> str:
-    from ..prereg import instrument_digests      # local import: prereg imports every task module
-    return instrument_digests(ctx.settings)["collate"]
 
 
 def _scores(ctx: RunContext, texts: Texts, aligners: Mapping[str, Alignment], gold_set: str,
@@ -271,8 +270,10 @@ def _scores(ctx: RunContext, texts: Texts, aligners: Mapping[str, Alignment], go
 
 
 def _integrity(ctx: RunContext, texts: Texts, claude: Alignment | None, cells: list[Cell] | None) -> gates.Integrity:
-    everything = [*texts.reference, *texts.witness]
-    loaded = sentinel_checks.load(ctx.data_dir / SENTINELS_FILE)
+    everything = all_segments(ctx)
+    loaded = sentinel_checks.applicable(sentinel_checks.load(ctx.data_dir / SENTINELS_FILE),
+                                        sentinel_checks.text_prefixes(texts.reference),
+                                        sentinel_checks.text_prefixes(texts.witness))
     results = {"ingest": sentinel_checks.check(loaded, "ingest", everything)}
     if claude is not None:
         results["proposal"] = sentinel_checks.check(loaded, "proposal", everything, alignment=claude)
@@ -334,7 +335,7 @@ def _calibration(ctx: RunContext, texts: Texts, cells: list[Cell] | None, topics
             uncalibrated = twophase.uncalibrated_strata(units, verdicts, strata, "final", texts.ref_kinds)
             null_recall = deferred_null_recall(machine, units, verdicts, strata, texts.ref_kinds,
                                                ctx.settings.prereg.get("stats") or {})
-    e3 = decompose.E3_NOT_INGESTED
+    e3 = e3_reason(ctx, texts)
     agreement_topics = human_agreement(topics.labels)
     scorer = _read_json(ctx.path("experiments", "overattribution", "results.json")).get("scorer") or {}
     return gates.Calibration(

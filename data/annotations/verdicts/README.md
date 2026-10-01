@@ -8,6 +8,10 @@ written by `hevajra-matrix review import` (`hevajra_matrix.review.sheets.import_
 `review.verdicts.save`) and read by `review.verdicts.load`. They are applied to the matrix on
 every `build` (`hevajra_matrix.matrix.build.build_cells`).
 
+Under the Sanskrit reference (`data/reference/README.md`) the reference units are Sanskrit
+units, so these files live under `data/annotations/by_reference/<reference>/verdicts/` with the
+same layout, one directory per witness (T0892 and the Derge); files made against the Derge units are never applied to them.
+
 Gold is not stored here. `review import --task gold` writes blind gold sheets to
 `data/annotations/gold/<witness>/<set>.csv` (see `data/annotations/gold/README.md`); gold
 rows become verdicts only in memory (`evaluation.gold.to_verdicts`), which is what gives them

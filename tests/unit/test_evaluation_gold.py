@@ -290,3 +290,40 @@ def test_draw_is_proportional_to_chapter_size():
     units = {"big": [f"b{i}" for i in range(900)], "small": [f"s{i}" for i in range(100)]}
     picks = [G.draw_test_windows(units, 1, 1, (), seed)[0].chapter for seed in range(400)]
     assert 0.83 < picks.count("big") / 400 < 0.97
+
+
+# --------------------------------------------------------------------------- confidence reliability
+def _scored(*rows: tuple[str | None, bool]) -> G.AlignmentScores:
+    """Units with a confidence label and whether their status is right."""
+    units = tuple(G.UnitScore(unit_id=f"u{i}", window_id="w1", gold_relation="equivalent", gold_status="PRESENT",
+                              gold_dev=False, gold_wit=frozenset(), pred_relation="equivalent" if ok else "no_counterpart",
+                              pred_status="PRESENT" if ok else "ABSENT", pred_dev=not ok, pred_wit=frozenset(),
+                              pred_confidence=label)
+                  for i, (label, ok) in enumerate(rows))
+    return G.AlignmentScores("claude:consensus", "dev", units)
+
+
+def test_confidence_reliability_brier_against_the_constant_predictor() -> None:
+    s = _scored(("high", True), ("high", True), ("high", True), ("low", False), (None, False))
+    r = G.confidence_reliability(s)
+    assert r is not None and r["n"] == 4, "units without a confidence are left out"
+    assert r["accuracy"] == pytest.approx(0.75)
+    assert r["brier"] == pytest.approx((3 * 0.1 ** 2 + 0.5 ** 2) / 4)
+    assert r["brier_constant"] == pytest.approx(0.75 * 0.25)
+    assert r["beats_constant"] is True
+    assert r["table"]["high"] == {"n": 3, "correct": 3, "accuracy": 1.0, "nominal": 0.9}
+    assert r["table"]["medium"] == {"n": 0, "correct": 0, "accuracy": None, "nominal": 0.7}
+
+
+def test_uninformative_confidence_does_not_beat_the_constant() -> None:
+    r = G.confidence_reliability(_scored(("high", False), ("high", True), ("low", True), ("low", False)))
+    assert r is not None and r["beats_constant"] is False and r["brier"] > r["brier_constant"]
+    assert G.confidence_reliability(_scored((None, True))) is None
+
+
+def test_gold_scoring_carries_the_link_confidence() -> None:
+    gold = G.GoldSet("dev", "zh", (G.GoldRow("dev", "w1", "ref", "u1", "f", ("z1",), "equivalent"),))
+    alignment = Alignment("claude:consensus", "ref", "zh", (Link("u1", ("z1",), Relation.EQUIVALENT,
+                                                                     confidence="medium"),))
+    (unit,) = G.score(alignment, gold, ref_kinds={"u1": "prose"}).units
+    assert unit.pred_confidence == "medium"

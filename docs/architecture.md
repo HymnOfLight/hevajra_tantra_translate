@@ -13,9 +13,18 @@ witnesses (now the Song Chinese translation, Taisho T0892), and each cell record
 witness renders the unit: retained, rewritten, abridged, absent, or undecided. Every cell has
 an evidence grade. From the matrix it estimates how much of the text deviates (E1, E2), where
 witness-only material lies (E5), and whether sensitive content deviates more than neutral
-content (E4). The decomposition of deviations by origin (E3) is implemented but prints
-`NOT_ESTIMABLE` until a Sanskrit manuscript column exists. A separate experiment (E6) studies
-whether Claude over-attributes translator motives.
+content (E4). The decomposition of deviations by origin (E3) is computed from per-manuscript
+Sanskrit readings once the Sanskrit reference is ingested (then the Derge is a second witness and
+the co-witness of the Chinese); under the Derge reference it prints `NOT_ESTIMABLE`. A separate
+experiment (E6) studies whether Claude over-attributes translator motives.
+
+**Reference modes.** Without a Sanskrit text the reference is the provisional Derge and the only
+witness is T0892. When `data/reference/<run.yaml: witnesses.sanskrit_reference>.tsv` exists
+(default `sa_snellgrove1959`), `ingest` makes the Sanskrit units the reference and both the
+Derge and T0892 aligned witnesses. Every per-witness stage then runs once per witness with the
+same functions (`RunContext.for_witness`, `RunContext.each_witness`); the target keeps the plain
+run-directory layout and the Derge writes the same layout under `<run>/witnesses/<witness>/`.
+The concordance needs no change: its Derge spans map I.n / II.n to D417:n / D418:n.
 
 v0.2 (commit `1f9474c`) decided status from segment lengths and could not tell its headline
 rate from a placebo. v0.3 replaces that with *validated, evidence-graded collation*.
@@ -68,15 +77,16 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | Module | Stages | Notes |
 |---|---|---|
 | `pipeline/__init__.py` | `run` | chains ingest, baselines, collate, build, evaluate, stats, report as far as data and key allow; documents the run-directory layout |
-| `pipeline/context.py` | - | `RunContext`, `StageError`, `new_run_dir`, `latest_run_dir`, `make_client`, `load_texts` / `Texts`, `record_stage` (manifest) |
+| `pipeline/context.py` | - | `RunContext` (reference mode, `witnesses`, `for_witness`, `each_witness`, per-witness `path`), `StageError`, `new_run_dir`, `latest_run_dir`, `make_client`, `load_texts` / `Texts`, `all_segments`, `scope_lines`, `record_stage` (manifest) |
 | `pipeline/store.py` | - | JSON forms of segments, alignments, collations, cells, estimates, gate reports, sentinel results (pure `*_to_dict` / `*_from_dict` pairs) |
-| `pipeline/texts.py` | `fetch`, `ingest`, `baselines`, `baselines_import` | Claude-free; G0 and ingest-stage sentinels |
-| `pipeline/instrument.py` | `collate` (incl. `--dry-run`), `perturb`, `components_stage`, `claude_check` | every stage that calls Claude except topics and the experiment |
+| `pipeline/texts.py` | `fetch`, `ingest`, `baselines`, `baselines_import` | Claude-free; G0 and ingest-stage sentinels; ingest loads the Sanskrit reference when its TSV exists |
+| `pipeline/instrument.py` | `collate` (incl. `--dry-run`), `perturb` (incl. `--negation`), `components_stage`, `claude_check` | every stage that calls Claude except topics and the experiment; `collate_digest` of the run's language pair |
 | `pipeline/measure.py` | `build`, `evaluate` | Claude-free; G2-G4 facts (`_integrity`, `_calibration`, `design_mde`), ledger deduplication (`already_ledgered`) |
-| `pipeline/results.py` | `stats`, `report` | Claude-free |
+| `pipeline/results.py` | `stats`, `report` | Claude-free; `witness_tree` (distances and UPGMA once three texts share the reference) |
+| `pipeline/e3.py` | - | E3 for `stats` and G4: readings, manuscript columns (editions set aside), co-witness, A2 bound (`e3_inputs`, `e3_stats`, `e3_reason`) |
 | `pipeline/e4.py` | - | E4 for `stats`: Delta with its diagnostics (`contrast_with_diagnostics`) and the MDE simulated on the real topic labels (`mde_on_labels`) |
 | `pipeline/review.py` | `topics_prelabel`, `sample`, `review_export`, `review_import`, `review_status` | human-work stages |
-| `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans and frozen strata (committed beside the verdicts; run-directory fallback for old runs) |
+| `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans and frozen strata (committed beside the verdicts; run-directory fallback for old runs); `annotations_dir` (per reference) and `ledger_path` (per reference and witness pair) |
 | `pipeline/experiment.py` | `experiment_plan`, `experiment_run`, `experiment_score` | the over-attribution experiment |
 
 ### Core (`core/`, no I/O except `core/io.py`)
@@ -98,7 +108,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `ingest/cbeta.py` | CBETA TEI P5 (T0892): clauses, mantras, notes, footnotes, apparatus, glosses | `parse(path, witness, data_dir)` |
 | `ingest/derge.py` | Esukhia Derge volume text: shad units, chapters, paratext, `{a,b}` marks | `parse(path, toh, witness, data_dir)`, `load_markers` |
 | `ingest/notes.py` | 7 classes of CBETA inline notes; footnote source | `classify`, `load_rules`, `footnote_source`, `NOTE_CLASSES` |
-| `ingest/sanskrit.py` | researcher-supplied Sanskrit TSVs | `load_reference`, `load_readings` (no pipeline stage uses them yet) |
+| `ingest/sanskrit.py` | researcher-supplied Sanskrit TSVs | `load_reference` (read by `ingest`), `load_readings` (read by `stats` for E3; unit ids are Snellgrove ids or, under the Derge reference, Derge segment ids) |
 
 ### Baselines and controls (`align/`)
 
@@ -127,11 +137,11 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | Module | Role | Public entry points |
 |---|---|---|
 | `collate/windows.py` | reference chunks + full witness text + core window; prompt-local handles | `plan`, `Window`, `WindowParams` |
-| `collate/collator.py` | T1 requests, parsing, thread pool | `build_request`, `build_requests`, `collate`, `parse`, `SCHEMA`, `TaskSettings` |
+| `collate/collator.py` | T1 requests, parsing, thread pool; examples per language pair | `build_request`, `build_requests`, `collate`, `parse`, `SCHEMA`, `TaskSettings`, `load_examples`, `examples_file`, `example_pairs` |
 | `collate/verify.py` | V1-V8, V11 on one window | `verify`, `Collation`, `CheckLexicon.load`, `quote_match` |
 | `collate/merge.py` | V9, V10, chapter and text merge | `verify_all`, `merge_chapter`, `merge_text`, `compare_overlaps` |
 | `collate/consensus.py` | replicate vote, grades, Fleiss kappa | `consensus`, `agreement` |
-| `collate/perturb.py` | perturbation placebos and their scores | `wrong_window`, `delete_segments`, `remove_negators`, `false_link_rate`, `deletion_recall`, `negation_recall` |
+| `collate/perturb.py` | perturbation placebos and their scores | `wrong_window`, `delete_segments`, `negated_pairs`, `remove_negators`, `false_link_rate`, `deletion_recall`, `negation_recall` |
 | `collate/components.py` | T2 component coder (descriptive only): pair selection, run loop, outputs; re-exports the two modules below | `select_pairs`, `code_components`, `verify`, `rendering_profile`, `invention_rate` |
 | `collate/components_request.py` | T2 settings, schema, batches with full segment texts, prompts, few-shot examples | `ComponentTaskSettings`, `plan_batches`, `build_requests`, `load_system`, `load_examples` |
 | `collate/components_verify.py` | T2 code checks C1-C5 | `SlotCode`, `verify`, `verify_answer` |
@@ -149,18 +159,19 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `review/topic_sheets.py` | topic sheets (second coder without prelabels) | `export_topics`, `import_topics`, `merge_topic_labels` |
 | `review/verdicts.py` | committed verdict CSVs | `load`, `save`, `validate`, `decision`, `COLUMNS` |
 | `evaluation/gold.py` | gold format and scoring of any `Alignment` | `load`, `save`, `score`, `human_kappa`, `from_verdicts`, `to_verdicts` |
-| `evaluation/scores.py` | per-unit scores and metrics | `AlignmentScores`, `METRICS`, `interval_estimates` |
+| `evaluation/scores.py` | per-unit scores and metrics; confidence reliability | `AlignmentScores`, `METRICS`, `interval_estimates`, `confidence_reliability`, `CONFIDENCE_PROBABILITY` |
 | `evaluation/resample.py` | kappa, window-cluster and paired bootstrap, McNemar | `cohen_kappa`, `window_bootstrap`, `paired_difference`, `mcnemar` |
 | `evaluation/windows.py` | dev regions and test-window draw | `dev_region_units`, `draw_test_windows` |
-| `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages | `load`, `check` |
+| `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages | `load`, `check`, `applicable` (alignment checks only on their own text pair), `text_prefixes` |
 | `evaluation/gate.py` | G0-G4, report level, confirmatory flag, ledger | `evaluate`, `check_g1`, `GateSpecs.from_prereg`, `ledger_append`, `ledger_summary` |
 | `stats/twophase.py` | strata, posterior-predictive draws, E1/E2, Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata` |
 | `stats/contrast.py` | Delta (E4), permutation test, TOST, matching, diagnostics; length strata are mid-rank tertiles | `delta`, `tertile_strata`, `permutation_p`, `tost`, `matched_rd`, `overlap_diagnostics`, `misclassification_table` |
 | `stats/decompose.py` | E3 classes, O / E / O-E, excess fractions, NOT_ESTIMABLE gate | `decompose`, `excess`, `e3`, `not_estimable_reason` |
 | `stats/power.py` | planning simulations | `simulate_delta`, `simulate_experiment` |
-| `stats/distance.py` | witness distance and UPGMA (>= 3 witnesses; not wired into a stage) | `witness_distance`, `distance_matrix`, `average_linkage_newick` |
+| `stats/distance.py` | witness distance and UPGMA (>= 3 witnesses; `stats` writes it under the Sanskrit reference) | `witness_distance`, `distance_matrix`, `average_linkage_newick` |
 | `topics/` | codebook, human labels and agreement, T3 pre-labeller | `load_codebook`, `topic_group`, `load_labels`, `human_agreement`, `prelabel_agreement`, `build_request`, `parse_prelabels` |
 | `report/markdown.py` | level-gated `summary.md` | `render(inputs, gate)`, `ReportInputs` |
+| `report/sections.py` | E3 section; confidence reliability and P-negation section | `e3`, `reliability` |
 | `report/svg.py` | status strip and chapter heatmap | `status_strip`, `chapter_heatmap` |
 
 ### Experiment (`experiments/overattribution/`)
@@ -200,7 +211,7 @@ ingest   -> ingest/segments_<witness>.jsonl, footnotes.jsonl, variants.csv,
                             collation/consensus.json, integrity.json, diagnostics.jsonl,
                             matrix/cells.csv, units.csv, wide_status.csv, stale_verdicts.csv,
                             matrix/cells.jsonl (human decisions applied), machine_cells.jsonl
-      perturb (T1)       -> evaluation/perturbations.json
+      perturb (T1)       -> evaluation/perturbations.json (--negation: also P-negation)
       components (T2)    -> components/components.jsonl, rendering_profile.csv, diagnostics.jsonl
       sample verification|audit -> data/annotations/verdicts/<witness>/plan_<batch>.csv and
                             strata_<batch>.json (committed; ids and strata only)
@@ -211,7 +222,7 @@ ingest   -> ingest/segments_<witness>.jsonl, footnotes.jsonl, variants.csv,
 evaluate -> evaluation/scores.<set>[_baselines].json; when gating (test gold, Claude scored):
             scores.json, gate.json, sentinels.jsonl and one line in
             data/ledger/test_evaluations.jsonl (not appended for an identical re-scoring)
-stats    -> stats/estimates.json, stats/details.json, stats/power.json (complete topic labels)
+stats    -> stats/estimates.json, stats/details.json (incl. e3, distance), stats/power.json (complete topic labels)
 report   -> summary.md, status_strip.svg, chapter_heatmap.svg
 
 experiment overattribution plan|run|score [--phase pilot]
@@ -219,6 +230,8 @@ experiment overattribution plan|run|score [--phase pilot]
             trials.jsonl, responses.jsonl, results.json, human_coding_sheet.csv, human_sample.json
 claude-check -> claude_check.json
 every stage  -> manifest.json (rewritten after each stage)
+Sanskrit reference: baselines ... report run once per aligned witness (`--witness` picks one);
+                    the Derge's files go to witnesses/bo_derge_D417_418/<same paths>
 ```
 
 `ingest`, `run` and `claude-check` create a new run directory; every other command uses the
@@ -291,7 +304,7 @@ Implemented in `evaluation/gate.py`, thresholds from `config/preregistration.yam
 | G1 validity | on test windows: link F1 >= 0.80 and the paired window-cluster bootstrap of F1(Claude) - F1(best control) has CI_low > 0; status kappa >= 0.70, >= 0.8 x human kappa, and the same paired rule; witness-only recall >= 0.70 when gold has >= 10 witness-only segments; NULL precision/recall >= 0.70 when gold has >= 20 NULLs, else deferred to G3 |
 | G2 instrument | replicate Fleiss kappa >= 0.80; quote failures <= 2%; missing units <= 1%; no substituted call among the collate requests that fed the consensus (`collation/replicates.json: request_keys`; perturbation calls do not count); collate digest = preregistered digest; P-wrong-window false links <= 0.10; P-deletion recall >= 0.70 (each unit scored once, chunk overlaps included); verified proposal-stage sentinels pass |
 | G3 calibration | a verification plan exists and every stratum reached its planned n; no stratum holds unverified units without a phase-2 sample verdict (an uncalibrated stratum would be estimated from the prior; `twophase.uncalibrated_strata`); every machine-negative stratum audited >= 40 (a fully verified smaller census meets it); deferred NULL precision (blind verdicts on machine-ABSENT units) and NULL recall (two-phase imputation on the blind column) >= 0.70 when G1 deferred them; unresolved units resolved or Manski width <= 0.05; verified final-stage sentinels pass |
-| G4 estimands | E3: a Sanskrit manuscript column and a co-witness other than the reference; E4: topic labels complete, human-human topic kappa >= 0.70, MDE <= 0.10 (the larger of `stats.mde` and the MDE simulated on the labels, `stats/power.json`; the simulated one alone when `stats.mde` is unset); E6: scorer kappa >= 0.80, else two-phase-corrected outcomes |
+| G4 estimands | E3: a Sanskrit manuscript column (registry manuscripts only; editions never count) and a co-witness other than the reference whose matrix is built; E4: topic labels complete, human-human topic kappa >= 0.70, MDE <= 0.10 (the larger of `stats.mde` and the MDE simulated on the labels, `stats/power.json`; the simulated one alone when `stats.mde` is unset); E6: scorer kappa >= 0.80, else two-phase-corrected outcomes |
 
 Level 0 (DESCRIPTIVE) if any of G0-G2 fails, 1 (VALIDATED) if G0-G2 pass, 2 (CALIBRATED) if G3
 passes too. A report is *confirmatory* only when the preregistration is frozen, the collate
@@ -350,13 +363,14 @@ realdata) are named in their tests; the others are covered by the rows above.
 | Batches API pre-warm of the cache | **Deferred** (no `llm/batch.py`); all calls are synchronous streams |
 | Drift canary | **Cut**; the evaluation ledger lets instrument versions be compared |
 | Effort sweep on dev gold | **Not automated**; change `config/llm.yaml: tasks.collate.effort` and rerun `collate --chapters ...` + `evaluate --gold dev` (each effort is a new cache key and digest) |
-| P-negation perturbation | Builder and scorer exist (`collate/perturb.py`); the `perturb` stage does not run it (needs negated gold pairs); never gated |
-| Confidence reliability (Brier score) | **Not implemented**; T1 confidence is stored on links only |
-| E3 circular-shift null and per-manuscript odds ratios | **Deferred** until manuscript readings exist; O, E, O-E and phi against the independence base rate are implemented |
-| A pipeline stage for Sanskrit references and readings | Loaders exist (`ingest/sanskrit.py`); no stage uses them; E3 always prints NOT_ESTIMABLE |
+| P-negation perturbation | **Built**: `perturb --negation` draws the dev-gold `equivalent` pairs negated on both sides, strips the witness negator and writes the polarity recall to `evaluation/perturbations.json: negation`; shown in the report at level >= 1; never gated |
+| Confidence reliability (Brier score) | **Built**: `evaluation/scores.py: confidence_reliability` (Brier of the nominal high/medium/low probabilities vs the constant predictor, reliability table) on the units with a confidence, in `scores*.json: sources.<source>.reliability` and the report at level >= 1. Confidence stays a stratum unless it beats the constant on dev gold; no stage uses it otherwise |
+| Sanskrit reference and readings | **Built**: `ingest` loads `data/reference/<sanskrit_reference>.tsv` when present (Sanskrit mode: Derge and T0892 both aligned witnesses, same functions per witness, scope lines adapted); `stats` reads `data/reference/readings/` for E3 (`pipeline/e3.py`) with the A2 bound. Not done: committed collator examples for the sa-bo and sa-zh pairs (the researcher writes them; `collate` refuses a pair without examples), Sanskrit-specific dev regions and test windows (the committed `gold.dev_regions` use Derge coordinates such as `around: "D418:17b.6"`), sentinels stated on Sanskrit loci (sentinels on Derge -> Chinese loci are not checked against other pairs), and T2/T3 per language pair (the T2 component coder keeps its Tibetan -> Chinese examples; T3 renders its prompt for the reference language, but the topics digest in `prereg` is computed for the configured Derge reference) |
+| E3 under the Derge reference | Readings keyed by Derge segment ids are read, but E3 stays NOT_ESTIMABLE (`G4: reference is the co-witness`); the decomposition is written to `stats/details.json: e3` as description only |
+| E3 circular-shift null and per-manuscript odds ratios | **Deferred** until real manuscript readings exist; O, E, O-E and phi against the independence base rate are computed |
 | E4 "Delta from human-verified status only" | `twophase.known_outcomes` gives the verified outcomes; the `stats` stage does not compute this Delta. Every other E4 diagnostic is written (`stats/details.json: e4`, see [data formats](data-formats.md)) |
-| Witness distance / UPGMA | Kept in `stats/distance.py`; not wired into a stage (needs >= 3 witnesses) |
+| Witness distance / UPGMA | **Built** for the Sanskrit reference: `stats` writes `details.json: distance` (Sanskrit reference, Derge, T0892); skipped under the Derge reference (two texts) |
 | `d_comp` cell dimension from T2 | **Deferred** until per-code precision and recall on double-coded dev pairs are reported |
 | Chinese report `summary.zh.md` | **Dropped** by researcher decision; reports are English only |
 | Automatic retry or window split after refusal/truncation | **Not built by design**: units go to the human `resolve` queue |
-| Second witness column, Them spangs ma Kangyur, Tangut, Ming witnesses | Out of scope for v0.3 (registry entries only) |
+| Further witness columns (Them spangs ma Kangyur, Tangut, Ming witnesses) | Out of scope for v0.3 (registry entries only); the Derge is the only second column, under the Sanskrit reference |

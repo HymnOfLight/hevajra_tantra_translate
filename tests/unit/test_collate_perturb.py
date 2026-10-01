@@ -12,6 +12,7 @@ from hevajra_matrix.collate.perturb import (
     deletion_recall,
     delete_segments,
     false_link_rate,
+    negated_pairs,
     negation_recall,
     remove_negators,
     strip_negator,
@@ -168,3 +169,17 @@ def test_negation_recall() -> None:
                        Link("u2", ("z2",), Relation.SUBSTITUTION, polarity_flip=True),
                        Link("u3", ("z3",), Relation.EQUIVALENT))
     assert negation_recall(truth, result) == Rate(2, 3)
+
+
+def test_negated_pairs_need_a_negator_on_both_sides() -> None:
+    from hevajra_matrix.core.types import Segment
+
+    def seg(sid: str, text: str, lang: str) -> Segment:
+        return Segment(sid, "w", lang, text, "l", "l", "prose")
+
+    negators = lexicon().negators
+    ref_neg, ref_pos = seg("I.1.1", "na rupam", "sa"), seg("I.1.2", "rupam", "sa")
+    wit_neg, wit_pos = seg("ZT:1", "\u4e0d\u898b", "zh"), seg("ZT:2", "\u898b", "zh")
+    pairs = [(ref_neg, wit_neg), (ref_neg, wit_pos), (ref_pos, wit_neg)]
+    assert negated_pairs(pairs, negators) == [("I.1.1", "ZT:1")]
+    assert negated_pairs([(seg("I.1.3", "nanu", "sa"), wit_neg)], negators) == [], "a negator is a whole token"

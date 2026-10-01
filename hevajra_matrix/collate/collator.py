@@ -49,6 +49,7 @@ TASK = "collate"
 PROMPT_ID = "collate.v1"
 TEMPLATE_FILE = "collate.v1.md"
 EXAMPLES_FILE = Path("codebook") / "collate_examples.yaml"
+DEFAULT_PAIR = ("bo", "zh")           # (reference, witness) languages of EXAMPLES_FILE
 N_EXAMPLES = 3
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 CONFIDENCE = ("high", "medium", "low")
@@ -134,17 +135,42 @@ def load_template() -> str:
     return resources.files("hevajra_matrix").joinpath("prompts").joinpath(TEMPLATE_FILE).read_text("utf-8")
 
 
-def load_examples(data_dir: Path) -> Examples:
-    """Read, check and render ``data/codebook/collate_examples.yaml``.
+def examples_file(ref_lang: str = DEFAULT_PAIR[0], wit_lang: str = DEFAULT_PAIR[1]) -> Path:
+    """Examples of one language pair, relative to ``data/``: ``codebook/collate_examples.yaml``
+    for the default pair (Tibetan reference, Chinese witness), else
+    ``codebook/collate_examples.<ref>-<wit>.yaml`` (e.g. ``sa-zh`` once the Sanskrit
+    reference is used)."""
+    if (ref_lang, wit_lang) == DEFAULT_PAIR:
+        return EXAMPLES_FILE
+    return EXAMPLES_FILE.with_name(f"collate_examples.{ref_lang}-{wit_lang}.yaml")
 
-    The file must hold exactly three examples; each answer must be valid against
-    ``SCHEMA``, name only handles its example shows and record every reference line
-    exactly once. (That the answers also pass the V-checks is a unit test.)
+
+def example_pairs(data_dir: Path) -> list[tuple[str, str]]:
+    """The language pairs that have an examples file, the default pair first."""
+    found = sorted(Path(data_dir).glob(str(EXAMPLES_FILE.with_name("collate_examples.*-*.yaml"))))
+    extra = [tuple(p.name.split(".")[1].split("-", 1)) for p in found]
+    return [DEFAULT_PAIR, *[(a, b) for a, b in extra if (a, b) != DEFAULT_PAIR]]
+
+
+def load_examples(data_dir: Path, ref_lang: str = DEFAULT_PAIR[0], wit_lang: str = DEFAULT_PAIR[1]) -> Examples:
+    """Read, check and render the examples of one language pair (``examples_file``).
+
+    The file must hold exactly three examples of the requested pair; each answer must be
+    valid against ``SCHEMA``, name only handles its example shows and record every
+    reference line exactly once. (That the answers also pass the V-checks is a unit test.)
+    A missing file raises ``FileNotFoundError``: examples are written by a researcher, never
+    borrowed from another language pair.
     """
-    path = Path(data_dir) / EXAMPLES_FILE
+    path = Path(data_dir) / examples_file(ref_lang, wit_lang)
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} is missing: write three synthetic {ref_lang}->{wit_lang} examples "
+                                f"in the format of {EXAMPLES_FILE.name}")
     doc = read_yaml(path)
     if not isinstance(doc, Mapping) or set(doc) != {"schema_version", "reference_lang", "witness_lang", "examples"}:
         raise ValueError(f"{path}: expected keys schema_version, reference_lang, witness_lang, examples")
+    if (doc["reference_lang"], doc["witness_lang"]) != (ref_lang, wit_lang):
+        raise ValueError(f"{path}: illustrates {doc['reference_lang']}->{doc['witness_lang']}, "
+                         f"expected {ref_lang}->{wit_lang}")
     items = doc["examples"]
     if doc["schema_version"] != 1 or not isinstance(items, list) or len(items) != N_EXAMPLES:
         raise ValueError(f"{path}: schema_version 1 with exactly {N_EXAMPLES} examples required")

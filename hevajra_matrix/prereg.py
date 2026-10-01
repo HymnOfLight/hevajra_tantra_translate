@@ -5,7 +5,9 @@ the rendered static prompt, the output schema, the code version, the task parame
 the number of replicates (``core.types.InstrumentId``). Its digest changes whenever any of
 these change, which is what makes a validated instrument re-validatable:
 
-    collate     T1, the measurement instrument (gate G2 compares its digest with the prereg)
+    collate     T1, the measurement instrument (gate G2 compares its digest with the prereg);
+                one more digest ``collate:<ref>-<wit>`` per extra language pair that has its
+                own examples file (the Sanskrit reference: ``collate:sa-bo``, ``collate:sa-zh``)
     topics      T3 pre-labeller (orders human work; frozen for provenance)
     components  T2 component coder (descriptive)
     subject     T4 experiment subject
@@ -70,7 +72,11 @@ def instruments(settings: Settings) -> dict[str, InstrumentId]:
     ref_lang = load_witnesses(data / "registry" / "witnesses.yaml")[reference].lang
 
     t1 = collator.TaskSettings.from_config(llm)
-    t1_system = collator.system_prompt(collator.load_template(), collator.load_examples(data))
+    template = collator.load_template()
+    collate = {collate_task(*pair): _instrument(
+        "collate", t1.model, t1.effort, collator.system_prompt(template, collator.load_examples(data, *pair)),
+        collator.SCHEMA, (t1, WindowParams.from_config(settings.run)), t1.replicates)
+        for pair in collator.example_pairs(data)}
     t3 = TopicTaskSettings.from_config(llm)
     codebook = load_codebook(data / "codebook" / "topics.yaml")
     t2 = components.ComponentTaskSettings.from_config(llm)
@@ -80,8 +86,7 @@ def instruments(settings: Settings) -> dict[str, InstrumentId]:
     subject_prompt = exp_run.SUBJECT_PROMPT.read_text(encoding="utf-8") + canonical_json(
         {k: v.text for k, v in evidence.items()})
     return {
-        "collate": _instrument("collate", t1.model, t1.effort, t1_system, collator.SCHEMA,
-                               (t1, WindowParams.from_config(settings.run)), t1.replicates),
+        **collate,
         "topics": _instrument("topics", t3.model, t3.effort, render_system(codebook, ref_lang),
                               prelabel_schema(codebook), (t3,), t3.replicates),
         "components": _instrument("components", t2.model, t2.effort, components.load_system(data),
@@ -91,6 +96,12 @@ def instruments(settings: Settings) -> dict[str, InstrumentId]:
         "scorer": _instrument("scorer", t5.model, t5.effort, exp_run.SCORER_PROMPT.read_text(encoding="utf-8"),
                               exp_score.scorer_schema(), (t5,), t5.replicates),
     }
+
+
+def collate_task(ref_lang: str, wit_lang: str) -> str:
+    """Digest key of the collator for one language pair: ``collate`` for the default pair
+    (Tibetan -> Chinese), ``collate:<ref>-<wit>`` for any other pair with its own examples."""
+    return "collate" if (ref_lang, wit_lang) == collator.DEFAULT_PAIR else f"collate:{ref_lang}-{wit_lang}"
 
 
 def instrument_digests(settings: Settings) -> dict[str, str]:

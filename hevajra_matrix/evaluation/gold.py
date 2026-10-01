@@ -34,9 +34,9 @@ from ..core.types import (REASON_UNASSESSED, REASON_VERIFICATION_FAILED, Alignme
 from ..matrix.status import RELATION_STATUS, deviates, outcome_class
 from ..review.verdicts import FLAGS, UNIT_VALUES, decision, format_flags, is_orphan, parse_bool, parse_flags, parse_ids
 from .resample import Interval, McNemar, mcnemar, paired_difference, window_bootstrap
-from .scores import (METRICS, UNALIGNED, AlignmentScores, UnitScore, WitnessOnlyScore, dany_kappa,
-                     interval_estimates, invalid_handle_rate, link_f1, link_precision, link_recall, null_precision,
-                     null_recall, quote_failure_rate, refusal_by_group, refusal_rate, relation_recall,
+from .scores import (METRICS, UNALIGNED, AlignmentScores, UnitScore, WitnessOnlyScore, confidence_reliability,
+                     dany_kappa, interval_estimates, invalid_handle_rate, link_f1, link_precision, link_recall,
+                     null_precision, null_recall, quote_failure_rate, refusal_by_group, refusal_rate, relation_recall,
                      status_correct, status_kappa, witness_only_kind_agreement, witness_only_recall)
 from .windows import (WINDOWS_COLUMNS, TestWindow, dev_region_units, draw_test_windows, region_window,
                       window_units)
@@ -46,6 +46,7 @@ __all__ = [
     "GOLD_COLUMNS", "SETS", "GoldError", "GoldRow", "GoldSet", "load", "save", "read_windows", "write_windows",
     "from_verdicts", "to_verdicts", "score", "human_kappa",
     "UnitScore", "WitnessOnlyScore", "AlignmentScores", "METRICS", "interval_estimates", "status_correct",
+    "confidence_reliability",
     "link_precision", "link_recall", "link_f1", "null_precision", "null_recall", "witness_only_recall",
     "witness_only_kind_agreement", "status_kappa", "dany_kappa", "relation_recall", "quote_failure_rate",
     "invalid_handle_rate", "refusal_rate", "refusal_by_group",
@@ -330,7 +331,7 @@ def _unit(row: GoldRow, link: Link | None, kind: str, reasons: Mapping[str, str]
     rel = Relation(link.relation)
     return UnitScore(**common, pred_relation=rel.value, pred_status=RELATION_STATUS[rel].value,  # type: ignore[arg-type]
                      pred_dev=deviates(outcome_class(rel, link.polarity_flip, kind)), pred_wit=frozenset(link.wit_ids),
-                     invalid_handle=FLAG_UNKNOWN_HANDLE in link.flags)
+                     invalid_handle=FLAG_UNKNOWN_HANDLE in link.flags, pred_confidence=link.confidence)
 
 
 def human_kappa(primary: GoldSet, second: GoldSet, ref_kinds: Mapping[str, str]) -> float | None:

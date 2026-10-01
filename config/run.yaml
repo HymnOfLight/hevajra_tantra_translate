@@ -16,6 +16,8 @@ witnesses:                            # pipeline
   reference: bo_derge_D417_418        # provisional reference until a Sanskrit TSV is present
   target: zh_T0892_song
   derge_toh: [D417, D418]
+  sanskrit_reference: sa_snellgrove1959   # optional; when data/reference/<this>.tsv exists it becomes the
+                                          # reference and the Derge a second aligned witness
 
 windows:                              # collate.windows
   max_ref_units: 150

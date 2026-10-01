@@ -148,6 +148,12 @@ the number of replicates. `prereg freeze` writes the digests into
 one, and the ledger records it. Editing a prompt, an example, the codebook, an evidence line, a
 schema or a parameter therefore changes both every cache key and the digest.
 
+The collator has one digest per language pair, because its examples are per pair: `collate` for
+Tibetan -> Chinese (`data/codebook/collate_examples.yaml`) and `collate:<ref>-<wit>` for every
+further pair that has its own `data/codebook/collate_examples.<ref>-<wit>.yaml` (with the
+Sanskrit reference: `collate:sa-bo` and `collate:sa-zh`; `prereg.collate_task`). G2 and the
+reveal import use the digest of the run's pair (`pipeline/instrument.py: collate_digest`).
+
 ## 2. The tasks
 
 Settings below are the committed `config/llm.yaml` values.
@@ -180,12 +186,19 @@ windows for 3,042 reference units in 23 chapters.
 
 - `system`: the template, then the three synthetic examples (a list whose category names become
   ordinals, a reversal, a witness-only addition). Examples never reuse sentinel or test passages
-  (tested).
-- `context`: `WITNESS TEXT (Chinese)` and one `z0001<TAB>kind<TAB>text` line per witness segment
+  (tested). The examples must illustrate the window's language pair (`collator.examples_file`):
+  `collate_examples.yaml` is Tibetan -> Chinese; under the Sanskrit reference the windows are
+  Sanskrit -> Tibetan and Sanskrit -> Chinese and need `collate_examples.sa-bo.yaml` and
+  `collate_examples.sa-zh.yaml`, written by the researcher in the same format (none is committed;
+  `collate` stops with a message naming the missing file; examples are never borrowed from
+  another pair).
+- `context`: `WITNESS TEXT (Chinese)` (or `(Tibetan)` when the Derge is the witness) and one
+  `z0001<TAB>kind<TAB>text` line per witness segment
   of the whole text, translator notes included as `note` lines, front matter and Taisho
   footnotes excluded. Handles are sequential over the whole text, so the context is identical
   in every window.
-- `body`: `REFERENCE CHUNK (Tibetan)`, one `r001<TAB>kind<TAB>text` line per unit, then
+- `body`: `REFERENCE CHUNK (Tibetan)` (`(Sanskrit)` under the Sanskrit reference), one
+  `r001<TAB>kind<TAB>text` line per unit, then
   `CORE WINDOW: z0412-z0530, ...`: the handle ranges of the concordance-mapped witness chapters
   plus `windows.neighbours` = 1 chapter on each side. The core window is a soft expectation; a
   counterpart may be linked anywhere.
@@ -239,7 +252,18 @@ dev-gold chapters with one replicate: *P-wrong-window* moves the core window to 
 distant witness chapter; links into it are false (rate <= 0.10). *P-deletion* removes 5% of the
 core window's content segments (with their notes); units whose whole counterpart was removed
 must come out PARTIAL or ABSENT (recall >= 0.70, expected counterparts from the run's
-consensus). *P-negation* (builder and scorer exist) is not run by the stage and never gated.
+consensus). *P-negation* (`perturb --negation`) takes the dev-gold `equivalent` pairs (no
+polarity flip) whose reference unit and witness segment both hold a removable negator
+(`data/lexicon/negators.yaml`, `perturb.negated_pairs`), removes the negator from the witness
+segment and counts the units then reported as `reversal` or with `polarity_flip` (polarity
+recall, `evaluation/perturbations.json: negation`); reported, never gated. Without dev gold the
+option stops with a message; with no such pair it reports n = 0.
+
+**Confidence.** T1 `confidence` is stored on every link. `evaluate` scores its reliability on
+gold (`evaluation/scores.py: confidence_reliability`): over the units with a confidence, the
+Brier score of the nominal probabilities high 0.9, medium 0.7, low 0.5 for "status correct",
+against the constant predictor at the observed accuracy, plus a reliability table per label.
+Confidence is used only as a stratum unless it beats the constant on dev gold.
 
 **Settings not automated.** The design called for an effort sweep on dev gold (lowest effort
 within 0.02 link F1 of the best). There is no sweep command: edit `tasks.collate.effort`, run

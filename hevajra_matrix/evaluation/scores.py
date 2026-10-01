@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Callable, Mapping, Sequence
+from types import MappingProxyType
+from typing import Any, Callable, Mapping, Sequence
 
 from ..core.types import REASON_REFUSED, REASON_SUBSTITUTED_MODEL, Estimate, Relation, Status
 from .resample import cohen_kappa, f1, percentile_interval, positive_agreement, ratio, resample_windows
@@ -43,6 +44,7 @@ class UnitScore:
     quote_failure: bool = False
     invalid_handle: bool = False
     topic_group: str = ""
+    pred_confidence: str | None = None    # the instrument's own confidence (T1: high, medium, low)
 
     @property
     def status_correct(self) -> bool:
@@ -234,6 +236,38 @@ def interval_estimates(s: AlignmentScores, n_boot: int, seed: int,
         out[name] = Estimate(name=name, point=full.get(name), lo=lo, hi=hi, n=len(s.units),
                              scope=f"gold:{s.gold_set}", sources=(s.source,))
     return out
+
+
+# Nominal probability that a unit is right, for each T1 confidence label (fixed before any
+# gold is seen; the Brier score compares them with the outcome).
+CONFIDENCE_PROBABILITY: Mapping[str, float] = MappingProxyType({"high": 0.9, "medium": 0.7, "low": 0.5})
+
+
+def confidence_reliability(s: AlignmentScores) -> dict[str, Any] | None:
+    """Is the instrument's confidence informative? (synthesis 5.2: confidence is used only as a
+    stratum unless its Brier score beats a constant predictor on dev gold.)
+
+    Over the units the aligner resolved with a confidence label, the outcome is "status
+    correct" (the unit's status equals gold). ``brier`` scores the nominal probabilities of
+    ``CONFIDENCE_PROBABILITY``; ``brier_constant`` the constant predictor that gives every unit
+    the observed accuracy (p (1 - p), the best any constant can do on these units). ``table``
+    is the reliability table: per label, n, correct units and accuracy. None when no unit
+    carries a confidence (every control, gold, the placebo).
+    """
+    rated = [u for u in s.units if u.pred_confidence in CONFIDENCE_PROBABILITY]
+    if not rated:
+        return None
+    hits = [1.0 if u.status_correct else 0.0 for u in rated]
+    accuracy = sum(hits) / len(rated)
+    brier = sum((CONFIDENCE_PROBABILITY[str(u.pred_confidence)] - y) ** 2 for u, y in zip(rated, hits)) / len(rated)
+    constant = sum((accuracy - y) ** 2 for y in hits) / len(rated)
+    table = {}
+    for label, nominal in CONFIDENCE_PROBABILITY.items():
+        mine = [y for u, y in zip(rated, hits) if u.pred_confidence == label]
+        table[label] = {"n": len(mine), "correct": int(sum(mine)), "accuracy": ratio(sum(mine), len(mine)),
+                        "nominal": nominal}
+    return {"outcome": "status_correct", "n": len(rated), "accuracy": accuracy, "brier": brier,
+            "brier_constant": constant, "beats_constant": brier < constant, "table": table}
 
 
 def status_correct(s: AlignmentScores) -> dict[str, bool]:

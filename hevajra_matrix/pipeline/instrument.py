@@ -12,12 +12,22 @@ from typing import Any, Callable, Mapping, Sequence
 
 from ..collate import collator, components
 from ..collate.merge import verify_all
-from ..collate.perturb import Rate, deletion_recall, delete_segments, false_link_rate, wrong_window
+from ..collate.perturb import (
+    NegationTruth,
+    Rate,
+    deletion_recall,
+    delete_segments,
+    false_link_rate,
+    negated_pairs,
+    negation_recall,
+    remove_negators,
+    wrong_window,
+)
 from ..collate.verify import CheckLexicon, Collation, verify
 from ..collate.windows import Window, WindowParams, plan
 from ..core.ids import REF_CHAPTERS
 from ..core.io import write_csv, write_jsonl
-from ..core.types import Alignment
+from ..core.types import Alignment, Relation
 from ..llm.cache import CachedClient
 from ..llm.check import build_check_request, run_check
 from ..llm.client import CacheMiss, LLMError, LLMRequest
@@ -35,7 +45,7 @@ from .context import (
     record_stage,
     require,
 )
-from .human_data import load_topics
+from .human_data import load_gold, load_topics
 from .store import (
     collation_from_dict,
     collation_to_dict,
@@ -75,8 +85,23 @@ def plan_collation(ctx: RunContext, chapters: str | None = None, replicates: int
     k = settings.replicates if replicates is None else replicates
     if k < 1:
         raise StageError("--replicates must be >= 1")
-    return CollationPlan(tuple(windows), settings, collator.replicate_tags(k),
-                         collator.load_examples(ctx.data_dir), collator.load_template())
+    try:
+        examples = collator.load_examples(ctx.data_dir, *text_langs(texts))
+    except FileNotFoundError as exc:
+        raise StageError(str(exc)) from exc
+    return CollationPlan(tuple(windows), settings, collator.replicate_tags(k), examples, collator.load_template())
+
+
+def text_langs(texts: Texts) -> tuple[str, str]:
+    """(reference language, witness language) of a run's text pair."""
+    return texts.reference[0].lang, texts.witness[0].lang
+
+
+def collate_digest(ctx: RunContext, texts: Texts) -> str:
+    """The current collator digest for this run's language pair ("" when the pair has no
+    examples file, so nothing can match a preregistered digest)."""
+    from ..prereg import collate_task, instrument_digests      # local import: prereg imports every task module
+    return instrument_digests(ctx.settings).get(collate_task(*text_langs(texts)), "")
 
 
 def replicate_paths(ctx: RunContext, tag: str) -> tuple[Path, Path]:
@@ -228,11 +253,14 @@ def far_chapter(window: Window, order: Sequence[str]) -> str:
     return max(candidates, key=lambda c: (min(abs(order.index(c) - i) for i in core), -order.index(c)))
 
 
-def perturb(ctx: RunContext, fraction: float = 0.05, seed: int | None = None) -> dict[str, Any]:
-    """P-wrong-window and P-deletion (G2) on the windows of the dev-gold chapters.
+def perturb(ctx: RunContext, fraction: float = 0.05, seed: int | None = None,
+            negation: bool = False) -> dict[str, Any]:
+    """P-wrong-window and P-deletion (G2) on the windows of the dev-gold chapters, and with
+    ``negation`` also P-negation (polarity recall; reported, never gated).
 
     Expected counterparts for P-deletion come from this run's consensus
-    (``alignments/claude.jsonl``). P-negation needs negated gold pairs and is not run here.
+    (``alignments/claude.jsonl``). P-negation removes the negator from the witness side of the
+    dev-gold ``equivalent`` pairs whose two sides are both negated (``negation_windows``).
     """
     texts = load_texts(ctx)
     expected = read_alignment(require(ctx.path("alignments", CONSENSUS_FILE), "build"))
@@ -242,23 +270,54 @@ def perturb(ctx: RunContext, fraction: float = 0.05, seed: int | None = None) ->
     wrong = [wrong_window(w, [far_chapter(w, order)]) for w in base.windows]
     deleted = [delete_segments(w, fraction, seed) for w in base.windows
                if any(s.id in w.core and s.kind in CONTENT_KINDS for s in w.text)]
-    windows = [w for w, _ in wrong] + [w for w, _ in deleted]
+    lexicon = CheckLexicon.load(ctx.data_dir, texts.witness)
+    negated = negation_windows(ctx, texts, base.windows, lexicon) if negation else []
+    windows = [w for w, _ in wrong] + [w for w, _ in deleted] + [w for w, _ in negated]
     if not ctx.offline and not has_api_key():
         raise StageError("perturb needs ANTHROPIC_API_KEY, or --offline with a filled cache")
     parsed = collator.collate(windows, make_client(ctx), base.settings, ("r1",), base.examples, base.template,
                               workers=int(ctx.settings.llm.get("workers", 1)))["r1"]
-    lexicon = CheckLexicon.load(ctx.data_dir, texts.witness)
     results = [verify(p, w, lexicon, collator.source_name(base.settings.model, "perturb"))
                for w, p in zip(windows, parsed)]
-    ww = _sum(false_link_rate(t, r.alignment) for (_, t), r in zip(wrong, results[:len(wrong)]))
-    dl = _sum(deletion_recall(t, expected, r.alignment) for (_, t), r in zip(deleted, results[len(wrong):]))
-    out = {"wrong_window": vars(ww), "deletion": vars(dl), "negation": None, "fraction": fraction, "seed": seed,
-           "windows": [w.key for w in windows]}
+    n_wrong, n_del = len(wrong), len(deleted)
+    ww = _sum(false_link_rate(t, r.alignment) for (_, t), r in zip(wrong, results[:n_wrong]))
+    dl = _sum(deletion_recall(t, expected, r.alignment) for (_, t), r in zip(deleted, results[n_wrong:n_wrong + n_del]))
+    ng = _sum(negation_recall(t, r.alignment) for (_, t), r in zip(negated, results[n_wrong + n_del:])) \
+        if negation else None
+    out = {"wrong_window": vars(ww), "deletion": vars(dl), "negation": vars(ng) if ng else None,
+           "fraction": fraction, "seed": seed, "windows": [w.key for w in windows]}
     path = ctx.path("evaluation", "perturbations.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     record_stage(ctx, "perturb")
-    print(f"perturb: wrong-window false links {ww.hits}/{ww.n}; deletion recall {dl.hits}/{dl.n}")
+    print(f"perturb: wrong-window false links {ww.hits}/{ww.n}; deletion recall {dl.hits}/{dl.n}"
+          + (f"; polarity recall (P-negation, not gated) {ng.hits}/{ng.n}" if ng else ""))
+    return out
+
+
+def negation_windows(ctx: RunContext, texts: Texts, windows: Sequence[Window],
+                     lexicon: CheckLexicon) -> list[tuple[Window, NegationTruth]]:
+    """P-negation windows: in every window, the negator is removed from the witness side of
+    the dev-gold ``equivalent`` pairs (no polarity flip) whose reference and witness segments
+    are both negated. Units repeated at the start of the next chunk are left to that chunk."""
+    gold = load_gold(ctx, texts, "dev")
+    if gold is None:
+        raise StageError("perturb --negation draws its pairs from dev gold, and this witness has none yet "
+                         "(review export --task gold --set dev, then review import)")
+    segments = {s.id: s for s in (*texts.units, *texts.witness)}
+    rows = [r for r in gold.ref_rows() if r.relation == Relation.EQUIVALENT.value and not r.polarity_flip]
+    pairs = negated_pairs([(segments[r.unit_id], segments[w]) for r in rows if r.unit_id in segments
+                           for w in r.wit_ids if w in segments], lexicon.negators)
+    out = []
+    for window in windows:
+        own = {u.id for u in window.units} - set(window.overlap_ids)
+        mine = [p for p in pairs if p[0] in own]
+        if mine:
+            perturbed, truth = remove_negators(window, mine, lexicon.negators, len(mine))
+            if truth.pairs:
+                out.append((perturbed, truth))
+    if not out:
+        print("perturb: dev gold holds no equivalent pair negated on both sides; P-negation has n = 0")
     return out
 
 

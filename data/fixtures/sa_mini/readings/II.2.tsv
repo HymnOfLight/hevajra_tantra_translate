@@ -1,0 +1,6 @@
+# Synthetic per-manuscript readings (offline Sanskrit-mode tests). The edition's "absent" must
+# not make II.2.1 a Vorlage unit: editions are not manuscripts.
+unit_id	ms	status	reading	source	note
+II.2.1	C	present		synthetic	
+II.2.1	Na	present		synthetic	
+II.2.1	sa_tripathi_negi2001	absent		synthetic	edition, never counted

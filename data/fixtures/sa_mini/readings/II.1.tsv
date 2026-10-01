@@ -1,0 +1,8 @@
+# Synthetic per-manuscript readings (offline Sanskrit-mode tests).
+unit_id	ms	status	reading	source	note
+II.1.p01	C	present		synthetic	
+II.1.p01	K	present		synthetic	
+II.1.1	C	present		synthetic	
+II.1.1	K	absent		synthetic	
+II.1.2	C	present		synthetic	
+II.1.2	K	not_collated		synthetic	

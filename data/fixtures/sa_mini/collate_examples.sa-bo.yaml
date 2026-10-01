@@ -1,0 +1,45 @@
+# TEST-ONLY placeholder examples of the T1 collator for the sa -> bo pair, copied into a throw-away
+# repository root by tests/unit/test_pipeline_sanskrit.py. They are not research examples: the
+# researcher writes data/codebook/collate_examples.sa-bo.yaml before the Sanskrit reference is used.
+
+schema_version: 1
+reference_lang: sa
+witness_lang: bo
+
+examples:
+  - title: one equivalent line
+    comment: >-
+      Test placeholder.
+    witness:
+      - {kind: prose, text: "ཚིག་དང་པོ།"}
+    reference:
+      - {kind: prose, text: "prathamaṃ vākyam"}
+    answer:
+      units:
+        - {ref: r001, wit: [z0001], relation: equivalent, polarity_flip: false, confidence: high, ref_quote: "", wit_quote: ""}
+      witness_only: []
+
+  - title: one line without counterpart
+    comment: >-
+      Test placeholder.
+    witness:
+      - {kind: prose, text: "ཚིག་གཉིས་པ།"}
+    reference:
+      - {kind: prose, text: "dvitīyaṃ vākyam"}
+    answer:
+      units:
+        - {ref: r001, wit: [], relation: no_counterpart, polarity_flip: false, confidence: medium, ref_quote: "", wit_quote: ""}
+      witness_only:
+        - {wit: [z0001], kind: addition, wit_quote: ""}
+
+  - title: one paraphrase
+    comment: >-
+      Test placeholder.
+    witness:
+      - {kind: prose, text: "ཚིག་གསུམ་པ།"}
+    reference:
+      - {kind: prose, text: "tṛtīyaṃ vākyam"}
+    answer:
+      units:
+        - {ref: r001, wit: [z0001], relation: paraphrase, polarity_flip: false, confidence: low, ref_quote: "", wit_quote: ""}
+      witness_only: []

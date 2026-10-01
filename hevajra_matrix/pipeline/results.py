@@ -10,18 +10,19 @@ from typing import Any
 from ..collate.consensus import SOURCE_CONSENSUS
 from ..core.io import read_jsonl
 from ..core.textnorm import length
-from ..core.types import Cell, Estimate
+from ..core.types import Cell, Estimate, Grade, Relation, Status
 from ..evaluation.gate import GateReport, GateSpecs
 from ..report import markdown, svg
 from ..review import sampling
 from ..review.verdicts import is_orphan
-from ..stats import decompose, twophase
+from ..stats import decompose, distance, twophase
+from . import e3 as e3_stage
 from . import e4 as e4_stage
 from . import human_data as ann
-from .context import RunContext, Texts, load_texts, record_stage
+from .context import RunContext, Texts, load_texts, record_stage, scope_lines
 from .instrument import read_consensus
 from .measure import control_alignments, read_built_cells, read_gate
-from .store import estimate_from_dict, estimate_to_dict, sentinel_result_from_dict
+from .store import estimate_from_dict, estimate_to_dict, read_cells, sentinel_result_from_dict
 
 OUTCOMES = ("any", "cov", "absent", "partial")
 NO_PHASE2 = "G3: no phase-2 verification or audit verdict yet"
@@ -31,7 +32,10 @@ TRANSLATOR_NOTE_CLASSES = (decompose.VORLAGE_NOTE, decompose.TRANSLATOR_NOTE)
 
 # --------------------------------------------------------------------------- stats
 def stats(ctx: RunContext) -> dict[str, Estimate]:
-    """E1, E2 (two-phase draws, final and blind columns), Manski bounds, E3, E4, E5.
+    """E1, E2 (two-phase draws, final and blind columns), Manski bounds, E3, E4, E5, and the
+    witness distances (UPGMA) once three texts share the reference.
+
+    E3 comes from ``pipeline.e3`` (manuscript readings, co-witness, A2 bound).
 
     ``E1_<primary>_prior`` repeats E1 of the primary outcome with ``twophase.PRIOR_SYMMETRIC_D``
     (the spec's Jeffreys prior leans 3/4 toward deviation in sparse strata). A column whose
@@ -52,7 +56,7 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
                                                                                 texts.ref_kinds))
     params = ctx.settings.prereg.get("stats") or {}
     n_draws, seed = int(params.get("n_draws", 500)), int(params.get("seed", 0))
-    scope = "; ".join(str(s) for s in ctx.settings.prereg.get("scope") or [])
+    scope = "; ".join(scope_lines(ctx))
     primary = str(ctx.settings.prereg.get("primary_outcome", "any"))
     est: dict[str, Estimate] = {}
     extra: dict[str, Any] = {}
@@ -83,7 +87,11 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
             est[name] = Estimate.missing(name, NO_PHASE2, scope)
     if cells:
         extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in ("any", "cov")}
-    est["E3"] = Estimate.missing("E3", decompose.E3_NOT_INGESTED, scope)
+    e3, extra["e3"] = e3_stage.e3_stats(ctx, texts, cells, primary, scope)
+    est.update(e3)
+    tree = witness_tree(ctx, texts, cells)
+    if tree:
+        extra["distance"] = tree
     no_draws = est[f"E1_{primary}"].not_estimable if f"E1_{primary}" in est else None   # why "final" has no draws
     est["E4"], extra["e4"] = _e4(ctx, texts, cells, machine, topics, verdicts, draws.get("final"), primary, seed,
                                  scope, no_draws or NO_PHASE2)
@@ -131,6 +139,27 @@ def _e4(ctx: RunContext, texts: Texts, cells: list[Cell], machine: list[Cell], t
     return estimate, {**extra, **({"power": power} if power else {})}
 
 
+def witness_tree(ctx: RunContext, texts: Texts, cells: list[Cell]) -> dict[str, Any] | None:
+    """Witness distances and the UPGMA tree (descriptive) once three texts share the reference
+    units: the Sanskrit reference itself (every unit retained, all dimensions 0), the Derge and
+    the Chinese. None in Derge mode or before every witness has a matrix."""
+    columns = {texts.witness_id: cells}
+    for other in ctx.witnesses:
+        path = ctx.for_witness(other).path("matrix", "cells.jsonl")
+        if other not in columns:
+            if not path.is_file():
+                return None
+            columns[other] = [c for c in read_cells(path) if not is_orphan(c.unit_id)]
+    columns[texts.reference_id] = [Cell(u.id, texts.reference_id, Status.PRESENT, Grade.A, str(u.chapter),
+                                        Relation.EQUIVALENT.value, d_len=0.0, d_ord=0.0, d_lit=0.0)
+                                   for u in texts.units]
+    if len(columns) < distance.MIN_WITNESSES:
+        return None
+    labels, rows = distance.distance_matrix([c for cs in columns.values() for c in cs], sorted(columns),
+                                            texts.ref_kinds)
+    return {"labels": labels, "matrix": rows, "newick": distance.average_linkage_newick(labels, rows)}
+
+
 def _e5(orphans: list[Cell], texts: Texts, scope: str) -> Estimate:
     """Human-verified witness-only segments (count; ``n`` = their characters)."""
     verified = [c for c in orphans if c.grade.value == "A"]
@@ -167,7 +196,7 @@ def report_inputs(ctx: RunContext) -> markdown.ReportInputs:
     details = _read_json(ctx.path("stats", "details.json"))
     return markdown.ReportInputs(
         run_id=ctx.run_dir.name, reference=texts.reference_id, witness=texts.witness_id,
-        scope=tuple(str(s) for s in ctx.settings.prereg.get("scope") or ()),
+        scope=tuple(scope_lines(ctx)),
         instrument_counts=markdown.alignment_counts(consensus, texts.ref_kinds) if consensus else None,
         control_counts={src: markdown.alignment_counts(a, texts.ref_kinds) for src, a in controls.items()
                         if src != SOURCE_CONSENSUS},
@@ -178,7 +207,11 @@ def report_inputs(ctx: RunContext) -> markdown.ReportInputs:
         estimates=est, manski={k: (v[0], v[1]) for k, v in (details.get("manski") or {}).items()},
         max_manski_width=float(((ctx.settings.prereg.get("gates") or {}).get("g3") or {}).get("max_manski_width", 0.05)),
         notes=tuple(tuple(n) for n in translator_notes(texts)),
-        revision=details.get("revision") or {}, e4_details=details.get("e4") or {})
+        revision=details.get("revision") or {}, e4_details=details.get("e4") or {},
+        reliability={src: s["reliability"] for src, s in (scores_doc.get("sources") or {}).items()
+                     if s.get("reliability")},
+        e3_details=details.get("e3") or {},
+        negation=_read_json(ctx.path("evaluation", "perturbations.json")).get("negation"))
 
 
 def report(ctx: RunContext) -> Path:

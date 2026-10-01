@@ -19,6 +19,10 @@ Per-manuscript readings (``load_readings``), one TSV per reference chapter named
 
     unit_id  ms  status  reading  source  note
 
+Unit ids are reference unit ids: Snellgrove ids, or Derge segment ids (``D417:8a.6.1``) while
+the Derge is the provisional reference; a Derge id is not checked against the file's
+chapter here (the stats stage reports ids that are not reference units).
+
 ``status`` is present | absent | variant | illegible | not_collated. A manuscript that
 was not collated at a unit is ``not_collated``, never ``absent``: absence is a claim about
 the manuscript, not about the state of the collation. Editions are not independent
@@ -33,7 +37,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
 
-from ..core.ids import REF_CHAPTERS, SnellgroveId, parse_snellgrove_id
+from ..core.ids import REF_CHAPTERS, SnellgroveId, parse_segment_id, parse_snellgrove_id
 from ..core.textnorm import fingerprint
 from ..core.types import Segment
 
@@ -125,8 +129,12 @@ def _reading(fields: list[str], chapter: str, where: str) -> Reading:
     if not 3 <= len(fields) <= len(READING_COLUMNS):
         raise ValueError(f"{where}: expected 3 to {len(READING_COLUMNS)} columns, got {len(fields)}")
     values = dict(zip(READING_COLUMNS, [f.strip() for f in fields] + [""] * len(READING_COLUMNS)))
-    unit = _unit(values["unit_id"], where)
-    if unit.chapter_key != chapter:
+    if ":" in values["unit_id"]:          # a Derge segment id while the Derge is the provisional reference
+        try:
+            parse_segment_id(values["unit_id"])
+        except ValueError as exc:
+            raise ValueError(f"{where}: {exc}") from exc
+    elif (unit := _unit(values["unit_id"], where)).chapter_key != chapter:
         raise ValueError(f"{where}: unit {values['unit_id']} belongs to {unit.chapter_key}, not {chapter}")
     if not values["ms"]:
         raise ValueError(f"{where}: empty manuscript id")

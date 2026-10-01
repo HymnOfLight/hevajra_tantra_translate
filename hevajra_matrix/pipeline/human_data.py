@@ -28,20 +28,33 @@ from .context import RunContext, Texts
 GOLD_PRIMARY_SETS = ("dev", "test")          # the second annotator's set only measures human agreement
 
 
+def annotations_dir(ctx: RunContext) -> Path:
+    """``data/annotations/`` under the provisional Derge reference; under the Sanskrit
+    reference ``data/annotations/by_reference/<reference>/`` with the same layout, because
+    gold, verdicts and topic labels are made against the reference units."""
+    base = ctx.data_dir / "annotations"
+    return base if ctx.reference == ctx.derge else base / "by_reference" / ctx.reference
+
+
 def gold_dir(ctx: RunContext, witness: str) -> Path:
-    return ctx.data_dir / "annotations" / "gold" / witness
+    return annotations_dir(ctx) / "gold" / witness
 
 
 def verdict_dir(ctx: RunContext, witness: str) -> Path:
-    return ctx.data_dir / "annotations" / "verdicts" / witness
+    return annotations_dir(ctx) / "verdicts" / witness
 
 
 def topic_labels_path(ctx: RunContext, reference: str) -> Path:
-    return ctx.data_dir / "annotations" / "topics" / f"{reference}.csv"
+    return annotations_dir(ctx) / "topics" / f"{reference}.csv"
 
 
 def ledger_path(ctx: RunContext) -> Path:
-    return ctx.data_dir / "ledger" / "test_evaluations.jsonl"
+    """The evaluation ledger of this run's test set: ``test_evaluations.jsonl`` for the Derge
+    reference and the target; every other (reference, witness) pair has its own test gold
+    and so its own ledger ``test_evaluations.<reference>.<witness>.jsonl``."""
+    if (ctx.reference, ctx.witness) == (ctx.derge, ctx.default_witness):
+        return ctx.data_dir / "ledger" / "test_evaluations.jsonl"
+    return ctx.data_dir / "ledger" / f"test_evaluations.{ctx.reference}.{ctx.witness}.jsonl"
 
 
 def load_gold(ctx: RunContext, texts: Texts, name: str) -> gold_sets.GoldSet | None:

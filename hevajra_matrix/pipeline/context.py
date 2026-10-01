@@ -11,7 +11,7 @@ import json
 import os
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from functools import cached_property
 from pathlib import Path
@@ -32,6 +32,12 @@ RUN_NAME = re.compile(r"^\d{8}T\d{6}Z-[0-9a-z]+(-\d+)?$")
 AUDIT_LOG = "llm_audit.jsonl"
 SPEND_LEDGER = "llm_spend.jsonl"     # beside the shared response cache: the budget is cumulative
 CONCORDANCE_FILE = Path("registry") / "concordance.yaml"
+DEFAULT_SANSKRIT_REFERENCE = "sa_snellgrove1959"
+WITNESS_DIR = "witnesses"            # <run>/witnesses/<witness>/: outputs of every witness but the target
+# Run-directory entries shared by all witnesses: the texts, the manifest and audit log, the
+# reference-only topic hints, the experiment and the connectivity check.
+SHARED_ENTRIES = frozenset({"ingest", "manifest.json", AUDIT_LOG, "topics", "experiments", "claude_check.json",
+                            WITNESS_DIR})
 
 
 class StageError(RuntimeError):
@@ -45,15 +51,31 @@ class StageError(RuntimeError):
 @dataclass(frozen=True)
 class RunContext:
     """What every stage receives: the repository root, the run directory, the settings,
-    and whether LLM calls must be answered from the response cache only."""
+    whether LLM calls must be answered from the response cache only, and the witness a
+    per-witness stage works on (``target``; None: the configured target, T0892).
+
+    Reference modes. The reference is the provisional Derge (``run.yaml: witnesses.reference``)
+    and the only witness is the target, unless ``ingest`` found the Sanskrit reference
+    ``data/reference/<witnesses.sanskrit_reference>.tsv`` and wrote its segments: then the
+    Sanskrit units are the reference and the Derge becomes a second witness (``witnesses``).
+    The mode is read from the run directory, so every stage of a run agrees with its ingest.
+
+    Outputs of the target keep the plain run-directory layout; those of any other witness go
+    to ``<run>/witnesses/<witness>/`` with the same layout (``path``), except the entries in
+    ``SHARED_ENTRIES``.
+    """
 
     root: Path
     run_dir: Path
     settings: Settings
     offline: bool = False
+    target: str | None = None
 
     def path(self, *parts: str) -> Path:
-        """A path inside the run directory."""
+        """A path inside the run directory (inside the witness's own directory for a
+        witness other than the configured target)."""
+        if self.witness != self.default_witness and parts and parts[0] not in SHARED_ENTRIES:
+            return self.run_dir.joinpath(WITNESS_DIR, self.witness, *parts)
         return self.run_dir.joinpath(*parts)
 
     @property
@@ -61,12 +83,45 @@ class RunContext:
         return self.settings.path("data")
 
     @property
-    def reference(self) -> str:
+    def derge(self) -> str:
+        """The provisional reference of ``run.yaml`` (the Derge); a witness in Sanskrit mode."""
         return str(self.settings.run["witnesses"]["reference"])
 
     @property
-    def witness(self) -> str:
+    def sanskrit_reference(self) -> str:
+        return str(self.settings.run["witnesses"].get("sanskrit_reference") or DEFAULT_SANSKRIT_REFERENCE)
+
+    @property
+    def sanskrit_mode(self) -> bool:
+        """True when this run's ingest wrote the Sanskrit reference."""
+        return self.run_dir.joinpath("ingest", f"segments_{self.sanskrit_reference}.jsonl").is_file()
+
+    @property
+    def reference(self) -> str:
+        return self.sanskrit_reference if self.sanskrit_mode else self.derge
+
+    @property
+    def default_witness(self) -> str:
         return str(self.settings.run["witnesses"]["target"])
+
+    @property
+    def witness(self) -> str:
+        return self.target or self.default_witness
+
+    @property
+    def witnesses(self) -> tuple[str, ...]:
+        """The aligned witnesses of this run: the target, and the Derge in Sanskrit mode."""
+        return (self.default_witness, self.derge) if self.sanskrit_mode else (self.default_witness,)
+
+    def for_witness(self, witness: str) -> "RunContext":
+        if witness not in self.witnesses:
+            raise StageError(f"witness {witness!r} is not aligned in this run; aligned: {', '.join(self.witnesses)}")
+        return replace(self, target=witness)
+
+    def each_witness(self) -> list["RunContext"]:
+        """One context per aligned witness (for the stage loops); just this one when a
+        witness was chosen (``--witness``)."""
+        return [self] if self.target else [self.for_witness(w) for w in self.witnesses]
 
 
 # --------------------------------------------------------------------------- run directories
@@ -248,6 +303,25 @@ def load_texts(ctx: RunContext) -> Texts:
     if not reference or not witness:
         raise StageError("an ingested text is empty; rerun ingest")
     return Texts(reference, witness, load_concordance(ctx.data_dir / CONCORDANCE_FILE))
+
+
+def all_segments(ctx: RunContext) -> list[Segment]:
+    """Every ingested segment of every text of the run (reference and all witnesses)."""
+    return [s for path in sorted(ctx.path("ingest").glob("segments_*.jsonl")) for s in read_segments(path)]
+
+
+def scope_lines(ctx: RunContext) -> list[str]:
+    """The preregistered scope lines, adapted to the reference of this run: in Sanskrit mode
+    the line about the reference (``relative to ...``) and the one about the units
+    (``units = ...``) name the Sanskrit reference instead of the provisional Derge."""
+    lines = [str(x) for x in ctx.settings.prereg.get("scope") or ()]
+    if not ctx.sanskrit_mode:
+        return lines
+    ref = ctx.sanskrit_reference
+    swap = {"relative to ": f"relative to the Sanskrit reference {ref} (a printed edition, not a manuscript); "
+                            f"the Derge {ctx.derge} is a witness like the Chinese",
+            "units = ": f"units = the units of {ref} (Snellgrove numbering)"}
+    return [next((new for head, new in swap.items() if line.startswith(head)), line) for line in lines]
 
 
 def require(path: Path, producer: str) -> Path:

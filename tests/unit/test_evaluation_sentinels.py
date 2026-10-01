@@ -218,3 +218,20 @@ def test_load_rejects_malformed_files(tmp_path: Path):
                     "stage: ingest, check: adjacent, loci: {}, quotes: {}, expect: {}}\n", encoding="utf-8")
     with pytest.raises(S.SentinelError, match="names who verified"):
         S.load(path)
+
+
+def test_alignment_sentinels_apply_only_to_their_text_pair():
+    """A fact stated for Derge -> Chinese is not checked against Sanskrit -> Chinese or
+    Sanskrit -> Derge; segment-only checks always apply."""
+    rel = sentinel("relation_in", {"ref_from": "D417:1a.1", "ref_to": "D417:1a.1", "wit_from": "T0892:0001a01",
+                                   "wit_to": "T0892:0001a01"}, {"relations": ["equivalent"]}, stage="proposal")
+    only = sentinel("witness_only", {"wit_from": "T0892:0001a04", "wit_to": "T0892:0001a04"},
+                    {"kinds": ["addition"]}, stage="proposal")
+    note = sentinel("note_kind", {"note": "T0892:0001a01"}, {"note_class": "vorlage_statement"})
+    every = [rel, only, note]
+    derge, chinese = S.text_prefixes(REF), S.text_prefixes(WIT)
+    sanskrit = S.text_prefixes([Segment("I.1.1", "sa", "sa", "x", "I.1.1", "I.1.1", "verse")])
+    assert (derge, chinese, sanskrit) == ({"D417"}, {"T0892"}, frozenset())
+    assert S.applicable(every, derge, chinese) == every
+    assert S.applicable(every, sanskrit, chinese) == [only, note]
+    assert S.applicable(every, sanskrit, derge) == [note]

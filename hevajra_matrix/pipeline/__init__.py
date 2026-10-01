@@ -31,10 +31,15 @@ Run directory ``runs/<UTC timestamp>-<git short hash>/``::
     experiments/overattribution/  trials.jsonl, responses.jsonl, results.json, coding sheet (main phase;
                                 the pilot's own files under pilot/)
     summary.md, status_strip.svg, chapter_heatmap.svg
+    witnesses/<witness>/        in Sanskrit mode (``RunContext.sanskrit_mode``): the same per-witness
+                                layout (alignments/ ... summary.md) for the Derge, aligned to the
+                                Sanskrit reference like T0892; ingest/, the manifest, the audit log,
+                                topics/ and experiments/ stay shared at the top
 
 Modules: ``context`` (RunContext, run directories, ``make_client``, text loading), ``store``
 (JSON forms), ``texts`` (fetch, ingest, baselines), ``instrument`` (collate, perturb,
-components, claude-check), ``measure`` (build, evaluate), ``results`` (stats, report), ``e4``
+components, claude-check), ``measure`` (build, evaluate), ``results`` (stats, report), ``e3``
+(E3: manuscript readings, co-witness, A2 bound), ``e4``
 (the E4 diagnostics and the MDE on real labels),
 ``review`` (topics, sample, review sheets), ``human_data`` (committed annotations), ``experiment``.
 """
@@ -42,6 +47,7 @@ components, claude-check), ``measure`` (build, evaluate), ``results`` (stats, re
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterator
 
 from .context import RunContext, StageError, has_api_key, latest_run_dir, make_client, new_run_dir
 from .experiment import experiment_plan, experiment_run, experiment_score
@@ -55,13 +61,26 @@ __all__ = [
     "RunContext", "StageError", "baselines", "baselines_import", "build", "claude_check", "collate",
     "components_stage", "evaluate", "experiment_plan", "experiment_run", "experiment_score", "fetch", "ingest",
     "latest_run_dir", "make_client", "new_run_dir", "perturb", "plan_collation", "report", "review_export",
-    "review_import", "review_status", "run", "sample", "stats", "topics_prelabel",
+    "review_import", "review_status", "run", "sample", "stats", "topics_prelabel", "witness_contexts",
 ]
+
+
+def witness_contexts(ctx: RunContext) -> Iterator[RunContext]:
+    """``ctx.each_witness()``, announcing the witness when the run aligns several."""
+    contexts = ctx.each_witness()
+    for one in contexts:
+        if len(contexts) > 1:
+            print(f"--- witness {one.witness} (reference {one.reference})")
+        yield one
 
 
 def run(ctx: RunContext, raw_dir: Path | None = None, gold_set: str = "test") -> int:
     """ingest -> baselines -> collate -> build -> evaluate -> stats -> report, as far as the
-    data and credentials allow; returns the report level.
+    data and credentials allow; returns the report level of the target witness.
+
+    Every stage after ingest runs for each aligned witness in turn (the Derge too when the
+    Sanskrit reference is present), stage by stage, so that ``stats`` of one witness finds
+    the matrix of the other (its co-witness in E3).
 
     Collate is skipped (with a message) when there is no API key and the run is not
     offline; build and stats need a collation and are skipped without one. Evaluate and
@@ -70,22 +89,30 @@ def run(ctx: RunContext, raw_dir: Path | None = None, gold_set: str = "test") ->
     with test gold present, ``run`` then evaluates dev gold (non-gating) and goes on.
     """
     ingest(ctx, raw_dir)
-    baselines(ctx)
+    for one in witness_contexts(ctx):
+        baselines(one)
     if ctx.offline or has_api_key():
-        collate(ctx)
+        for one in witness_contexts(ctx):
+            collate(one)
     else:
         print("collate: skipped (no ANTHROPIC_API_KEY and not --offline); the report shows the controls only")
-    if ctx.path("collation", "replicates.json").is_file():
-        build(ctx)
-    if (gold_set == "test" and ctx.path("alignments", CONSENSUS_FILE).is_file()
-            and test_scoring_refused(ctx)):
-        print("evaluate: the preregistration is not frozen, so the Claude consensus is not scored on test gold; "
-              "scoring dev gold instead (run `hevajra-matrix prereg freeze`, then evaluate test gold)")
-        gold_set = "dev"
-    gate = evaluate(ctx, gold_set=gold_set)
-    if ctx.path("matrix", "cells.jsonl").is_file():
-        stats(ctx)
-    else:
-        print("stats: skipped (no matrix: collate and build have not run)")
-    report(ctx)
-    return gate.level
+    for one in witness_contexts(ctx):
+        if one.path("collation", "replicates.json").is_file():
+            build(one)
+    levels = {}
+    for one in witness_contexts(ctx):
+        chosen = gold_set
+        if (chosen == "test" and one.path("alignments", CONSENSUS_FILE).is_file()
+                and test_scoring_refused(one)):
+            print("evaluate: the preregistration is not frozen, so the Claude consensus is not scored on test "
+                  "gold; scoring dev gold instead (run `hevajra-matrix prereg freeze`, then evaluate test gold)")
+            chosen = "dev"
+        levels[one.witness] = evaluate(one, gold_set=chosen).level
+    for one in witness_contexts(ctx):
+        if one.path("matrix", "cells.jsonl").is_file():
+            stats(one)
+        else:
+            print("stats: skipped (no matrix: collate and build have not run)")
+    for one in witness_contexts(ctx):
+        report(one)
+    return levels[ctx.witness]

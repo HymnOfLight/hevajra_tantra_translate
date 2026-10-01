@@ -5,10 +5,13 @@
                          P2, whose counts equal Claude's by construction), sentinel
                          results, scope lines. No rate, interval or contrast is printed,
                          and numbers inside gate reasons are withheld.
-    level 1 VALIDATED    G0-G2 passed: adds alignment scores with intervals and the list
-                         of witness-only material (E5 list)
+    level 1 VALIDATED    G0-G2 passed: adds alignment scores with intervals, the confidence
+                         reliability (Brier score vs a constant predictor) and P-negation
+                         polarity recall (``report.sections``), and the list of witness-only
+                         material (E5 list)
     level 2 CALIBRATED   G3 passed too: adds the estimates with their intervals and the
-                         Manski bounds; E3/E4 only where gate G4 passes
+                         Manski bounds; E3 (counts, A2 bound, O/E/O-E, phi) and E4 only where
+                         gate G4 passes
 
 At every level: human-verified (grade A) counts, printed as instrument-independent lower
 bounds; the confirmatory/exploratory line; and for every estimand that cannot be printed
@@ -27,6 +30,7 @@ from ..core.types import Alignment, Cell, Estimate, Grade, OutcomeClass, Relatio
 from ..evaluation.gate import GateReport
 from ..evaluation.sentinels import SentinelResult
 from ..matrix.status import cell_outcome, outcome_class
+from . import sections
 
 LEVEL_NAMES = {0: "DESCRIPTIVE", 1: "VALIDATED", 2: "CALIBRATED"}
 UNVALIDATED = "unvalidated instrument output"
@@ -101,6 +105,9 @@ class ReportInputs:
     notes: tuple[tuple[str, str, str], ...] = ()
     revision: Mapping[str, Mapping[str, int]] = field(default_factory=dict)   # stratum -> n, outcome_changed
     e4_details: Mapping[str, Any] = field(default_factory=dict)              # stats/details.json "e4"
+    reliability: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # source -> scores.json reliability
+    e3_details: Mapping[str, Any] = field(default_factory=dict)              # stats/details.json "e3"
+    negation: Mapping[str, int] | None = None                                # perturbations.json "negation"
 
 
 # --------------------------------------------------------------------------- counting (pure)
@@ -147,7 +154,8 @@ def render(inputs: ReportInputs, gate: GateReport) -> str:
     out += _human_verified(inputs)
     out += _sentinels(inputs.sentinels, level)
     if level >= 1:
-        out += _scores(inputs) + _witness_only(inputs)
+        out += _scores(inputs) + sections.reliability(
+            {_label(src): r for src, r in inputs.reliability.items()}, inputs.negation) + _witness_only(inputs)
     out += _estimates(inputs, gate)
     out += _notes(inputs)
     return "\n".join(out).rstrip() + "\n"
@@ -312,6 +320,8 @@ def _estimates(inputs: ReportInputs, gate: GateReport) -> list[str]:
         reason = not_estimable_reason(name, estimate, gate)
         if reason or estimate is None:
             out.append(f"- {label}: NOT_ESTIMABLE: {redact(reason or '', gate.level)}")
+        elif name == "E3":
+            out += sections.e3(inputs.e3_details)
         elif name == "E5":
             out.append(f"- {label}: {int(estimate.point or 0)} segments, {estimate.n} characters "
                        "(a census of human-verified claims; no interval)")
@@ -376,6 +386,7 @@ def _notes(inputs: ReportInputs) -> list[str]:
     if not inputs.notes:
         return []
     out = ["## Translator notes bearing on the decomposition (descriptive)", "",
-           "Under the Derge reference no deviating unit carries such a note (critique A3); they are listed, "
-           "not counted.", "", "| note | class | host segment |", "|---|---|---|"]
+           "Substitution notes are translator-side evidence and never reduce the residual (critique A3); the "
+           "notes are listed here, and only a Vorlage statement on a deviating unit's host is counted in E3.", "",
+           "| note | class | host segment |", "|---|---|---|"]
     return out + [f"| {n} | {cls} | {host} |" for n, cls, host in inputs.notes] + [""]

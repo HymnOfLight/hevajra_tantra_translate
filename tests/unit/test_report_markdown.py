@@ -197,3 +197,48 @@ def test_e5_is_a_census_count_without_interval() -> None:
     e5 = Estimate("E5", 3.0, 3.0, 3.0, 57, "scope", ("human-verified census of witness-only claims",))
     text = render(inputs(estimates={"E5": e5}), gate(2))
     assert "- E5 witness-only material (human-verified segments): 3 segments, 57 characters" in text
+
+
+RELIABILITY = {"outcome": "status_correct", "n": 40, "accuracy": 0.8, "brier": 0.12, "brier_constant": 0.16,
+               "beats_constant": True,
+               "table": {"high": {"n": 30, "correct": 27, "accuracy": 0.9, "nominal": 0.9},
+                         "medium": {"n": 8, "correct": 5, "accuracy": 0.625, "nominal": 0.7},
+                         "low": {"n": 2, "correct": 0, "accuracy": 0.0, "nominal": 0.5}}}
+
+
+def test_confidence_reliability_and_polarity_recall_from_level_1() -> None:
+    kw = dict(reliability={"claude:consensus": RELIABILITY}, negation={"hits": 3, "n": 4})
+    text = render(inputs(**kw), gate(1))
+    assert "### Confidence reliability, Claude consensus" in text
+    assert "Brier score 0.120 (nominal high/medium/low probabilities) vs 0.160 for a constant predictor: " \
+           "confidence beats the constant, so it is informative." in text
+    assert "| medium | 0.700 | 8 | 5 | 0.625 |" in text
+    assert "P-negation (reported, never gated): polarity recall 3/4 perturbed units." in text
+    worse = {**RELIABILITY, "brier": 0.2, "beats_constant": False}
+    assert "so it is used only as a stratum" in render(inputs(reliability={"claude:consensus": worse}), gate(1))
+    assert "Confidence reliability" not in render(inputs(**kw), gate(0))
+
+
+E3_DETAILS = {"n_deviating": 5, "units": 10, "manuscripts": ["C", "K"], "cowitness": "bo_derge_D417_418", "m_min": 2,
+              "counts": {"attested_vorlage": 0, "vorlage_ms": 1, "shared_revised": 1, "residual": 2,
+                         "insufficient": 1},
+              "verified_deviating": 0,
+              "bound": {"unverified_shared": 1, "counts": {"attested_vorlage": 0, "vorlage_ms": 1, "shared_revised": 0,
+                                                           "residual": 3, "insufficient": 1},
+                        "shared": {"observed": 0, "expected": 0.0, "excess": 0.0, "phi": 0.0, "n": 5}},
+              "vorlage": {"observed": 1, "expected": 1.25, "excess": -0.25, "phi": -0.125, "n": 7},
+              "shared": {"observed": 1, "expected": 0.333, "excess": 0.667, "phi": 0.333, "n": 5}}
+
+
+def test_e3_prints_counts_bound_and_excess_at_level_2_when_g4_passes() -> None:
+    e3 = Estimate("E3", 5.0, None, None, 10, "scope", ("decomposition",))
+    kw = dict(estimates={"E3": e3}, e3_details=E3_DETAILS)
+    text = render(inputs(**kw), gate(2, not_estimable={}))
+    assert "- E3 decomposition of deviations (Vorlage, shared, residual): 5 deviating units of 10; manuscripts C, K; " \
+           "co-witness bo_derge_D417_418; m_min 2" in text
+    assert "  - as measured: attested_vorlage 0, vorlage_ms 1, shared_revised 1, residual 2, insufficient 1" in text
+    assert "  - A2 bound (0 deviating units human-verified; 1 unverified shared counted as not shared): " \
+           "attested_vorlage 0, vorlage_ms 1, shared_revised 0, residual 3, insufficient 1" in text
+    assert "  - shared (the co-witness deviates too): O 1, E 0.333, O - E 0.667, phi 0.333 (n = 5)" in text
+    blocked = render(inputs(**kw), gate(1, not_estimable={}))
+    assert "E3 decomposition of deviations (Vorlage, shared, residual): NOT_ESTIMABLE: G3:" in blocked

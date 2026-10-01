@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import threading
 from dataclasses import replace
+import shutil
 from pathlib import Path
 
 import pytest
@@ -382,3 +383,22 @@ def test_load_examples_rejects_malformed_files(tmp_path: Path, mutate, message: 
 
 def test_reference_fixture_is_tibetan() -> None:
     assert {s.lang for s in reference()} == {"bo"}
+
+
+def test_each_language_pair_has_its_own_examples_file(tmp_path: Path) -> None:
+    from hevajra_matrix.collate.collator import example_pairs, examples_file
+
+    (tmp_path / "codebook").mkdir()
+    shutil.copy(DATA / "codebook" / "collate_examples.yaml", tmp_path / "codebook")
+    assert examples_file("bo", "zh") == Path("codebook") / "collate_examples.yaml"
+    assert examples_file("sa", "zh") == Path("codebook") / "collate_examples.sa-zh.yaml"
+    assert example_pairs(tmp_path) == [("bo", "zh")]
+    with pytest.raises(FileNotFoundError, match=r"three synthetic sa->zh examples"):
+        load_examples(tmp_path, "sa", "zh")
+    fixture = DATA / "fixtures" / "sa_mini" / "collate_examples.sa-zh.yaml"
+    shutil.copy(fixture, tmp_path / "codebook")
+    assert example_pairs(tmp_path) == [("bo", "zh"), ("sa", "zh")]
+    assert (load_examples(tmp_path, "sa", "zh").reference_lang, load_examples(tmp_path).reference_lang) == ("sa", "bo")
+    shutil.copy(fixture, tmp_path / "codebook" / "collate_examples.sa-bo.yaml")
+    with pytest.raises(ValueError, match="illustrates sa->zh, expected sa->bo"):
+        load_examples(tmp_path, "sa", "bo")

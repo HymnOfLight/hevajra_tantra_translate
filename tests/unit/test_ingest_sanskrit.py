@@ -100,3 +100,16 @@ def test_malformed_readings_are_rejected(tmp_path, name, body, header, message):
 def test_missing_readings_directory_is_an_error(tmp_path):
     with pytest.raises(FileNotFoundError):
         sanskrit.load_readings(tmp_path / "absent")
+
+
+def test_readings_may_be_keyed_by_derge_segment_ids(tmp_path):
+    """While the Derge is the provisional reference, readings use its segment ids; the file's
+    chapter is not checked against them (the stats stage reports ids that are not units)."""
+    directory = write_readings(tmp_path / "readings", "I.1.tsv",
+                               "D417:1b.2.1\tC\tpresent\t\t\t\nD417:1b.2.2\tK\tabsent\t\t\t\n")
+    table = sanskrit.load_readings(directory)
+    assert [r.status for r in table.for_unit("D417:1b.2.2")] == ["absent"]
+    assert table.manuscripts() == {"C", "K"}
+    bad = write_readings(tmp_path / "bad", "I.1.tsv", "D417:1b\tC\tpresent\t\t\t\n")
+    with pytest.raises(ValueError, match="bad segment id"):
+        sanskrit.load_readings(bad)

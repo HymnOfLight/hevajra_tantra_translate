@@ -118,6 +118,17 @@ hevajra-matrix review import --task topics --file <表> --annotator 姓名
 
 ---
 
+## 5a 梵文参照模式下的复核
+
+接入梵文参照后（见 `02-plan.md` §3），参照单元换成梵文单元（Snellgrove 编号），德格本与汉文是两个并列的见证，各有自己的金标准、核验计划与裁决：
+
+- 表格与人工数据按参照分开存放：`data/annotations/by_reference/<参照>/gold|verdicts|topics/...`（布局与 `data/annotations/` 相同）。以德格本为参照时做的金标准与裁决不会套用到梵文单元上。
+- 复核命令默认针对汉文；做德格本一列时加 `--witness bo_derge_D417_418`，例如 `hevajra-matrix review export --task gold --set dev --witness bo_derge_D417_418`。所需语言变为梵＋藏或梵＋汉（`--competence sa,bo` / `sa,zh`）。
+- 写本异读（`data/reference/readings/<品>.tsv`）只登记写本（`data/registry/sa_manuscripts.yaml` 里的 id）；校勘本的读法即使录入也不计入分解。某写本在某单元未校时填 `not_collated`，不要填 `absent`。
+- 分解的 A2 规则：一个"共享"偏移只有在汉文列与德格本列都经人工确认（A 级）后才在下界中算作共享；因此对进入分解的偏移单元，最好两列都核验。
+
+---
+
 ## 6 预计工时（约 90 小时，可分人分语言进行）
 
 | 顺序 | 工作 | 工时 | 所需语言 |

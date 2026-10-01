@@ -29,7 +29,7 @@ from ..topics import (
 )
 from . import human_data as ann
 from .context import RunContext, StageError, Texts, has_api_key, load_texts, make_client, record_stage, require
-from .instrument import read_consensus, read_replicates
+from .instrument import collate_digest, read_consensus, read_replicates
 from .measure import read_built_cells
 
 PRELABELS = ("topics", "prelabels.jsonl")
@@ -259,10 +259,9 @@ def review_import(ctx: RunContext, task: str, path: Path, annotator: str, date: 
     batch = sheets.batch_of(path, ".reveal.csv" if task == "reveal" else ".blind.csv")
     target = ann.verdict_dir(ctx, texts.witness_id) / f"{batch}.csv"
     if task == "reveal":
-        from ..prereg import instrument_digests   # local import: prereg imports every task module
         blind = verdict_files.read_file(require(target, "review import"))
         new = sheets.import_(path, "reveal", params=params, date=date, blind=blind,
-                             instrument_digest=instrument_digests(ctx.settings)["collate"], **langs)
+                             instrument_digest=collate_digest(ctx, texts), **langs)
         verdict_files.save(new, target)
     else:
         plan_file = ann.find_plan(ctx, texts.witness_id, batch.removesuffix(RESOLVE_SUFFIX) if task == "resolve"

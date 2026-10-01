@@ -49,6 +49,28 @@ def make_root(tmp_path: Path, gold: dict[str, Any] | None = None) -> Path:
     return root
 
 
+SANSKRIT = FIXTURES / "sa_mini"
+
+
+def make_sanskrit_root(tmp_path: Path, readings: bool = True) -> Path:
+    """``make_root`` plus the synthetic Sanskrit reference (and its manuscript readings) in
+    ``data/reference/`` and the test-only sa->bo / sa->zh collator examples."""
+    root = make_root(tmp_path)
+    reference = root / "data" / "reference"
+    reference.mkdir(parents=True, exist_ok=True)
+    shutil.copy(SANSKRIT / "sa_snellgrove1959.tsv", reference)
+    if readings:
+        shutil.copytree(SANSKRIT / "readings", reference / "readings")
+    for pair in ("sa-bo", "sa-zh"):
+        shutil.copy(SANSKRIT / f"collate_examples.{pair}.yaml", root / "data" / "codebook")
+    return root
+
+
+def fill_all(ctx: RunContext) -> int:
+    """``fill_cache`` for every aligned witness of the run."""
+    return sum(fill_cache(one) for one in ctx.each_witness())
+
+
 def context(root: Path, run_dir: Path, offline: bool = False) -> RunContext:
     settings = load_settings(root)
     return RunContext(settings.root, run_dir, settings, offline)

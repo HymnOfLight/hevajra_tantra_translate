@@ -281,6 +281,25 @@ def check(sentinels: Sequence[Sentinel], stage: str, segments: Iterable[Segment]
     return out
 
 
+def text_prefixes(segments: Iterable[Segment]) -> frozenset[str]:
+    """The locus prefixes of a text ("D417", "D418", "T0892"); Sanskrit unit ids have none."""
+    return frozenset(s.id.partition(":")[0] for s in segments if ":" in s.id)
+
+
+def applicable(sentinels: Sequence[Sentinel], reference: frozenset[str], witness: frozenset[str]) -> list[Sentinel]:
+    """The sentinels that apply to one (reference, witness) pair, given the locus prefixes of
+    each side (``text_prefixes``). A check on the alignment or the matrix applies only when its
+    ``ref_*`` loci lie in the reference and its ``wit_*`` loci in the witness: a fact stated
+    for Derge -> Chinese says nothing about Sanskrit -> Chinese. Segment-only checks (stage
+    ingest kinds) always apply and read every ingested text."""
+    def fits(s: Sentinel) -> bool:
+        if s.check not in _NEEDS_VIEW:
+            return True
+        return all(locus.partition(":")[0] in (reference if key.startswith("ref_") else witness)
+                   for key, locus in s.loci.items())
+    return [s for s in sentinels if fits(s)]
+
+
 def blocking_failures(results: Iterable[SentinelResult]) -> list[SentinelResult]:
     """Verified sentinels that did not pass (what a gate reads)."""
     return [r for r in results if r.blocking and not r.passed]

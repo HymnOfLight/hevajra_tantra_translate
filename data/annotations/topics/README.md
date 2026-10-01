@@ -6,6 +6,10 @@ label of every reference unit. The labels are the exposure of the sensitive-vs-n
 contrast (E4) and define the arms of the over-attribution experiment. The file is read
 by `hevajra_matrix.topics.load_labels` and written by `write_labels`.
 
+Under the Sanskrit reference (`data/reference/README.md`) the reference units are Sanskrit
+units, so these files live under `data/annotations/by_reference/<reference>/topics/` with the
+same layout (`<reference>.csv`, e.g. `sa_snellgrove1959.csv`); files made against the Derge units are never applied to them.
+
 ## Columns
 
 Exactly these nine columns, in any order (`write_labels` writes this one), UTF-8 (a
