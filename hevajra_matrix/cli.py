@@ -1,299 +1,243 @@
-"""Command line entry point.
+"""Command line: ``hevajra-matrix <command> [options]`` (also ``python -m hevajra_matrix``).
 
-    python -m hevajra_matrix fetch  --raw data/raw
-    python -m hevajra_matrix run    --raw data/raw --out out [--similarity hybrid --embedding-model BAAI/bge-m3]
-    python -m hevajra_matrix transfer --config data/transfer/laozi --texts data/transfer/laozi/texts --out out/laozi
-    python -m hevajra_matrix llm-judge|llm-extract|llm-attribute|llm-probe|llm-counterfactual --llm qwen3-32b-awq ...
+Every command takes ``--root`` (default: the directory above the current one that holds
+``config/run.yaml``), ``--run-dir`` (default: a new run directory for ``ingest``, ``run``
+and ``claude-check``, otherwise the latest one under ``runs/``) and ``--offline`` (answer
+LLM calls from the response cache only). Exit status: 0 success, 1 a check failed,
+2 a stage could not run (the message says why and what to run first).
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
-import hashlib
-import json
 import sys
-import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Sequence
 
-from .align import AlignParams
-from .registry import DATA_DIR
+from . import pipeline
+from .align.external import ExternalAlignmentError
+from .config import ConfigError, Settings, find_root, load_settings
+from .core.lexicon import LexiconError
+from .evaluation.gold import GoldError
+from .evaluation.sentinels import SentinelError
+from .experiments.overattribution.analysis import AnalysisError
+from .experiments.overattribution.design import DesignError
+from .llm.client import LLMError
+from .pipeline import RunContext, StageError
+from .prereg import PreregError, freeze
+from .registry import RegistryError
+from .review.verdicts import VerdictError
+from .topics import TopicError
 
-SOURCES = {
-    "T18n0892.xml": {
-        "url": "https://raw.githubusercontent.com/cbeta-org/xml-p5/master/T/T18/T18n0892.xml",
-        "license": "CC BY-NC-SA 4.0 (CBETA)",
-        "witness": "zh_T0892_song",
-    },
-    "derge_rgyud_bum_nga.txt": {
-        "url": "https://raw.githubusercontent.com/Esukhia/derge-kangyur/master/text/080_%E0%BD%A2%E0%BE%92%E0%BE%B1%E0%BD%B4%E0%BD%91%E0%BC%8B%E0%BD%A0%E0%BD%96%E0%BD%B4%E0%BD%98%E0%BC%8D_%E0%BD%84.txt",
-        "license": "see Esukhia/derge-kangyur README (to verify)",
-        "witness": "bo_derge_D417_418",
-    },
-}
+NEW_RUN_COMMANDS = frozenset({"ingest", "run", "claude-check"})
+# Errors whose message is meant for the researcher (a file, a line and what is wrong):
+# printed without a traceback. Anything else is a bug and keeps its traceback.
+USER_ERRORS = (StageError, PreregError, ConfigError, LLMError, GoldError, VerdictError, TopicError, DesignError,
+               AnalysisError, SentinelError, RegistryError, LexiconError, ExternalAlignmentError)
 
 
-def cmd_fetch(args: argparse.Namespace) -> int:
-    raw = Path(args.raw)
-    raw.mkdir(parents=True, exist_ok=True)
-    manifest_path = raw / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    for name, meta in SOURCES.items():
-        dest = raw / name
-        if dest.exists() and not args.force:
-            print(f"exists  {dest}")
+def _common() -> argparse.ArgumentParser:
+    """Options accepted before or after the command name."""
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--root", type=Path, default=argparse.SUPPRESS,
+                   help="repository root (default: found from the current directory)")
+    p.add_argument("--run-dir", type=Path, default=argparse.SUPPRESS,
+                   help="run directory to use (default: new for ingest/run, else the latest)")
+    p.add_argument("--offline", action="store_true", default=argparse.SUPPRESS,
+                   help="answer LLM calls from the response cache only; never call the API")
+    return p
+
+
+def build_parser() -> argparse.ArgumentParser:
+    common = _common()
+    parser = argparse.ArgumentParser(prog="hevajra-matrix", parents=[common],
+                                     description="Validated, evidence-graded collation of the Hevajratantra "
+                                                 "witnesses (Claude proposes, code verifies, humans decide).")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
+
+    def add(name: str, help_: str, parent: argparse._SubParsersAction = sub) -> argparse.ArgumentParser:
+        return parent.add_parser(name, help=help_, description=help_, parents=[common])
+
+    p = add("fetch", "Download the source texts into data/raw and record their sha256.")
+    p.add_argument("--raw-dir", type=Path, help="target directory (default: run.yaml paths.raw)")
+    p.add_argument("--force", action="store_true", help="download again even if the files exist")
+
+    p = add("ingest", "Parse the raw texts into segments; check G0 and the ingest-stage sentinels.")
+    p.add_argument("--raw-dir", type=Path, help="directory with the raw files (default: run.yaml paths.raw)")
+
+    p = add("baselines", "Compute the P1 (length-only) and B0 (anchor) DP baselines; or import one.")
+    bsub = p.add_subparsers(dest="action", metavar="<action>")
+    q = add("import", "Import an external alignment TSV (e.g. MITRA-E) as a control.", bsub)
+    q.add_argument("--tsv", type=Path, required=True, help="alignment TSV with our segment ids")
+    q.add_argument("--name", required=True, help="control name, e.g. mitra-e")
+
+    p = add("collate", "Run the Claude collator (T1) with replicates and verify every proposal.")
+    p.add_argument("--chapters", help="comma-separated reference chapters, e.g. I.1,II.3 (default: all)")
+    p.add_argument("--replicates", type=int, help="number of replicates (default: config/llm.yaml)")
+    p.add_argument("--dry-run", action="store_true", help="project the cost and send nothing")
+
+    add("build", "Build the consensus, the P2 placebo and the matrix with gold and verdicts applied.")
+
+    p = add("evaluate", "Score aligners on gold, check sentinels and evaluate the gates G0-G4.")
+    p.add_argument("--gold", choices=("dev", "test"), default="test", help="gold set to score (default: test)")
+    p.add_argument("--baselines-only", action="store_true", help="score the controls only; no Claude output")
+
+    add("perturb", "Run the P-wrong-window and P-deletion perturbations (gate G2).")
+    add("stats", "Compute the estimands (two-phase draws, Manski bounds, E3, E4, E5).")
+    add("report", "Write the level-gated summary.md and the SVG figures.")
+
+    p = add("topics", "Topic pre-labels (T3) and the human topic sheets.")
+    tsub = p.add_subparsers(dest="action", required=True, metavar="<action>")
+    add("prelabel", "Pre-label every reference unit with the topic codebook (reference text only).", tsub)
+    q = add("export", "Write the topic sheet (same as review export --task topics).", tsub)
+    q.add_argument("--second", action="store_true", help="the blind second-coder sheet (no prelabel columns)")
+    q = add("import", "Import a filled topic sheet (same as review import --task topics).", tsub)
+    q.add_argument("--file", type=Path, required=True, help="the filled sheet")
+    q.add_argument("--annotator", required=True, help="the coder")
+    q.add_argument("--date", help="YYYY-MM-DD (default: today)")
+
+    p = add("sample", "Draw test windows, the verification sample or the audit sample.")
+    p.add_argument("kind", choices=("windows", "verification", "audit"), help="what to draw")
+    p.add_argument("--batch", help="plan name (default: verify or audit)")
+    p.add_argument("--force", action="store_true", help="redraw although a draw exists")
+
+    p = add("review", "Export, import, reveal and track human review sheets.")
+    rsub = p.add_subparsers(dest="action", required=True, metavar="<action>")
+    q = add("export", "Write the sheets of one batch into the run's review/ directory.", rsub)
+    q.add_argument("--task", required=True, choices=pipeline.review.REVIEW_TASKS)
+    q.add_argument("--batch", help="batch (plan) name")
+    q.add_argument("--set", dest="gold_set", help="gold set for --task gold: dev, test or test_second")
+    q.add_argument("--hours", type=float, help="fill only this many hours of work, in priority order")
+    q.add_argument("--competence", default="bo,zh", help="reviewer languages for --hours (default: bo,zh)")
+    for action, help_ in (("import", "Import a filled sheet into data/annotations/."),
+                          ("reveal", "Import a filled reveal sheet (final decisions after seeing the machine).")):
+        q = add(action, help_, rsub)
+        if action == "import":
+            q.add_argument("--task", required=True, choices=("gold", "verify", "audit", "resolve", "topics",
+                                                             "topics_second"))
+        q.add_argument("--file", type=Path, required=True, help="the filled sheet")
+        q.add_argument("--annotator", default="", help="who filled it")
+        q.add_argument("--date", help="YYYY-MM-DD (default: today)")
+        q.add_argument("--minutes", type=float, help="time spent, to measure the real review cost")
+    add("status", "Print review coverage per stratum, gold rows and topic labels.", rsub)
+
+    add("components", "Code components of selected pairs with T2 (descriptive only).")
+
+    p = add("experiment", "The over-attribution experiment (Claude as subject).")
+    esub = p.add_subparsers(dest="name", required=True, metavar="<experiment>")
+    q = add("overattribution", "Plan, run or score the over-attribution experiment.", esub)
+    q.add_argument("action", choices=("plan", "run", "score"))
+    q.add_argument("--phase", choices=("main", "pilot"), default="main")
+
+    add("claude-check", "Send one tiny live request: key, model and response path work.")
+
+    p = add("prereg", "Freeze the preregistration with the current instrument digests.")
+    psub = p.add_subparsers(dest="action", required=True, metavar="<action>")
+    q = add("freeze", "Write instrument digests and frozen: true into config/preregistration.yaml.", psub)
+    q.add_argument("--amend", help="reason for changing a frozen preregistration (appended to amendments)")
+
+    p = add("run", "Run ingest, baselines, collate, build, evaluate, stats and report as far as possible.")
+    p.add_argument("--raw-dir", type=Path, help="directory with the raw files (default: run.yaml paths.raw)")
+    p.add_argument("--gold", choices=("dev", "test"), default="test", help="gold set to score (default: test)")
+    return parser
+
+
+# --------------------------------------------------------------------------- dispatch
+def _context(args: argparse.Namespace, settings: Settings) -> RunContext:
+    run_dir = getattr(args, "run_dir", None)
+    if run_dir is None:
+        run_dir = pipeline.new_run_dir(settings) if args.command in NEW_RUN_COMMANDS else \
+            pipeline.latest_run_dir(settings)
+        if run_dir is None:
+            raise StageError("no run directory yet: run `hevajra-matrix ingest` first (or pass --run-dir)")
+    run_dir = Path(run_dir).resolve()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"run directory: {run_dir}")
+    return RunContext(settings.root, run_dir, settings, offline=bool(getattr(args, "offline", False)))
+
+
+def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
+    command, action = args.command, getattr(args, "action", None)
+    if command == "fetch":
+        pipeline.fetch(args.raw_dir or settings.path("raw"), force=args.force)
+        return 0
+    if command == "prereg":
+        doc = freeze(settings.root, amend=args.amend)
+        print(f"prereg: frozen with {len(doc['instrument_digests'])} instrument digests; "
+              f"{len(doc['amendments'])} amendment(s)")
+        return 0
+    if command == "claude-check" and getattr(args, "offline", False):
+        raise StageError("claude-check is a live check; it cannot run --offline")
+    ctx = _context(args, settings)
+    stages: dict[str, Callable[[], object]] = {
+        "ingest": lambda: pipeline.ingest(ctx, args.raw_dir),
+        "collate": lambda: pipeline.collate(ctx, args.chapters, args.replicates, args.dry_run),
+        "build": lambda: pipeline.build(ctx),
+        "evaluate": lambda: pipeline.evaluate(ctx, args.gold, args.baselines_only),
+        "perturb": lambda: pipeline.perturb(ctx),
+        "stats": lambda: pipeline.stats(ctx),
+        "report": lambda: pipeline.report(ctx),
+        "components": lambda: pipeline.components_stage(ctx),
+        "sample": lambda: pipeline.sample(ctx, args.kind, args.batch, args.force),
+    }
+    if command in stages:
+        stages[command]()
+        return 0
+    if command == "baselines":
+        if action == "import":
+            pipeline.baselines_import(ctx, args.tsv, args.name)
         else:
-            print(f"fetch   {meta['url']}")
-            with urllib.request.urlopen(meta["url"], timeout=60) as r:
-                dest.write_bytes(r.read())
-        sha = hashlib.sha256(dest.read_bytes()).hexdigest()
-        manifest[name] = {**meta, "sha256": sha, "fetched_at": datetime.now(timezone.utc).isoformat(), "bytes": dest.stat().st_size}
-        print(f"        sha256 {sha[:16]}…  {dest.stat().st_size} bytes")
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    return 0
+            pipeline.baselines(ctx)
+        return 0
+    if command == "topics":
+        if action == "prelabel":
+            pipeline.topics_prelabel(ctx)
+        elif action == "export":
+            pipeline.review_export(ctx, "topics_second" if args.second else "topics")
+        else:
+            second = args.file.name.endswith(".second.csv")
+            pipeline.review_import(ctx, "topics_second" if second else "topics", args.file, args.annotator, args.date)
+        return 0
+    if command == "review":
+        return _review(ctx, args)
+    if command == "experiment":
+        if args.action == "plan":
+            pipeline.experiment_plan(ctx, args.phase)
+        elif args.action == "run":
+            pipeline.experiment_run(ctx, args.phase)
+        else:
+            pipeline.experiment_score(ctx)
+        return 0
+    if command == "claude-check":
+        return 0 if pipeline.claude_check(ctx)["passed"] else 1
+    if command == "run":
+        pipeline.run(ctx, args.raw_dir, args.gold)
+        return 0
+    raise AssertionError(f"unhandled command {command}")
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    from .pipeline import run
-
-    params = AlignParams(prior_null=args.prior_null, anchor_weight=args.anchor_weight)
-    m = run(Path(args.raw), Path(args.out), data_dir=Path(args.data), params=params,
-            similarity=args.similarity, embedding_model=args.embedding_model)
-    print(f"reference={m.reference} ({m.reference_grade}) units={len(m.units)} cells={len(m.cells)} → {args.out}/")
-    return 0
-
-
-def cmd_transfer(args: argparse.Namespace) -> int:
-    from .transfer.sinitic import run_transfer
-
-    m = run_transfer(Path(args.config), Path(args.texts), Path(args.out))
-    print(f"reference={m.reference} ({m.reference_grade}) witnesses={m.witnesses} units={len(m.units)} → {args.out}/")
-    return 0
-
-
-# --------------------------------------------------------------------------- LLM subcommands
-def _backend(args: argparse.Namespace):
-    from .llm.backends import load_backend
-
-    return load_backend(args.llm, Path(args.models) if args.models else None)
-
-
-def _read_csv(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
-
-
-def _write_csv(path: Path, rows: list[dict]) -> None:
-    from .matrix import _write_csv as w
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    w(path, rows)
-
-
-def cmd_llm_judge(args: argparse.Namespace) -> int:
-    """R2: fill review_status/review_note of alignment_review.csv for suspicious beads."""
-    from .llm.tasks import judge_review_rows
-
-    b = _backend(args)
-    path = Path(args.review)
-    rows = _read_csv(path)
-    if args.limit:
-        rows = rows[: args.limit]
-    rows = judge_review_rows(b, rows, ref_lang=args.ref_lang, wit_lang=args.wit_lang,
-                             only_shapes=tuple(args.shapes.split(",")), min_confidence=args.min_confidence)
-    out = Path(args.out or path.with_name(path.stem + "_llm.csv"))
-    _write_csv(out, rows)
-    _dump_log(b, out.with_suffix(".calls.json"))
-    n = sum(1 for r in rows if str(r.get("review_status", "")).startswith("llm:"))
-    print(f"{n} beads judged by {b.model_id} → {out}")
-    return 0
-
-
-def cmd_llm_extract(args: argparse.Namespace) -> int:
-    """R4: lexicon-constrained component extraction for cells.csv rows (derived layer only)."""
-    from .anchors import load_lexicon
-    from .llm.tasks import extract_components
-
-    b = _backend(args)
-    lexicon = load_lexicon(Path(args.data) / "anchors" / "terms.yaml")
-    rows = _read_csv(Path(args.cells))
-    rows = [r for r in rows if r.get("status") in ("PRESENT", "PARTIAL") and r.get("text")]
-    if args.witness:
-        rows = [r for r in rows if r["witness"] == args.witness]
-    if args.limit:
-        rows = rows[: args.limit]
-    lang = args.lang
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        for r in rows:
-            cs = extract_components(b, r["text"], lang, lexicon)
-            f.write(json.dumps({"unit": r["unit"], "witness": r["witness"], **cs.to_row()}, ensure_ascii=False) + "\n")
-    _dump_log(b, out_path.with_suffix(".calls.json"))
-    print(f"{len(rows)} segments → {out_path}")
-    return 0
-
-
-def cmd_llm_attribute(args: argparse.Namespace) -> int:
-    """R6: fixed-label attribution judgement for deviating cells, facts drawn from the matrix only."""
-    from .llm.tasks import judge_attribution
-
-    b = _backend(args)
-    cells = _read_csv(Path(args.cells))
-    by_unit: dict[str, dict[str, dict]] = {}
-    for r in cells:
-        by_unit.setdefault(r["unit"], {})[r["witness"]] = r
-    targets = [r for r in cells if r["witness"] == args.witness and r["status"] in ("ABSENT", "PARTIAL")]
-    if args.limit:
-        targets = targets[: args.limit]
-    out_rows = []
-    for r in targets:
-        facts = [f"{r['witness']} status at {r['unit']}: {r['status']} (bead {r['bead']}, evidence grade {r['evidence']})"]
-        for w, o in by_unit[r["unit"]].items():
-            if w != r["witness"]:
-                facts.append(f"{w} status at {r['unit']}: {o['status']}")
-        j = judge_attribution(b, r["unit"], r["witness"], facts)
-        out_rows.append({"unit": j.unit, "witness": j.witness, "top": j.top, "motive_flag": j.motive_flag,
-                         "cited_facts": " ".join(map(str, j.cited_facts)), "model_id": j.model_id,
-                         **{f"p_{k}": round(v, 3) for k, v in j.distribution.items()}, "note": j.note})
-    out = Path(args.out)
-    _write_csv(out, out_rows)
-    _dump_log(b, out.with_suffix(".calls.json"))
-    flagged = sum(1 for r in out_rows if r["motive_flag"])
-    print(f"{len(out_rows)} cells judged by {b.model_id}; {flagged} downgraded for motive language → {out}")
-    return 0
-
-
-def cmd_llm_probe(args: argparse.Namespace) -> int:
-    """R8: memorisation probe over the segments of a run (cells.csv text column or a TSV of passages)."""
-    from .llm.tasks import contamination_probe, probe_items_from_segments
-
-    b = _backend(args)
-    texts: list[tuple[str, str, str]] = []
-    p = Path(args.passages)
-    if p.suffix == ".csv":
-        for r in _read_csv(p):
-            if r.get("text"):
-                texts.append((r.get("witness", p.stem), r.get("unit", ""), r["text"]))
+def _review(ctx: RunContext, args: argparse.Namespace) -> int:
+    if args.action == "export":
+        competence = [c.strip() for c in args.competence.split(",") if c.strip()]
+        pipeline.review_export(ctx, args.task, args.batch, args.gold_set, args.hours, competence)
+    elif args.action in ("import", "reveal"):
+        task = "reveal" if args.action == "reveal" else args.task
+        pipeline.review_import(ctx, task, args.file, args.annotator, args.date, args.minutes)
     else:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            parts = line.split("\t")
-            if len(parts) >= 3:
-                texts.append((parts[0], parts[1], parts[2]))
-    items = probe_items_from_segments(texts, prefix_chars=args.prefix_chars, min_chars=args.min_chars)
-    if args.limit:
-        items = items[: args.limit]
-    res = contamination_probe(b, items, threshold=args.threshold)
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
-    _dump_log(b, out.with_suffix(".calls.json"))
-    print(f"{res['n']} probes, memorised_rate={res['memorised_rate']:.3f} mean_overlap={res['mean_overlap']:.3f} → {out}")
+        pipeline.review_status(ctx)
     return 0
 
 
-def cmd_llm_counterfactual(args: argparse.Namespace) -> int:
-    """R7: over-attribution counterfactual across several models (docs/02 §9)."""
-    from .attribution import CounterfactualItem
-    from .llm.backends import load_backend
-    from .llm.tasks import counterfactual_across_models
-
-    items = []
-    for r in _read_csv(Path(args.items)):
-        items.append(CounterfactualItem(unit=r["unit"], sa_witness=r.get("sa_witness", "sa"), sa_text=r["sa_text"],
-                                        zh_span=r.get("zh_span", ""), zh_text=r.get("zh_text", ""),
-                                        cowitness_fact=r["cowitness_fact"]))
-    if args.limit:
-        items = items[: args.limit]
-    backends = [load_backend(n, Path(args.models) if args.models else None) for n in args.llm.split(",")]
-    rows = counterfactual_across_models(backends, items)
-    _write_csv(Path(args.out), rows)
-    for r in rows:
-        print(f"{r['model_id']}: motive rate {r['motive_rate_without_fact']:.2f} → {r['motive_rate_with_fact']:.2f} (drop {r['drop']:.2f})")
-    return 0
-
-
-def _dump_log(backend, path: Path) -> None:
-    log = getattr(backend, "log", None)
-    if log is not None and log.records:
-        log.dump(path)
-
-
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="hevajra_matrix")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    f = sub.add_parser("fetch", help="download CBETA T0892 and the Derge volume into --raw")
-    f.add_argument("--raw", default="data/raw")
-    f.add_argument("--force", action="store_true")
-    f.set_defaults(func=cmd_fetch)
-
-    r = sub.add_parser("run", help="ingest, align, build matrix, report")
-    r.add_argument("--raw", default="data/raw")
-    r.add_argument("--out", default="out")
-    r.add_argument("--data", default=str(DATA_DIR))
-    r.add_argument("--prior-null", type=float, default=AlignParams.prior_null)
-    r.add_argument("--anchor-weight", type=float, default=AlignParams.anchor_weight)
-    r.add_argument("--similarity", choices=["anchors", "embedding", "hybrid"], default="anchors",
-                   help="B0 anchors (default) | B1 embeddings | hybrid (needs sentence-transformers + GPU)")
-    r.add_argument("--embedding-model", default="BAAI/bge-m3")
-    r.set_defaults(func=cmd_run)
-
-    t = sub.add_parser("transfer", help="same-language multi-witness matrix (Laozi etc.)")
-    t.add_argument("--config", default=str(DATA_DIR / "transfer" / "laozi"))
-    t.add_argument("--texts", default=str(DATA_DIR / "transfer" / "laozi" / "texts"))
-    t.add_argument("--out", default="out/laozi")
-    t.set_defaults(func=cmd_transfer)
-
-    def llm_common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--llm", default="mock", help="profile name in data/llm/models.yaml, or 'mock'")
-        p.add_argument("--models", default=None, help="path to models.yaml (default data/llm/models.yaml)")
-        p.add_argument("--limit", type=int, default=0)
-
-    j = sub.add_parser("llm-judge", help="R2: LLM verdicts on suspicious alignment beads (review table only)")
-    llm_common(j)
-    j.add_argument("--review", default="out/alignment_review.csv")
-    j.add_argument("--out", default=None)
-    j.add_argument("--ref-lang", default="bo")
-    j.add_argument("--wit-lang", default="zh")
-    j.add_argument("--shapes", default="1:0,0:1,1:3,3:1,2:2")
-    j.add_argument("--min-confidence", type=float, default=0.6)
-    j.set_defaults(func=cmd_llm_judge)
-
-    e = sub.add_parser("llm-extract", help="R4: lexicon-constrained component extraction → JSONL (derived layer)")
-    llm_common(e)
-    e.add_argument("--cells", default="out/cells.csv")
-    e.add_argument("--data", default=str(DATA_DIR))
-    e.add_argument("--witness", default=None)
-    e.add_argument("--lang", default="zh")
-    e.add_argument("--out", default="out/derived/components.jsonl")
-    e.set_defaults(func=cmd_llm_extract)
-
-    a = sub.add_parser("llm-attribute", help="R6: fixed-label attribution judgement for deviating cells")
-    llm_common(a)
-    a.add_argument("--cells", default="out/cells.csv")
-    a.add_argument("--witness", default="zh_T0892_song")
-    a.add_argument("--out", default="out/derived/attribution_llm.csv")
-    a.set_defaults(func=cmd_llm_attribute)
-
-    pr = sub.add_parser("llm-probe", help="R8: memorisation / contamination probe")
-    llm_common(pr)
-    pr.add_argument("--passages", default="out/cells.csv", help="cells.csv or TSV: source<TAB>ref<TAB>text")
-    pr.add_argument("--prefix-chars", type=int, default=40)
-    pr.add_argument("--min-chars", type=int, default=80)
-    pr.add_argument("--threshold", type=float, default=0.5)
-    pr.add_argument("--out", default="out/derived/contamination_probe.json")
-    pr.set_defaults(func=cmd_llm_probe)
-
-    cf = sub.add_parser("llm-counterfactual", help="R7: over-attribution counterfactual across models")
-    llm_common(cf)
-    cf.add_argument("--items", required=True, help="CSV: unit,sa_witness,sa_text,zh_span,zh_text,cowitness_fact")
-    cf.add_argument("--out", default="out/derived/counterfactual.csv")
-    cf.set_defaults(func=cmd_llm_counterfactual)
-
-    args = ap.parse_args(argv)
-    return args.func(args)
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        root = getattr(args, "root", None)
+        settings = load_settings(Path(root).resolve() if root else find_root())
+        return _dispatch(args, settings)
+    except USER_ERRORS as exc:
+        print(f"hevajra-matrix {args.command}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

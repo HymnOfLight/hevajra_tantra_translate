@@ -18,7 +18,9 @@ gold:
     - {chapter: I.7}
     - {chapter: II.3, around: "D418:17b.6", radius_units: 20}
     - {chapter: II.9, first_units: 56}
-    - {chapter: II.12}
+    - {chapter: I.1}
+    - {chapter: II.11, last_units: 20, id: II.11-12}   # merged-group boundary (Chinese pin20)
+    - {chapter: II.12, id: II.11-12}
   test_windows:                        # probability sample for gate G1
     n_windows: 12
     width: 25
