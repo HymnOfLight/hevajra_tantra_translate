@@ -128,6 +128,32 @@ def test_verification_blind_reveal_and_back_into_the_matrix(finished, capsys) ->
     assert estimates["E1_any_prior"]["not_estimable"] is None                   # prior sensitivity (symmetric in D)
 
 
+def test_a_blind_sheet_reimported_after_the_reveal_keeps_the_final_decisions(finished, capsys) -> None:
+    # Re-importing a blind sheet used to replace the revealed verdicts wholesale: every final
+    # decision was dropped (300 of 300 on the real-text campaign) and the blind answer could
+    # be rewritten after the reviewer had seen the machine output.
+    root, run = finished
+    assert cli(root, run, "sample", "verification") == 0
+    assert cli(root, run, "review", "export", "--task", "verify") == 0
+    blind = run / "review" / "verify.blind.csv"
+    fill(blind, blind_relation="no_counterpart")
+    args = ("review", "import", "--task", "verify", "--file", str(blind), "--annotator", "ann")
+    assert cli(root, run, *args) == 0
+    assert cli(root, run, "review", "export", "--task", "reveal", "--batch", "verify") == 0
+    assert cli(root, run, "review", "reveal", "--file", str(run / "review" / "verify.reveal.csv")) == 0
+    committed = root / "data" / "annotations" / "verdicts" / WITNESS / "verify.csv"
+    revealed = committed.read_text(encoding="utf-8")
+    assert all(v.final_relation == "no_counterpart" for v in verdict_files.read_file(committed))
+
+    assert cli(root, run, *args) == 0, "the same blind sheet again is harmless"
+    assert committed.read_text(encoding="utf-8") == revealed
+    fill(blind, blind_relation="unresolved")
+    capsys.readouterr()
+    assert cli(root, run, *args) == 2
+    assert "a blind decision is fixed once revealed" in capsys.readouterr().err
+    assert committed.read_text(encoding="utf-8") == revealed, "nothing was imported"
+
+
 def test_topic_prelabels_first_and_blind_second_coder(finished) -> None:
     root, run = finished
     assert fill_prelabel_cache(context(root, run, offline=True)) == 1

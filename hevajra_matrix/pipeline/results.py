@@ -81,8 +81,9 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     if cells:
         extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in ("any", "cov")}
     est["E3"] = Estimate.missing("E3", decompose.E3_NOT_INGESTED, scope)
+    no_draws = est[f"E1_{primary}"].not_estimable if f"E1_{primary}" in est else None   # why "final" has no draws
     est["E4"], extra["e4"] = _e4(ctx, texts, cells, machine, topics, verdicts, draws.get("final"), primary, seed,
-                                 scope)
+                                 scope, no_draws or NO_PHASE2)
     est["E5"] = _e5(orphans, texts, scope)
     out = ctx.path("stats")
     out.mkdir(parents=True, exist_ok=True)
@@ -97,10 +98,12 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
 
 
 def _e4(ctx: RunContext, texts: Texts, cells: list[Cell], machine: list[Cell], topics: ann.Topics,
-        verdicts: list, draws: list | None, outcome: str, seed: int, scope: str) -> tuple[Estimate, dict[str, Any]]:
+        verdicts: list, draws: list | None, outcome: str, seed: int, scope: str,
+        no_draws: str = NO_PHASE2) -> tuple[Estimate, dict[str, Any]]:
     """Delta (synthesis 6.3) with its diagnostics (``pipeline.e4``) when G4 allows it and draws
-    exist; otherwise the reason. With complete topic labels the MDE is first simulated on them
-    (``stats/power.json``); an MDE above the G4 maximum blocks E4 here as well."""
+    exist; otherwise the reason (``no_draws`` says why there are no draws: no phase-2 verdict,
+    or a stratum without a phase-2 sample). With complete topic labels the MDE is first
+    simulated on them (``stats/power.json``); an MDE above the G4 maximum blocks E4 here as well."""
     prereg = ctx.settings.prereg
     margin, warning = e4_stage.tost_margin(prereg)
     if warning:
@@ -115,7 +118,7 @@ def _e4(ctx: RunContext, texts: Texts, cells: list[Cell], machine: list[Cell], t
     if reason is None and power is not None and (power["mde_on_labels"] is None or power["mde_on_labels"] > max_mde):
         reason = f"G4: MDE on the real topic labels {power['mde_on_labels']} > {max_mde} (stats/power.json)"
     if reason is None and draws is None:
-        reason = NO_PHASE2
+        reason = no_draws
     if reason:
         return Estimate.missing("E4", reason, scope), {"margin": margin, **({"power": power} if power else {})}
     n_perm = int((prereg.get("stats") or {}).get("n_permutations", 2000))

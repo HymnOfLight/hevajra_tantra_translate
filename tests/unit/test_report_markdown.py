@@ -118,6 +118,18 @@ def test_level_1_prints_per_relation_recall_and_per_class_agreement_with_interva
     assert "recall of relation" not in render(inputs(scores=scores), gate(0))
 
 
+def test_overall_refusal_rate_is_not_labelled_as_a_topic_group() -> None:
+    # "refusal_rate" is both a metric and the prefix of its per-topic breakdown; the overall
+    # value used to be printed as "refusal rate, topic " with an empty group.
+    scores = {"claude:consensus": {"refusal_rate": Estimate("refusal_rate", 0.01, 0.0, 0.02, 300, "gold:test"),
+                                   "refusal_rate:sensitive": Estimate("refusal_rate:sensitive", 0.02, 0.0, 0.05, 90,
+                                                                      "gold:test")}}
+    text = render(inputs(scores=scores), gate(1))
+    assert "| refusal rate, all units | 0.010 [0.000, 0.020] |" in text
+    assert "| refusal rate, topic sensitive | 0.020 [0.000, 0.050] |" in text
+    assert "refusal rate, topic  |" not in text
+
+
 def test_level_2_prints_estimates_blind_sensitivity_and_manski() -> None:
     text = render(inputs(), gate(2, confirmatory=True))
     assert "- E1 share of units deviating (D_any): 0.123 [0.101, 0.150] (n = 100; covers: machine status error)" in text

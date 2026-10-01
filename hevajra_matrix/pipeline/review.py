@@ -243,9 +243,27 @@ def review_import(ctx: RunContext, task: str, path: Path, annotator: str, date: 
         new = sheets.import_(path, task, params=params, annotator=annotator, date=date, items=plan, minutes=minutes,
                              **langs)
         old = verdict_files.read_file(target) if target.is_file() else []
+        new = _keep_revealed(old, new, task, target)
         verdict_files.save(_merge(old, new), target)
     print(f"review import {task}: {len(new)} verdict(s) -> {target}")
     return target
+
+
+def _keep_revealed(old: Sequence[Verdict], new: Sequence[Verdict], task: str, target: Path) -> list[Verdict]:
+    """Re-imported blind verdicts of items already revealed keep their reveal; a changed blind
+    decision after the reveal is refused (the reviewer has seen the machine output, and the
+    import would also drop the final decision). ``resolve`` has no reveal and may be corrected."""
+    if task == "resolve":
+        return list(new)
+    revealed = {v.item_id: v for v in old if v.final_relation}
+    changed = [v.item_id for v in new if v.item_id in revealed
+               and (v.blind_relation, v.blind_wit_ids) != (revealed[v.item_id].blind_relation,
+                                                           revealed[v.item_id].blind_wit_ids)]
+    if changed:
+        raise StageError(f"{target}: {len(changed)} item(s) already revealed would get a new blind decision "
+                         f"({', '.join(changed[:5])}); a blind decision is fixed once revealed. Nothing was "
+                         "imported; correct the final decision on the reveal sheet instead")
+    return [revealed.get(v.item_id, v) for v in new]
 
 
 def _merge(old: Sequence[Verdict], new: Sequence[Verdict]) -> list[Verdict]:

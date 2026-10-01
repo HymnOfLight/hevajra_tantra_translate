@@ -55,6 +55,7 @@ class WrongWindowTruth:
 @dataclass(frozen=True)
 class DeletionTruth:
     deleted: tuple[str, ...]          # witness segment ids removed from the text (content and notes)
+    units: tuple[str, ...] = ()       # reference units of the perturbed window (empty: not restricted)
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,8 @@ def delete_segments(window: Window, fraction: float, seed: int) -> tuple[Window,
     chosen |= {s.id for s in window.text if s.kind == "note" and s.extra.get("host") in chosen}
     kept = tuple(s for s in window.text if s.id not in chosen)
     deleted = tuple(s.id for s in window.text if s.id in chosen)
-    return replace(window, key=f"{window.key}-del{seed}", text=kept), DeletionTruth(deleted)
+    return (replace(window, key=f"{window.key}-del{seed}", text=kept),
+            DeletionTruth(deleted, tuple(u.id for u in window.units)))
 
 
 def remove_negators(window: Window, gold_pairs: Sequence[tuple[str, str]], negators: Negators,
@@ -166,10 +168,14 @@ def deletion_recall(truth: DeletionTruth, expected: Alignment, result: Alignment
     """Units whose whole ``expected`` counterpart was deleted, found PARTIAL or ABSENT.
 
     ``expected`` is gold, or else the unperturbed run's consensus; only its units with a
-    non-empty counterpart entirely inside ``truth.deleted`` are scored.
+    non-empty counterpart entirely inside ``truth.deleted`` are scored, and only those of the
+    perturbed window (``truth.units``): a deleted segment may be the counterpart of a unit in
+    another chunk or a neighbouring chapter, which this answer never assesses.
     """
     deleted = set(truth.deleted)
-    affected = [uid for uid, link in expected.by_ref().items() if link.wit_ids and deleted.issuperset(link.wit_ids)]
+    window = set(truth.units)
+    affected = [uid for uid, link in expected.by_ref().items() if link.wit_ids and deleted.issuperset(link.wit_ids)
+                and (not window or uid in window)]
     found = result.by_ref()
     return Rate(sum(1 for uid in affected if uid in found and found[uid].relation in COVERAGE_LOSS), len(affected))
 

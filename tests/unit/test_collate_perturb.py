@@ -94,6 +94,20 @@ def test_deletion_recall_scores_only_fully_deleted_counterparts() -> None:
     assert deletion_recall(truth, expected, abridged) == Rate(2, 2)
 
 
+def test_deletion_recall_scores_only_the_units_of_the_perturbed_window() -> None:
+    # A deleted core segment can be the counterpart of a unit in another chunk of the
+    # chapter or in a neighbouring chapter; this window's answer never assesses it, so it
+    # must not count as a miss (on the real texts it cut the recall from 25/25 to 25/172).
+    w = window()
+    _, truth = delete_segments(w, 0.3, 0)
+    assert truth.units == tuple(u.id for u in w.units)
+    inside, outside = truth.units[0], "BT:9z.9.9"
+    expected = alignment(Link(inside, (truth.deleted[0],), Relation.EQUIVALENT),
+                         Link(outside, (truth.deleted[0],), Relation.EQUIVALENT))
+    result = alignment(Link(inside, (), Relation.NO_COUNTERPART))
+    assert deletion_recall(truth, expected, result) == Rate(1, 1)
+
+
 def test_deletion_recall_counts_unresolved_as_a_miss() -> None:
     truth = DeletionTruth(("z1",))
     expected = alignment(Link("u1", ("z1",), Relation.EQUIVALENT))

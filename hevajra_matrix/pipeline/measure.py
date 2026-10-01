@@ -40,6 +40,7 @@ from .store import (
 from .texts import BASELINE_FILES, EXTERNAL_PREFIX, SENTINELS_FILE
 
 SHUFFLED_FILE = "shuffled.jsonl"
+TOPIC_BREAKDOWN = "refusal_rate:"     # metric keys per topic group (evaluation.scores.refusal_by_group)
 _V4 = re.compile(r"\bV4\b")
 
 
@@ -212,10 +213,15 @@ def test_scoring_refused(ctx: RunContext, texts: Texts | None = None) -> bool:
 def already_ledgered(ledger: Path, record: Mapping[str, Any]) -> bool:
     """True when the ledger holds a record of the same instrument digest, preregistration,
     scores and gate outcome: re-gating identical output on identical gold (e.g. to refresh
-    G2/G3 after review) reveals nothing new about the test set and is not a new scoring."""
+    G2/G3 after review) reveals nothing new about the test set and is not a new scoring.
+    Breakdowns by topic group are left out of the comparison: they change when topic labels
+    are added after the test scoring (the campaign order), not when the instrument or the
+    gold does."""
     def key(r: Mapping[str, Any]) -> tuple[Any, ...]:
+        metrics = {src: {k: v for k, v in (m or {}).items() if not k.startswith(TOPIC_BREAKDOWN)}
+                   for src, m in (r.get("metrics") or {}).items()}
         return (r.get("instrument_digest"), r.get("prereg_sha256"), r.get("gate"),
-                json.dumps(json.loads(json.dumps(r.get("metrics"))), sort_keys=True))
+                json.dumps(json.loads(json.dumps(metrics)), sort_keys=True))
 
     if not ledger.is_file():
         return False

@@ -266,7 +266,8 @@ def _score_breakdowns(inputs: ReportInputs) -> list[str]:
            "| metric | " + " | ".join(_label(src) for src in sources) + " |", "|---|" + "---|" * len(sources)]
     for key in keys:
         kind, _, which = key.partition(":")
-        out.append(f"| {BREAKDOWN_LABELS[kind]} {which} | "
+        label = f"{BREAKDOWN_LABELS[kind]} {which}" if which else f"{kind.replace('_', ' ')}, all units"
+        out.append(f"| {label} | "
                    + " | ".join(_interval(inputs.scores[src].get(key)) for src in sources) + " |")
     return out + [""]
 

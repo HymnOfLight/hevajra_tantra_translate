@@ -17,8 +17,11 @@ from pathlib import Path
 import pytest
 
 from hevajra_matrix.cli import main
+from hevajra_matrix.matrix.build import segment_fingerprint
+from hevajra_matrix.pipeline.context import load_texts
 from hevajra_matrix.pipeline.store import read_alignment
 from hevajra_matrix.prereg import freeze
+from hevajra_matrix.topics import TopicLabel, write_labels
 
 from test_pipeline_support import context, fill_cache, make_root
 
@@ -106,6 +109,25 @@ def test_only_the_test_gold_claude_evaluation_gates_and_is_ledgered_once(collate
     assert dev["gold_set"] == "dev" and "claude:consensus" in dev["sources"]
     assert set(_json(run / "evaluation" / "scores.test_baselines.json")["sources"]) == {"dp:zero", "dp:anchor"}
     assert len((root / LEDGER).read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_topic_labels_added_after_the_test_scoring_do_not_make_a_new_scoring(collated) -> None:
+    # Campaign order: evaluate once on test gold, then label topics, then re-gate after
+    # review. The labels add refusal-rate breakdowns by topic group to the metrics; that
+    # must not count as a second scoring of the test set (it cost the confirmatory flag).
+    root, run = collated
+    freeze(root)
+    assert cli(root, run, "evaluate") == 0
+    gate = _json(run / "evaluation" / "gate.json")
+    texts = load_texts(context(root, run))
+    write_labels(root / "data" / "annotations" / "topics" / f"{texts.reference_id}.csv",
+                 [TopicLabel(u.id, segment_fingerprint(u), topics=frozenset({"neutral"}), coder="c", date="2026-10-01")
+                  for u in texts.units])
+    assert cli(root, run, "evaluate") == 0
+    scores = _json(run / "evaluation" / "scores.json")["sources"]["claude:consensus"]["metrics"]
+    assert "refusal_rate:neutral" in scores
+    assert len((root / LEDGER).read_text(encoding="utf-8").splitlines()) == 1
+    assert _json(run / "evaluation" / "gate.json")["confirmatory"] == gate["confirmatory"]
 
 
 def test_a_new_scoring_of_the_test_set_is_ledgered(collated) -> None:

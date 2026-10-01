@@ -17,9 +17,11 @@ from hevajra_matrix.evaluation.gate import GateReport
 from hevajra_matrix.experiments.overattribution.score import TrialOutcome, outcome_record
 from hevajra_matrix.pipeline import e4 as e4_stage
 from hevajra_matrix.pipeline import human_data as ann
+from hevajra_matrix.pipeline import results
 from hevajra_matrix.pipeline import review as review_stage
 from hevajra_matrix.pipeline.context import has_api_key, load_texts
 from hevajra_matrix.pipeline.measure import design_mde, read_built_cells
+from hevajra_matrix.pipeline.store import gate_to_dict
 from hevajra_matrix.report import markdown, svg
 from hevajra_matrix.review import sampling, sheets
 from hevajra_matrix.stats import twophase
@@ -159,6 +161,18 @@ def test_e4_diagnostics_and_the_mde_on_real_labels(finished) -> None:
     assert design_mde(ctx) is None, "G4 then reports the MDE as not reached"
     (run / "stats" / "power.json").write_text(json.dumps({**power, "mde_on_labels": 0.14}), encoding="utf-8")
     assert design_mde(ctx) == 0.14, "the larger of the preregistered and the simulated MDE"
+
+
+def test_e4_names_the_uncalibrated_stratum_rather_than_missing_verdicts(finished) -> None:
+    # Verification verdicts exist but the audit stratum has no phase-2 sample: E1 and E4 are
+    # NOT_ESTIMABLE for that reason; E4 used to say "no phase-2 verification or audit verdict".
+    root, run = finished
+    verify_all_absent(root, run)
+    assert cli(root, run, "build") == 0
+    (run / "evaluation" / "gate.json").write_text(json.dumps(gate_to_dict(_level2())), encoding="utf-8")
+    est = results.stats(context(root, run, offline=True))
+    assert est["E1_any"].not_estimable.startswith("G3: no phase-2 sample verdict in stratum neg:B:other")
+    assert est["E4"].not_estimable == est["E1_any"].not_estimable
 
 
 def _level2() -> GateReport:
