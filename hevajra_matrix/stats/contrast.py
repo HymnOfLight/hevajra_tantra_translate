@@ -17,6 +17,10 @@ Assumption (critique B13): imputation strata are machine class x topic group, so
 error is assumed independent of chapter and length within a stratum. ``misclassification_table``
 tabulates verified error rates by chapter and length tertile so that the assumption is checked,
 and ``overlap_diagnostics`` reports how many strata and units the estimator actually uses.
+
+E4 is preregistered on the primary outcome only (``matrix.status.PRIMARY_OUTCOMES``): ``delta``
+and ``misclassification_table`` refuse the sensitivity variant ``any_conv``, which the draws
+cannot carry (a convention is plugged in per unit, not drawn).
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from typing import Iterable, Mapping, Sequence
 
 from ..core.types import Estimate, OutcomeClass, Relation, Verdict
 from ..matrix.status import outcome_class
-from .twophase import SAMPLE_TASKS, Column, indicator, summarise, verdict_outcome
+from .twophase import SAMPLE_TASKS, Column, indicator, require_primary, summarise, verdict_outcome
 
 
 def stratified_rd(y: Mapping[str, float], exposure: Mapping[str, bool], stratum: Mapping[str, str]) -> float | None:
@@ -91,6 +95,7 @@ def delta(
     on a with-replacement resample of chapters. A chapter drawn twice enters as two copies of
     its strata.
     """
+    require_primary(outcome, name)
     rng = random.Random(seed)
     units = [u for u in exposure if u in strata and u in chapter_of]
     chapters = sorted({chapter_of[u] for u in units})
@@ -248,6 +253,7 @@ def misclassification_table(
     probability sample the imputation relies on. Roughly equal rates across levels support the
     within-stratum independence assumption; clear differences call for finer strata.
     """
+    require_primary(outcome, "misclassification_table (E4)")
     kinds = ref_kinds or {}
     acc: dict[tuple[str, str, str], list[int]] = {}
     for v in verdicts:

@@ -1,6 +1,6 @@
 # 码本与提示词修订草案（collate.v2）
 
-状态：**草案，尚未启用**。现在用的仍是 v1。草案文件放在 `data/codebook/drafts/collate.v2/`，程序不读取。测试 `tests/unit/test_collate_v2_draft.py` 保证两件事：草案格式正确，且不会被误用。
+状态：**已实现，可选用；默认仍是 v1**。§4 的默认做法已全部采用，代码、码本和复核表格都已支持 v2（§6）。`config/llm.yaml` 中 `tasks.collate.prompt` 仍为 `collate.v1`，v1 的提示词、schema、请求键和工具指纹逐字不变，I.1 试跑可以离线逐字重放。改用 v2 要等 §7 的开发集对照通过之后。译名表唯一的条目（Hevajra）仍是 `proposed`，所以目前生效的译名表是**空的**。
 
 起因：I.1 试跑暴露的三个问题，见 [`08-pilot-I1.md`](08-pilot-I1.md) §5。
 
@@ -118,11 +118,13 @@
 | Q5 | 种子字和字母的音写算惯例？ | 是。它们本来就是声音，只能音写 |
 | Q6 | 什么时候切换？ | 开发集盲标**之前**定稿码本；金标准表同时记"关系"和"惯例"两列，这样 v1、v2 两种口径都能从同一份金标准算出来 |
 
+**研究者决定（2026-10-10）：以上默认做法全部采用。** 具体说：主结果 D_any 不计惯例，E1_any_conv 作为敏感性分析报告；译名表只显示和使用已核实条目（Hevajra 一条仍待专家签名，所以目前为空）；类名音写仍是 `transliterated`；列表压缩为 `generalised`；种子字和字母为 `transcribed_name`；金标准和裁决把关系与惯例分开记录。默认提示词仍是 v1，等 §7 的对照之后再决定是否切换。
+
 ---
 
 ## 5 金标准与人工复核怎么配合
 
-一旦采用 v2，复核指南（[`03-review-guide.md`](03-review-guide.md)）要相应修改。拟改内容如下，定稿后再合并进指南：
+以下内容**已合并进**复核指南（[`03-review-guide.md`](03-review-guide.md) §1、§1a、§2、§3、§5）。表格的惯例列不论运行用的是哪个版本都存在，所以人工标注从现在起就可以同时记关系和惯例。原拟改内容如下：
 
 - **关系码表**：
   - `transliterated` 的说明改为"内容词、说明文字或真言只音写、不意译"；
@@ -134,30 +136,60 @@
   - `transcribed_name`：专名、种子字、字母被音写。
 
   填了惯例的单元，关系码按"名字已被翻译"来填。
-- **盲标员看到的译名表**与提示词里给 Claude 的是同一份（只含已核实条目）。
+- **盲标员看到的译名表**与提示词里给 Claude 的是同一份（只含已核实条目），以 `standing_renderings.csv` 的形式放在每张金标准表、盲表和揭示表旁边。
 
 金标准把"关系"和"惯例"分开记录，就不会被将来口径的选择锁死。
 
 ---
 
-## 6 实施计划（批准后再动代码）
+## 6 实施情况
 
-1. **对勘器**：
-   - 提示词版本可在配置中选择（`tasks.collate.prompt: collate.v2`）；
-   - 模板、示例、译名表按版本加载，只有已核实的条目进入提示词；
-   - 输出 schema 增加 `convention`。
-2. **核验**：
-   - 新增 V12（见 §1）；
-   - 惯例记为链接标记（`standing_rendering` / `transcribed_name`），三次重复按多数决定。
-3. **矩阵与统计**：
-   - 状态映射不变；
-   - 增加结果变体 `any_conv`（惯例也算偏移），E1 同时报告；
-   - 主结果在预注册中写明。
-4. **复核表格**：盲表、揭示表、金标准表增加 `convention` 列，导入时校验。
-5. **评估**：关系一致性照旧计算；另报告惯例的精确率与召回率。
-6. **文档与测试**：复核指南、术语表、英文任务文档同步修改；草案测试改为正式测试。
+### 6.1 已实现的内容
 
-改了提示词、schema 和示例，就是**新的测量工具**：工具指纹改变，使用新的缓存，必须重新过门控。v1 的试跑结果仍可离线重放，不受影响。
+1. **对勘器**（`collate/prompt.py`、`collate/collator.py`）：
+   - 提示词版本由配置选择：`tasks.collate.prompt`，取值 `collate.v1`（默认）或 `collate.v2`；其他取值报错；
+   - v2 的模板是 `hevajra_matrix/prompts/collate.v2.md`，示例和译名表在 `data/codebook/collate.v2/`；只有已核实的条目进入提示词，放在示例之后的 STANDING RENDERINGS 块里，没有条目时写 `(none)`；
+   - v2 的输出 schema 在每个单元的 `relation` 之前增加 `convention`；
+   - 链接的来源写作 `<模型>:collate.v2:<重复>`，`collation/replicates.json` 记下 `prompt`（旧文件没有这个键，视为 v1）。
+2. **核验**（`collate/verify.py`）：新增 V12。
+   - `standing_rendering`：同一个已核实条目的原词出现在藏文引文里、译名出现在汉文引文里（做异体折叠；藏文从音节开头匹配，末音节可带黏着助词）；
+   - `transcribed_name`：汉文引文的音写字比例达到 V11 的阈值；
+   - 不符合时保留惯例标记，另加 `convention_unsupported`，证据等级降为 C，从不致命。
+3. **共识**（`collate/consensus.py`）：惯例按三分之二多数决定，达不到就是 `none`；`collation/integrity.json` 记下重复之间惯例的 Fleiss κ（`convention_kappa`，只描述，不进门控）。
+4. **矩阵与统计**：关系→状态的映射不变，惯例不改变 D_any；新增结果变体 `any_conv`，只用于 E1 的 final 列（`E1_any_conv`），以及 Manski 区间；主结果只能是 `any` 或 `cov`，`prereg freeze` 和 `stats` 都会拒绝 `any_conv`。
+5. **复核表格**：金标准表、盲表、揭示表增加惯例列，裁决文件增加 `machine_convention`、`blind_convention`、`final_convention`（27 列），金标准文件增加 `convention`（14 列）；旧文件仍可读取，缺的列读作"未标注"。人工填的 `standing_rendering` 用与 V12 相同的规则核对。
+6. **评估**：关系一致性照旧计算，另报告 `relation_kappa`、`dany_conv_kappa`、惯例的精确率、召回率、F1 和 `convention_unsupported_rate`；不产出惯例的来源（基线、v1 共识等）这些指标为 n/a。门控 G1–G4 不变，不加惯例门控。
+7. **防止混用**：`evaluate`、`perturb` 和揭示表导入会核对配置的版本与该运行实际对勘所用的版本，不一致就报错。
+
+### 6.2 v1 保持不变
+
+默认配置下，v1 的提示词 sha256（`3ab88636…`）、schema sha256（`ed99b249…`）、collate 工具指纹（`d0233b34…`）和 I.1 试跑的两个请求键都与改动前相同；把试跑目录复制一份离线重放，`alignments/claude.r1.jsonl` 和 `collation/r1.json` 逐字相同，`replicates.json` 只多了 `"prompt": "collate.v1"`。v1 的链接和单元格不带惯例标记，所以 v1 运行的 E1_any_conv 等于 E1_any。
+
+### 6.3 怎样切换到 v2
+
+1. 在 `config/llm.yaml` 中把 `tasks.collate.prompt` 改为 `collate.v2`。
+2. 用**新的运行目录**跑 `collate`（或 `run`）。v2 的请求键都是新的，缓存里没有，需要真正调用模型；已经用 v1 对勘过的运行目录不能直接接着用 v2 评估。
+3. 改回 v1 时也一样：每个运行目录只认它对勘时用的版本。
+4. 预注册冻结之后再切换，要用 `hevajra-matrix prereg freeze --amend "<理由>"` 更新工具指纹。
+5. 梵文参照的语言对要用 v2，需要先提交 `data/codebook/collate.v2/examples.<参照>-<见证>.yaml` 和 `standing_renderings.<参照>-<见证>.yaml`（条目可以为空），否则报错。
+
+### 6.4 怎样核实译名表的条目
+
+1. 专家核对 `data/codebook/collate.v2/standing_renderings.yaml` 中条目的计数和原文段落。
+2. 同意的，把 `status: proposed` 改为 `status: verified`，在 `verified_by` 写真名（`verified_by` 只能、也必须随 `verified` 一起填）；不同意的，改为 `status: retired`，或移到 `considered_not_listed` 并写明理由。
+3. 新增条目要写 `id`、`reference_forms`（藏文）、`witness_renderings`（汉文），加载时会校验整个文件，格式错误就报错。
+4. 核实、增删条目都会改变 v2 的提示词，相当于换了测量工具：工具指纹改变，缓存键全部改变，开发集对照要重做；冻结之后要 `prereg freeze --amend`。
+5. 从此以后，复核表格旁的 `standing_renderings.csv` 也会列出该条目，人工填的 `standing_rendering` 按它核对。
+
+计数、说明和核实人姓名不会出现在提示词里。
+
+### 6.5 尚未做的
+
+- §7 的开发集对照（需要开发集金标准和约 12 次调用）。
+- 译名表 Hevajra 一条的专家签名。
+- 哨兵可以用 `expect.conventions` 限定惯例（例如 S10 写 `[none]`，防止把 om、hum、ah 当作 `transcribed_name` 免除），但 S10 的范围本身还要研究者细读后决定，所以暂未添加。
+
+改了提示词、schema 和示例，就是**新的测量工具**：工具指纹改变，使用新的缓存键，必须重新过门控。v1 的试跑结果仍可离线重放，不受影响。
 
 ---
 
@@ -181,8 +213,10 @@
 
 | 文件 | 内容 |
 |---|---|
-| `data/codebook/drafts/collate.v2/prompt.md` | v2 提示词全文（英文，与 v1 并列可比） |
-| `data/codebook/drafts/collate.v2/examples.yaml` | 三个合成示例：序数 vs 总称；固定译名＋反转＋无对应；专名与种子字音写 vs 内容词音写＋真言＋仅见于汉文 |
-| `data/codebook/drafts/collate.v2/standing_renderings.yaml` | 译名表草案，含计数，以及考察过但未列入的条目 |
-| `data/codebook/drafts/collate.v2/README.md` | 英文说明 |
-| `tests/unit/test_collate_v2_draft.py` | 检查：示例通过 v1 的 V1–V11 核验、不重用哨兵原文、惯例都有引文、译名表格式正确、草案不被读取 |
+| `hevajra_matrix/prompts/collate.v2.md` | v2 提示词全文（英文，与 v1 并列可比） |
+| `data/codebook/collate.v2/examples.yaml` | 三个合成示例：序数 vs 总称；固定译名＋反转＋无对应；专名与种子字音写 vs 内容词音写＋真言＋仅见于汉文 |
+| `data/codebook/collate.v2/standing_renderings.yaml` | 译名表，含计数，以及考察过但未列入的条目；目前没有已核实条目 |
+| `data/codebook/collate.v2/README.md` | 英文说明 |
+| `hevajra_matrix/collate/prompt.py` | 版本注册表：两个版本的模板、示例、schema 和译名表 |
+| `tests/unit/test_collate_v2.py`、`test_collate_conventions.py`、`test_pipeline_collate_v2.py` | v1 的 sha 钉死；v2 的示例、译名表、V12、共识和流程 |
+| `tests/unit/test_review_conventions.py`、`test_evaluation_conventions.py`、`test_stats_conventions.py` 等 | 复核表格、金标准、评估指标和 E1_any_conv |

@@ -67,7 +67,8 @@ def test_save_load_roundtrip(tmp_path: Path):
 
 def test_columns_exactly_as_specified():
     assert G.GOLD_COLUMNS == ("set", "window_id", "row_type", "unit_id", "fingerprint", "wit_ids", "relation",
-                              "polarity_flip", "flags", "witness_only_kind", "annotator", "date", "minutes")
+                              "convention", "polarity_flip", "flags", "witness_only_kind", "annotator", "date",
+                              "minutes")
 
 
 @pytest.mark.parametrize("bad, message", [
@@ -139,7 +140,8 @@ def test_score_by_hand():
     assert m["relation_recall:abridged"] == 0.0
     assert s.excluded == ("D:1a.6.1",)
     assert s.counts() == {"units": 5, "windows": 2, "excluded": 1, "gold_links": 4, "gold_null": 2,
-                          "gold_witness_only": 2, "unresolved": 1}
+                          "gold_witness_only": 2, "unresolved": 1, "gold_convention_annotated": 0,
+                          "gold_conventions": 0, "pred_conventions": None}
     assert s.confusion()[("PARTIAL", "UNALIGNED")] == 1
 
 

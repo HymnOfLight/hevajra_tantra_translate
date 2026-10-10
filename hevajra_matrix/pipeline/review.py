@@ -1,7 +1,9 @@
 """Human-work stages: topic pre-labels and sheets, sampling, and the review sheet round trip.
 
 Sheets carry licensed text and are written under ``<run_dir>/review/`` only; imports write
-the committed files under ``data/annotations/`` (ids and short quotes only).
+the committed files under ``data/annotations/`` (ids and short quotes only). The verified
+standing renderings (collate.v2) are written beside every gold, blind and reveal sheet, and
+every import checks a human ``standing_rendering`` against them (``glossary_check``).
 """
 
 from __future__ import annotations
@@ -13,7 +15,9 @@ from datetime import date as Date
 from pathlib import Path
 from typing import Any, Sequence
 
+from ..collate.verify import CheckLexicon, standing_supported
 from ..core.io import read_jsonl, write_jsonl
+from ..core.lexicon import StandingRenderings
 from ..core.types import Verdict
 from ..evaluation import gold as gold_sets
 from ..review import sampling, sheets, topic_sheets
@@ -29,7 +33,7 @@ from ..topics import (
 )
 from . import human_data as ann
 from .context import RunContext, StageError, Texts, credentials_hint, has_credentials, load_texts, make_client, record_stage, require
-from .instrument import collate_digest, read_consensus, read_replicates
+from .instrument import check_prompt, collate_digest, read_consensus, read_replicates
 from .measure import read_built_cells
 
 PRELABELS = ("topics", "prelabels.jsonl")
@@ -147,7 +151,7 @@ def review_export(ctx: RunContext, task: str, batch: str | None = None, gold_set
     out = ctx.path("review")
     segments = [*texts.reference, *texts.witness]
     if task == "gold":
-        return _export_gold(ctx, texts, gold_set or "", out, segments)
+        return _export_gold(ctx, texts, gold_set or "", out, segments, ann.standing_renderings(ctx, texts))
     if task in ("topics", "topics_second"):
         items = _topic_items(ctx, texts, task)
         if not items:
@@ -167,7 +171,8 @@ def review_export(ctx: RunContext, task: str, batch: str | None = None, gold_set
         _refuse_overwrite(out / f"{batch}.reveal.csv", force, {v.item_id for v in blind if v.final_relation})
         consensus = read_consensus(ctx)
         paths = sheets.export(items, "reveal", out, segments, machine, batch=batch, blind=blind,
-                              links=consensus.by_ref() if consensus else {})
+                              links=consensus.by_ref() if consensus else {},
+                              glossary=ann.standing_renderings(ctx, texts))
         print(f"review export reveal: {len(items)} items -> {paths[0]}")
         return paths
     notes = sampling.note_rows(machine, texts.wit_kinds)     # a plan drawn before notes were left out
@@ -186,7 +191,8 @@ def review_export(ctx: RunContext, task: str, batch: str | None = None, gold_set
     target = ann.verdict_dir(ctx, texts.witness_id) / f"{sheet}.csv"
     imported = {v.item_id for v in verdict_files.read_file(target) if v.blind_relation} if target.is_file() else set()
     _refuse_overwrite(out / f"{sheet}.blind.csv", force, imported)
-    paths = sheets.export(items, task, out, segments, machine, batch=sheet, hints=hints)
+    paths = sheets.export(items, task, out, segments, machine, batch=sheet, hints=hints,
+                          glossary=ann.standing_renderings(ctx, texts))
     print(f"review export {task}: {len(items)} items -> {paths[0]}")
     return paths
 
@@ -203,7 +209,8 @@ def _refuse_overwrite(path: Path, force: bool, imported: set[str]) -> None:
                          "to overwrite it and lose any decision entered on it")
 
 
-def _export_gold(ctx: RunContext, texts: Texts, gold_set: str, out: Path, segments: list) -> list[Path]:
+def _export_gold(ctx: RunContext, texts: Texts, gold_set: str, out: Path, segments: list,
+                 glossary: StandingRenderings) -> list[Path]:
     if gold_set not in gold_sets.SETS:
         raise StageError(f"review export --task gold needs --set {' | '.join(gold_sets.SETS)}")
     windows = gold_sets.read_windows(require(ann.gold_dir(ctx, texts.witness_id) / gold_sets.WINDOWS_FILE,
@@ -224,7 +231,7 @@ def _export_gold(ctx: RunContext, texts: Texts, gold_set: str, out: Path, segmen
         locals_ = sorted({loc for ch in w.chapter.split("+")
                           for loc in texts.concordance.core_window(ch, texts.witness_id, neighbours)})
         paths += sheets.export([sampling.make_item("gold", u) for u in units], "gold", out / "gold", segments, (),
-                               batch=f"{gold_set}_{w.window_id}", witness_chapters=locals_)
+                               batch=f"{gold_set}_{w.window_id}", witness_chapters=locals_, glossary=glossary)
     print(f"review export gold: {len(chosen)} {gold_set} window(s) -> {out / 'gold'}")
     return paths
 
@@ -253,22 +260,24 @@ def review_import(ctx: RunContext, task: str, path: Path, annotator: str, date: 
     langs = dict(ref_lang=texts.reference[0].lang, wit_lang=texts.witness[0].lang)
     if task in ("topics", "topics_second"):
         return _import_topics(ctx, texts, path, annotator, date)
+    check = glossary_check(texts, CheckLexicon.load(ctx.data_dir, (), ann.standing_renderings(ctx, texts)))
     if task == "gold":
         return _import_gold(ctx, texts, sheets.import_(path, "gold", params=params, annotator=annotator, date=date,
-                                                      minutes=minutes, **langs))
+                                                      minutes=minutes, check=check, **langs))
     batch = sheets.batch_of(path, ".reveal.csv" if task == "reveal" else ".blind.csv")
     target = ann.verdict_dir(ctx, texts.witness_id) / f"{batch}.csv"
     if task == "reveal":
+        check_prompt(ctx)        # the verdicts record the digest of the version the run collated with
         blind = verdict_files.read_file(require(target, "review import"))
         new = sheets.import_(path, "reveal", params=params, date=date, blind=blind,
-                             instrument_digest=collate_digest(ctx, texts), **langs)
+                             instrument_digest=collate_digest(ctx, texts), check=check, **langs)
         verdict_files.save(new, target)
     else:
         plan_file = ann.find_plan(ctx, texts.witness_id, batch.removesuffix(RESOLVE_SUFFIX) if task == "resolve"
                                   else batch)
         plan = sampling.read_plan(plan_file) if plan_file.is_file() else []
         new = sheets.import_(path, task, params=params, annotator=annotator, date=date, items=plan, minutes=minutes,
-                             **langs)
+                             check=check, **langs)
         old = verdict_files.read_file(target) if target.is_file() else []
         new = _keep_revealed(old, new, task, target)
         verdict_files.save(_merge(old, new), target)
@@ -284,13 +293,37 @@ def _keep_revealed(old: Sequence[Verdict], new: Sequence[Verdict], task: str, ta
         return list(new)
     revealed = {v.item_id: v for v in old if v.final_relation}
     changed = [v.item_id for v in new if v.item_id in revealed
-               and (v.blind_relation, v.blind_wit_ids) != (revealed[v.item_id].blind_relation,
-                                                           revealed[v.item_id].blind_wit_ids)]
+               and ((v.blind_relation, v.blind_wit_ids) != (revealed[v.item_id].blind_relation,
+                                                            revealed[v.item_id].blind_wit_ids)
+                    or not verdict_files.same_convention(v.blind_convention, revealed[v.item_id].blind_convention))]
     if changed:
         raise StageError(f"{target}: {len(changed)} item(s) already revealed would get a new blind decision "
                          f"({', '.join(changed[:5])}); a blind decision is fixed once revealed. Nothing was "
                          "imported; correct the final decision on the reveal sheet instead")
     return [revealed.get(v.item_id, v) for v in new]
+
+
+def glossary_check(texts: Texts, lexicon: CheckLexicon) -> sheets.GlossaryCheck:
+    """The import's check of a human ``standing_rendering`` (draft section 5): the rule V12
+    applies to the machine's quotes (``collate.verify.standing_supported``: some verified entry
+    of ``lexicon.standing_renderings`` has a reference form in the unit's text and a rendering
+    of the same entry in the text of the linked witness segments), applied to the whole texts
+    since a human gives no quote. With no verified entry every claim is refused."""
+    ref, wit = {s.id: s for s in texts.reference}, {s.id: s for s in texts.witness}
+
+    def check(unit_id: str, wit_ids: tuple[str, ...]) -> str | None:
+        if not lexicon.standing_renderings.entries:
+            return ("standing_rendering is accepted only for a verified glossary entry, and no entry is verified "
+                    f"for {texts.witness_id} (standing_renderings.csv beside the sheet is empty)")
+        unknown = [unit_id] * (unit_id not in ref) + [i for i in wit_ids if i not in wit]
+        if unknown:
+            return f"standing_rendering cannot be checked: unknown segment(s) {unknown}"
+        unit, linked = ref[unit_id], [wit[i] for i in wit_ids]
+        if standing_supported(unit.text, " ".join(s.text for s in linked), unit.lang, linked[0].lang, lexicon):
+            return None
+        return ("standing_rendering needs a verified entry with a reference form in the unit and a rendering of the "
+                "same entry in the linked witness segments (see standing_renderings.csv)")
+    return check
 
 
 def _merge(old: Sequence[Verdict], new: Sequence[Verdict]) -> list[Verdict]:

@@ -32,7 +32,7 @@ from hevajra_matrix.collate.collator import (
 )
 from hevajra_matrix.collate.verify import CheckLexicon
 from hevajra_matrix.collate.windows import Window, WindowParams, plan
-from hevajra_matrix.core.types import Relation, Segment, WitnessOnlyKind
+from hevajra_matrix.core.types import Convention, Relation, Segment, WitnessOnlyKind
 from hevajra_matrix.llm.client import LLMRequest
 from hevajra_matrix.registry import ChapterSpan, Concordance
 
@@ -171,7 +171,8 @@ def raw(w: Window, answer: Mapping[str, Any]) -> RawCollation:
     return RawCollation(
         w.key,
         tuple(RawUnit(u["ref"], tuple(u["wit"]), Relation(u["relation"]), u["polarity_flip"], u["confidence"],
-                      u["ref_quote"], u["wit_quote"]) for u in answer["units"]),
+                      u["ref_quote"], u["wit_quote"], Convention(u.get("convention", "none")))
+              for u in answer["units"]),
         tuple(RawWitnessOnly(tuple(x["wit"]), WitnessOnlyKind(x["kind"]), x["wit_quote"])
               for x in answer["witness_only"]),
     )
@@ -185,7 +186,8 @@ def echo_script(request: LLMRequest) -> dict[str, Any]:
     """Fake collator: recover the window from the request text and answer with the gold.
 
     A unit whose gold counterpart is not in the request's witness text is answered
-    ``no_counterpart``: a perfect reader of a text with deletions.
+    ``no_counterpart``: a perfect reader of a text with deletions. When the request's
+    schema asks for a convention (collate.v2), every unit gets ``none``.
     """
     by_text = {s.text: s.id for s in (*reference(), *witness())}
     handle_of = {by_text[text]: h for h, _, text in request_lines(request.context or "")}
@@ -208,6 +210,8 @@ def echo_script(request: LLMRequest) -> dict[str, Any]:
             units.append({"ref": handle_of[uid], "wit": [], "relation": Relation.NO_COUNTERPART.value,
                           "polarity_flip": False, "confidence": "high", "ref_quote": seg(uid).text,
                           "wit_quote": ""})
+    if "convention" in request.schema["properties"]["units"]["items"]["properties"]:
+        units = [{**u, "convention": Convention.NONE.value} for u in units]
     linked = {i for uid in ref_ids for i in g[uid][0]}
     wo = [{"wit": [handle_of[sid]], "kind": kinds.get(sid, WitnessOnlyKind.BELONGS_ELSEWHERE).value,
            "wit_quote": text_of[sid]}

@@ -16,6 +16,7 @@ in full ("<segment id> TAB <kind> TAB <text>") for searching.
                                                       what a substituted model proposed
                                                       (stripped on import)
     reveal         <batch>.reveal.csv                 blind answers + machine output + final
+                                                      (``review.reveal_sheets``)
     topics         topics_<batch>.csv                 reference text only, with prelabels
     topics_second  topics_<batch>.second.csv          reference text only, NO prelabel
                                                       columns (critique A6)
@@ -27,6 +28,16 @@ spanned by the machine links of the three reference units on either side of the 
 never the unit's own link (the unit's counterpart may of course lie inside that region);
 each line is "[<segment id>] <text>".
 
+Conventions (collate.v2): blind sheets carry ``blind_convention``, reveal sheets also
+``machine_convention`` and ``final_convention``, gold ref sheets ``convention`` (values in
+``review.verdicts``). A blank cell imports as ``none``; a sheet exported before the columns
+existed imports with "" (not annotated), but a sheet with only some of them is refused.
+Beside every gold, blind and reveal sheet, ``standing_renderings.csv`` lists the verified
+standing renderings (the same entries the collate.v2 prompt shows; header only while none is
+verified). A human ``standing_rendering`` is accepted only when the import's glossary check
+(``GlossaryCheck``, built by the pipeline from the texts and that glossary) confirms it;
+without a check every one is refused.
+
 Import (``import_``) keeps decisions and ids and drops every text column; the only text
 kept is a short quote per side, cut to ``run.yaml: review.quote_max_chars`` (and never
 more than 60 characters), to help re-resolve a verdict when its fingerprint goes stale.
@@ -36,36 +47,43 @@ from __future__ import annotations
 
 import csv
 import re
-from dataclasses import replace
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Collection, Mapping, Sequence
 
 from ..core.ids import orphan_source
 from ..core.io import write_csv
-from ..core.types import Cell, Link, Relation, Segment, Status, Verdict, WitnessOnlyKind
+from ..core.lexicon import StandingRenderings
+from ..core.types import Cell, Convention, Link, Relation, Segment, Verdict
 from ..matrix.build import segment_fingerprint
-from ..matrix.status import RELATION_STATUS
 from ..topics.prelabel import Prelabel
 from .sampling import ReviewItem, ReviewParams
 from .verdicts import (
-    FLAGS,
+    LINKED_RELATIONS,
     MAX_COMMITTED_QUOTE,
     ORPHAN_VALUES,
     UNIT_VALUES,
     VerdictError,
     VerdictRecord,
-    format_flags,
+    convention_problem,
+    flag_problems,
     is_orphan,
+    normalise_convention,
     parse_bool,
     parse_flags,
     parse_ids,
 )
 
 BLIND_COLUMNS = ("item_id", "task", "unit_id", "fingerprint", "locus", "ref_text", "zh_context_loci",
-                 "zh_context", "blind_relation", "blind_wit_loci", "blind_flags", "note")
-REVEAL_COLUMNS = BLIND_COLUMNS + ("machine_relation", "machine_polarity_flip", "machine_wit_loci", "machine_quotes",
-                                  "machine_grade",
-                                  "final_relation", "final_wit_loci", "final_flags", "revised_reason")
+                 "zh_context", "blind_relation", "blind_wit_loci", "blind_convention", "blind_flags", "note")
+REVEAL_COLUMNS = BLIND_COLUMNS + ("machine_relation", "machine_polarity_flip", "machine_convention", "machine_wit_loci",
+                                  "machine_quotes", "machine_grade",
+                                  "final_relation", "final_wit_loci", "final_convention", "final_flags",
+                                  "revised_reason")
+# Missing together from sheets exported before collate.v2 (gold ref sheets: ``convention``).
+CONVENTION_SHEET_COLUMNS = frozenset({"blind_convention", "machine_convention", "final_convention"})
+GLOSSARY_FILE = "standing_renderings.csv"
+GLOSSARY_COLUMNS = ("entry", "reference_forms", "witness_renderings")
+GLOSSARY_SEPARATOR = " | "
 HINT_COLUMN = "hint_other_model"
 RESOLVE_COLUMNS = BLIND_COLUMNS + (HINT_COLUMN,)
 HINT_LABEL = "FROM ANOTHER MODEL (substituted; not the instrument, never measured): "
@@ -78,12 +96,18 @@ MAX_CONTEXT_SEGMENTS = 40         # a longer span (e.g. a relocated neighbour) i
 TSHEG = "\u0f0b"                  # Tibetan intersyllabic mark
 _CONTEXT_LINE = re.compile(r"^\[([^\]\s]+)\] ?(.*)$")
 
+# (unit id, linked witness segment ids) -> why the linked text does not support a human
+# standing_rendering, or None; built by the pipeline from the texts and the verified glossary.
+GlossaryCheck = Callable[[str, tuple[str, ...]], "str | None"]
+NO_GLOSSARY = "standing_rendering is accepted only for a verified glossary entry, and no glossary check was given"
+
 
 # --------------------------------------------------------------------------- export
 def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequence[Segment],
            cells: Sequence[Cell], *, batch: str | None = None, links: Mapping[str, Link] | None = None,
            blind: Sequence[Verdict] = (), prelabels: Mapping[str, Prelabel] | None = None,
-           witness_chapters: Sequence[str] = (), hints: Mapping[str, Sequence[Link]] | None = None) -> list[Path]:
+           witness_chapters: Sequence[str] = (), hints: Mapping[str, Sequence[Link]] | None = None,
+           glossary: StandingRenderings | None = None) -> list[Path]:
     """Write the sheet(s) of one batch; returns the written paths (sheets first).
 
     ``segments``  reference and witness segments (both texts; topics sheets use only the
@@ -96,6 +120,8 @@ def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequ
     ``witness_chapters``  witness local chapters shown on a gold wit sheet (the core window)
     ``hints``     reference unit id -> substituted-model hint links (``Collation.hints``;
                   resolve only): shown as relation and witness loci in ``hint_other_model``
+    ``glossary``  the verified standing renderings, written beside gold, blind and reveal
+                  sheets as ``standing_renderings.csv`` (not written when None)
     """
     if task not in SHEET_TASKS:
         raise ValueError(f"unknown sheet task {task!r}; expected one of {SHEET_TASKS}")
@@ -114,11 +140,12 @@ def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequ
         from .gold_sheets import export_gold          # local import: gold_sheets reuses this module's helpers
         paths = export_gold(items, out, batch, index, wit, witness_chapters)
     elif task == "reveal":
-        paths = [_reveal_sheet(items, out, batch, index, ref, wit, cells, links or {}, blind)]
+        from .reveal_sheets import export_reveal      # local import: reveal_sheets reuses this module's helpers
+        paths = [export_reveal(items, out, batch, index, ref, wit, cells, links or {}, blind)]
     else:
         if any(i.task != task for i in items):
             raise ValueError(f"every item of a {task} sheet must have task {task}")
-        rows = [_blind_row(i, index, ref, wit, cells) for i in items]
+        rows = [blind_row(i, index, ref, wit, cells) for i in items]
         columns = BLIND_COLUMNS
         if task == "resolve":
             columns = RESOLVE_COLUMNS
@@ -127,6 +154,8 @@ def export(items: Sequence[ReviewItem], task: str, out_dir: Path, segments: Sequ
         path = out / f"{batch}.blind.csv"
         write_csv(path, rows, columns, bom=True)
         paths = [path]
+    if glossary is not None:
+        paths.append(write_glossary(glossary, out))
     return paths + write_witness_text(wit, out / "witness_text")
 
 
@@ -134,6 +163,15 @@ def hint_text(links: Sequence[Link]) -> str:
     """``hint_other_model`` cell: each distinct hint as "<relation> [<witness loci>]"."""
     shown = dict.fromkeys(f"{link.relation} [{' '.join(link.wit_ids)}]" for link in links)
     return HINT_LABEL + " | ".join(shown) if shown else ""
+
+
+def write_glossary(glossary: StandingRenderings, out_dir: Path) -> Path:
+    """``standing_renderings.csv``: one row per verified entry, forms joined by " | "."""
+    rows = [{"entry": e.id, "reference_forms": GLOSSARY_SEPARATOR.join(e.reference_forms),
+             "witness_renderings": GLOSSARY_SEPARATOR.join(e.witness_renderings)} for e in glossary.entries]
+    path = out_dir / GLOSSARY_FILE
+    write_csv(path, rows, GLOSSARY_COLUMNS, bom=True)
+    return path
 
 
 def split_texts(items: Sequence[ReviewItem], segments: Sequence[Segment],
@@ -172,8 +210,9 @@ def one_line(text: str) -> str:
     return " ".join(text.split())
 
 
-def _blind_row(item: ReviewItem, index: Mapping[str, Segment], ref: Sequence[Segment],
-               wit: Sequence[Segment], cells: Sequence[Cell]) -> dict[str, str]:
+def blind_row(item: ReviewItem, index: Mapping[str, Segment], ref: Sequence[Segment],
+              wit: Sequence[Segment], cells: Sequence[Cell]) -> dict[str, str]:
+    """The text columns of one blind sheet row; the answer columns are left empty."""
     if is_orphan(item.unit_id):
         seg = index[orphan_source(item.unit_id)]
         context = _around(wit, seg.id)
@@ -210,46 +249,6 @@ def _around(wit: Sequence[Segment], seg_id: str) -> list[Segment]:
     return list(wit[max(i - CONTEXT_UNITS, 0):i + CONTEXT_UNITS + 1])
 
 
-def _reveal_sheet(items: Sequence[ReviewItem], out: Path, batch: str, index: Mapping[str, Segment],
-                  ref: Sequence[Segment], wit: Sequence[Segment], cells: Sequence[Cell],
-                  links: Mapping[str, Link], blind: Sequence[Verdict]) -> Path:
-    if any(i.task == "resolve" for i in items):
-        raise ValueError("the resolve task has no reveal step")
-    by_item = {v.item_id: v for v in blind}
-    by_unit = {c.unit_id: c for c in cells}
-    rows = []
-    for item in items:
-        v = by_item.get(item.item_id)
-        if v is None or not v.blind_relation:
-            raise ValueError(f"{item.item_id}: no blind verdict to reveal against (import the blind sheet first)")
-        cell = by_unit.get(item.unit_id)
-        row = _blind_row(item, index, ref, wit, cells)
-        blind_ids, blind_flags = " ".join(v.blind_wit_ids), format_flags(v.flags)
-        row.update(blind_relation=v.blind_relation, blind_wit_loci=blind_ids, blind_flags=blind_flags, note=v.note,
-                   machine_relation=_machine_relation(cell),
-                   machine_polarity_flip="1" if cell is not None and cell.polarity_flip else "0", machine_wit_loci=" ".join(cell.wit_ids) if cell else "",
-                   machine_quotes=_quotes(links.get(item.unit_id)), machine_grade=cell.grade.value if cell else "",
-                   final_relation=v.blind_relation, final_wit_loci=blind_ids, final_flags=blind_flags)
-        rows.append(row)
-    path = out / f"{batch}.reveal.csv"
-    write_csv(path, rows, REVEAL_COLUMNS, bom=True)
-    return path
-
-
-def _machine_relation(cell: Cell | None) -> str:
-    if cell is None:
-        return ""
-    if cell.status is Status.UNALIGNED:
-        return f"UNALIGNED:{cell.reason or ''}"
-    return cell.relation or cell.status.value
-
-
-def _quotes(link: Link | None) -> str:
-    if link is None:
-        return ""
-    return " | ".join(f"{q.side}: {one_line(q.text)}" for q in link.quotes if q.text)
-
-
 # --------------------------------------------------------------------------- import
 def truncate_quote(text: str, lang: str, params: ReviewParams) -> str:
     """Whitespace-normalised ``text`` cut to the configured maximum for ``lang``.
@@ -270,7 +269,8 @@ def truncate_quote(text: str, lang: str, params: ReviewParams) -> str:
 
 def import_(path: Path, task: str, *, params: ReviewParams, annotator: str = "", date: str = "",
             items: Sequence[ReviewItem] = (), blind: Sequence[Verdict] = (), instrument_digest: str = "",
-            ref_lang: str = "bo", wit_lang: str = "zh", minutes: float | None = None) -> list[VerdictRecord]:
+            ref_lang: str = "bo", wit_lang: str = "zh", minutes: float | None = None,
+            check: GlossaryCheck | None = None) -> list[VerdictRecord]:
     """Read a filled sheet and return committed-format verdicts (no text columns).
 
     ``gold``      ``path`` is the ``.ref.csv``; the ``.wit.csv`` beside it maps handles to ids
@@ -279,24 +279,27 @@ def import_(path: Path, task: str, *, params: ReviewParams, annotator: str = "",
                   supplies stratum and inclusion probability; resolve copies blind to final
     ``reveal``    the ``.reveal.csv``; ``blind`` (the committed blind verdicts of the batch)
                   are returned with their final and machine columns filled
-    Every problem in the file is reported at once as a ``VerdictError``.
+    ``check`` confirms a human ``standing_rendering`` against the verified glossary (None:
+    every one is refused). Every problem in the file is reported at once as a ``VerdictError``.
     """
     rows, header = read_sheet(Path(path))
     errors: list[str] = []
     if task == "gold":
         from .gold_sheets import import_gold
-        out = import_gold(Path(path), rows, header, params, annotator, date, ref_lang, wit_lang, minutes, errors)
+        out = import_gold(Path(path), rows, header, params, annotator, date, ref_lang, wit_lang, minutes, errors,
+                          check)
     elif task in BLIND_TASKS:
         # resolve sheets carry the hint column (sheets exported before it existed do not)
         expect_columns(header, RESOLVE_COLUMNS if task == "resolve" and HINT_COLUMN in header else BLIND_COLUMNS,
-                       path)
+                       path, CONVENTION_SHEET_COLUMNS)
         plan = {i.item_id: i for i in items}
         out = [v for n, row in enumerate(rows, start=2)
                if (v := _import_blind(row, n, task, plan, params, annotator, date, ref_lang, wit_lang,
-                                      minutes, errors, batch_of(path, ".blind.csv"))) is not None]
+                                      minutes, errors, batch_of(path, ".blind.csv"), check)) is not None]
     elif task == "reveal":
-        expect_columns(header, REVEAL_COLUMNS, path)
-        out = _import_reveal(rows, blind, params, date, instrument_digest, wit_lang, errors)
+        from .reveal_sheets import import_reveal
+        expect_columns(header, REVEAL_COLUMNS, path, CONVENTION_SHEET_COLUMNS)
+        out = import_reveal(rows, blind, params, date, instrument_digest, wit_lang, errors, check)
     else:
         raise ValueError(f"import_ handles gold, verify, audit, resolve and reveal, not {task!r}")
     if errors:
@@ -312,8 +315,11 @@ def read_sheet(path: Path) -> tuple[list[dict[str, str]], list[str]]:
         return rows, list(reader.fieldnames or ())
 
 
-def expect_columns(header: Sequence[str], columns: Sequence[str], path: Path | str) -> None:
-    if sorted(header) != sorted(columns):
+def expect_columns(header: Sequence[str], columns: Sequence[str], path: Path | str,
+                   optional: Collection[str] = ()) -> None:
+    """The header is ``columns`` (any order), or ``columns`` without ALL of ``optional`` (a
+    sheet exported before those columns existed); a sheet with only some of them is refused."""
+    if sorted(header) not in (sorted(columns), sorted(c for c in columns if c not in optional)):
         raise VerdictError(f"{path}: expected columns {', '.join(columns)}; found {', '.join(header)}")
 
 
@@ -324,7 +330,8 @@ def batch_of(path: Path | str, suffix: str) -> str:
     return name[: -len(suffix)]
 
 
-def _context_texts(row: Mapping[str, str]) -> dict[str, str]:
+def context_texts(row: Mapping[str, str]) -> dict[str, str]:
+    """Segment id -> text of the ``zh_context`` lines of a sheet row."""
     out = {}
     for line in row.get("zh_context", "").splitlines():
         m = _CONTEXT_LINE.match(line.strip())
@@ -334,17 +341,27 @@ def _context_texts(row: Mapping[str, str]) -> dict[str, str]:
 
 
 def check_decision(unit_id: str, value: str, ids: Sequence[str], flags: frozenset[str], where: str,
-                    errors: list[str]) -> None:
+                   errors: list[str], convention: str = "", check: GlossaryCheck | None = None) -> None:
+    """Append every problem of one human decision to ``errors``.
+
+    ``convention`` is "" when the sheet has no convention column. A ``standing_rendering``
+    on a linked decision is confirmed by ``check`` (no check: refused).
+    """
     allowed = ORPHAN_VALUES if is_orphan(unit_id) else UNIT_VALUES
     if value not in allowed:
         errors.append(f"{where}: {value!r} is not one of {', '.join(allowed)}")
     if value == Relation.NO_COUNTERPART.value and ids:
         errors.append(f"{where}: no_counterpart must name no witness segment")
-    if value in {r.value for r in Relation} - {Relation.NO_COUNTERPART.value} and not ids:
+    if value in LINKED_RELATIONS and not ids:
         errors.append(f"{where}: relation {value} needs witness segment ids")
-    unknown = sorted(flags - set(FLAGS))
-    if unknown:
-        errors.append(f"{where}: unknown flag(s) {unknown}; allowed: {', '.join(FLAGS)}")
+    errors.extend(f"{where}: {p}" for p in flag_problems(flags))
+    problem = convention_problem(unit_id, value, convention)
+    if problem:
+        errors.append(f"{where}: {problem}")
+    elif convention == Convention.STANDING_RENDERING.value and ids:
+        problem = check(unit_id, tuple(ids)) if check is not None else NO_GLOSSARY
+        if problem:
+            errors.append(f"{where}: {problem}")
 
 
 def parse_flip(value: str, where: str, errors: list[str]) -> bool:
@@ -357,7 +374,8 @@ def parse_flip(value: str, where: str, errors: list[str]) -> bool:
 
 def _import_blind(row: Mapping[str, str], n: int, task: str, plan: Mapping[str, ReviewItem],
                   params: ReviewParams, annotator: str, date: str, ref_lang: str, wit_lang: str,
-                  minutes: float | None, errors: list[str], batch: str) -> VerdictRecord | None:
+                  minutes: float | None, errors: list[str], batch: str,
+                  check: GlossaryCheck | None) -> VerdictRecord | None:
     value = row["blind_relation"].strip()
     if not value:
         return None
@@ -366,73 +384,21 @@ def _import_blind(row: Mapping[str, str], n: int, task: str, plan: Mapping[str, 
         errors.append(f"{where}: task {row['task']!r} in a {task} import")
     item_id, unit_id = row["item_id"].strip(), row["unit_id"].strip()
     ids, flags = parse_ids(row["blind_wit_loci"]), parse_flags(row["blind_flags"])
-    check_decision(unit_id, value, ids, flags, where, errors)
+    conv = normalise_convention(row["blind_convention"]) if "blind_convention" in row else ""
+    check_decision(unit_id, value, ids, flags, where, errors, conv, check)
     item = plan.get(item_id)
     if item is None and task != "resolve":
         errors.append(f"{where}: item {item_id} is not in the plan (pass the plan's items)")
-    texts = _context_texts(row)
+    texts = context_texts(row)
     quote_zh = " ".join(texts.get(i, "") for i in (ids or ((orphan_source(unit_id),) if is_orphan(unit_id) else ())))
     final = task == "resolve"
     return VerdictRecord(
         batch_id=batch, item_id=item_id, task=task, unit_id=unit_id, fingerprint=row["fingerprint"].strip(),
         stratum=item.stratum if item else "", inclusion_prob=item.inclusion_prob if item else None,
         blind_relation=value, blind_wit_ids=ids, final_relation=value if final else "",
-        final_wit_ids=ids if final else (), polarity_flip=value == Relation.REVERSAL.value,
+        final_wit_ids=ids if final else (), blind_convention=conv, final_convention=conv if final else "",
+        polarity_flip=value == Relation.REVERSAL.value,
         flags=flags, annotator=annotator, blind_date=date, final_date=date if final else "",
         note=row.get("note", "").strip(), quote_ref=truncate_quote(row["ref_text"], ref_lang, params),
         quote_zh=truncate_quote(quote_zh, wit_lang, params), minutes=minutes,
     )
-
-
-def _import_reveal(rows: Sequence[Mapping[str, str]], blind: Sequence[Verdict], params: ReviewParams, date: str,
-                   instrument_digest: str, wit_lang: str, errors: list[str]) -> list[VerdictRecord]:
-    """Every blind verdict of the batch, in its order; those on the sheet get their reveal columns."""
-    out = {v.item_id: v if isinstance(v, VerdictRecord) else VerdictRecord(**{f: getattr(v, f) for f in
-                                                                             Verdict.__dataclass_fields__})
-           for v in blind}
-    for n, row in enumerate(rows, start=2):
-        where = f"line {n}"
-        v = out.get(row["item_id"].strip())
-        if v is None:
-            errors.append(f"{where}: item {row['item_id']} has no committed blind verdict")
-            continue
-        machine = row["machine_relation"].strip()
-        v = replace(v, machine_relation=machine, machine_status=_machine_status(machine),
-                    machine_polarity_flip=row.get("machine_polarity_flip", "").strip() in {"1", "true", "True"},
-                    instrument_digest=instrument_digest or v.instrument_digest)
-        value = row["final_relation"].strip()
-        if value:
-            v = _final(v, row, value, params, date, wit_lang, where, errors)
-        out[v.item_id] = v
-    return list(out.values())
-
-
-def _final(v: VerdictRecord, row: Mapping[str, str], value: str, params: ReviewParams, date: str, wit_lang: str,
-           where: str, errors: list[str]) -> VerdictRecord:
-    ids, flags = parse_ids(row["final_wit_loci"]), parse_flags(row["final_flags"])
-    check_decision(v.unit_id, value, ids, flags, where, errors)
-    reason = row["revised_reason"].strip()
-    if (value, ids, flags) != (v.blind_relation, v.blind_wit_ids, v.flags) and not reason:
-        errors.append(f"{where}: the final decision differs from the blind one; give revised_reason")
-    note = row.get("note", "").strip()
-    if reason:
-        note = f"{note} | revised: {reason}" if note else f"revised: {reason}"
-    texts = _context_texts(row)
-    quote_zh = v.quote_zh
-    if ids != v.blind_wit_ids and all(i in texts for i in ids):
-        quote_zh = truncate_quote(" ".join(texts[i] for i in ids), wit_lang, params)
-    return replace(v, final_relation=value, final_wit_ids=ids, flags=flags, final_date=date,
-                   polarity_flip=value == Relation.REVERSAL.value, note=note, quote_zh=quote_zh)
-
-
-def _machine_status(machine_relation: str) -> str:
-    if not machine_relation:
-        return ""
-    if machine_relation.startswith(f"{Status.UNALIGNED.value}:"):
-        return Status.UNALIGNED.value
-    if machine_relation in {k.value for k in WitnessOnlyKind}:
-        return Status.NA.value
-    try:
-        return RELATION_STATUS[Relation(machine_relation)].value
-    except ValueError:
-        return ""

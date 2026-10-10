@@ -33,9 +33,12 @@ never exceed 60 characters.
 
 ## Columns
 
-Exactly these 24 columns, UTF-8 (a byte-order mark is tolerated). Lists of ids are separated
-by spaces, lists of flags by `;`. Files written before `machine_polarity_flip` was added (23
-columns) still load; the missing column reads as `false`.
+Exactly these 27 columns, UTF-8 (a byte-order mark is tolerated). Lists of ids are separated
+by spaces, lists of flags by `;`. Older files still load: without `machine_polarity_flip`
+(written before 2026-10-01) that column reads as `false`; without the three convention columns
+`machine_convention`, `blind_convention` and `final_convention` (written before collate.v2)
+they read as empty, i.e. not annotated. A file with only some of the three convention columns
+is refused.
 
 | Column | Content |
 |---|---|
@@ -50,10 +53,13 @@ columns) still load; the missing column reads as `false`.
 | `machine_relation` | the machine proposal shown at reveal (`UNALIGNED:<reason>` when there was none) |
 | `machine_status` | status of that proposal (`PRESENT`, `PARTIAL`, `ABSENT`, `UNALIGNED`, `NA`) |
 | `machine_polarity_flip` | `true` when that proposal flagged a polarity flip (from the reveal sheet; used by the E4 misclassification table), else `false` |
+| `machine_convention` | the convention of that proposal shown at reveal (`none`, `standing_rendering` or `transcribed_name`; a v1 instrument always gives `none`; empty before reveal, without a machine cell, or for an UNALIGNED one). A convention the code checks did not support is shown on the sheet as `<convention>:unsupported` and stored without the suffix |
 | `blind_relation` | the decision made before seeing any machine output |
 | `blind_wit_ids` | witness segment ids of the blind decision |
+| `blind_convention` | the convention of the blind decision: `none`, `standing_rendering` or `transcribed_name` (a blank sheet cell is stored as `none`; empty = not annotated) |
 | `final_relation` | the decision after reveal (resolve: a copy of the blind one, since resolve has no reveal) |
 | `final_wit_ids` | witness segment ids of the final decision |
+| `final_convention` | the convention of the final decision (resolve: a copy of the blind one) |
 | `polarity_flip` | `true` or `false` (true for `reversal`) |
 | `flags` | any of `scope_list`, `uniform_across_list`, `instruction_as_mantra`, `reordered`, `unsure` |
 | `quote_ref` | short quote of the reference unit (re-resolution hint only) |
@@ -73,8 +79,22 @@ columns) still load; the missing column reads as `false`.
 - Orphan row: a witness-only kind (`addition`, `translator_note`, `paratext`,
   `belongs_elsewhere`), or `has_counterpart` when the claim is wrong (then record the link with
   a verdict on the reference unit it translates).
+- Convention (collate.v2), recorded apart from the relation and never in `flags`:
+  `standing_rendering` (the unit contains a term of the verified glossary of the witness's
+  standing renderings, rendered as listed) or `transcribed_name` (a proper name, seed syllable
+  or letter rendered by sound while the rest is rendered by meaning); otherwise `none`. The
+  relation is then judged as if the name or term had been translated; a convention never turns
+  a missing, reversed or replaced element into `equivalent`. A convention other than `none`
+  needs a linked relation (not `no_counterpart`, `lacuna` or `unresolved`, and never on an
+  orphan row). `standing_rendering` is accepted only when the unit contains a reference form
+  of a verified glossary entry and the linked witness segments contain a rendering of the same
+  entry: `standing_renderings.csv` beside the sheets lists the verified entries (the same ones
+  the collate.v2 prompt shows; while none is verified, every `standing_rendering` is refused on
+  import). The flag `convention_unsupported` is set by the code checks only.
 
-Status is never stored: it is derived from the relation (`hevajra_matrix.matrix.status`).
+Status is never stored: it is derived from the relation (`hevajra_matrix.matrix.status`). A
+decided convention (final columns; gold: blind) reaches the matrix as the cell flag of the same
+name, on a grade-A cell; an empty convention adds none.
 
 ## How verdicts are used
 
@@ -86,3 +106,6 @@ Status is never stored: it is derived from the relation (`hevajra_matrix.matrix.
 - **Estimation (critique A1):** the final columns are primary. The blind columns give the
   pre-registered automation-bias sensitivity estimate, and the blind-to-final revision rate is
   reported per stratum. Assisted (post-reveal) verdicts are never used as G1 gold.
+- **Revisions:** a final decision that differs from the blind one in relation, witness ids,
+  flags or convention needs a `revised_reason` on the reveal sheet; an empty convention and
+  `none` count as the same. A blind decision, convention included, is fixed once revealed.

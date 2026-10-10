@@ -185,6 +185,7 @@ def test_e4_names_the_uncalibrated_stratum_rather_than_missing_verdicts(finished
     est = results.stats(context(root, run, offline=True))
     assert est["E1_any"].not_estimable.startswith("G3: no phase-2 sample verdict in stratum neg:B:other")
     assert est["E4"].not_estimable == est["E1_any"].not_estimable
+    assert est["E1_any_conv"].not_estimable == est["E1_any"].not_estimable, "the sensitivity variant shares the draws"
 
 
 def _level2() -> GateReport:

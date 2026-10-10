@@ -1,4 +1,4 @@
-# Collation task (collate.v2, DRAFT - not in use)
+# Collation task (collate.v2)
 
 You compare two versions of one text: a REFERENCE (a chunk of numbered units, the
 lines starting `r001`, `r002`, ...) and a WITNESS (the complete text of a translation,

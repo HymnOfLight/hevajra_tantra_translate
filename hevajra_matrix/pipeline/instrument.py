@@ -79,6 +79,10 @@ class CollationPlan:
     def requests(self) -> list[tuple[str, Window, LLMRequest]]:
         return collator.build_requests(self.windows, self.settings, self.tags, self.examples, self.template)
 
+    def lexicon(self, ctx: RunContext, texts: Texts) -> CheckLexicon:
+        """The check lexicon of this plan: V12 gets the very glossary shown in the prompt."""
+        return CheckLexicon.load(ctx.data_dir, texts.witness, self.examples.glossary)
+
 
 def plan_collation(ctx: RunContext, chapters: str | None = None, replicates: int | None = None,
                    texts: Texts | None = None) -> CollationPlan:
@@ -93,10 +97,17 @@ def plan_collation(ctx: RunContext, chapters: str | None = None, replicates: int
     if k < 1:
         raise StageError("--replicates must be >= 1")
     try:
-        examples = collator.load_examples(ctx.data_dir, *text_langs(texts))
+        examples = collator.load_examples(ctx.data_dir, *text_langs(texts), prompt=settings.prompt)
     except FileNotFoundError as exc:
         raise StageError(str(exc)) from exc
-    return CollationPlan(tuple(windows), settings, collator.replicate_tags(k), examples, collator.load_template())
+    if examples.glossary_texts is not None and examples.glossary_texts != (texts.reference_id, texts.witness_id):
+        ref, wit = examples.glossary_texts
+        raise StageError(f"{settings.prompt}: the standing renderings of {text_langs(texts)[0]}->"
+                         f"{text_langs(texts)[1]} were written for {wit} against {ref}, but this run collates "
+                         f"{texts.witness_id} against {texts.reference_id}; a witness's renderings are never "
+                         "borrowed for another")
+    return CollationPlan(tuple(windows), settings, collator.replicate_tags(k), examples,
+                         collator.load_template(settings.prompt))
 
 
 def text_langs(texts: Texts) -> tuple[str, str]:
@@ -111,12 +122,33 @@ def collate_digest(ctx: RunContext, texts: Texts) -> str:
     return instrument_digests(ctx.settings).get(collate_task(*text_langs(texts)), "")
 
 
+def collated_prompt(ctx: RunContext) -> str | None:
+    """The prompt version of this run's latest collate (``collation/replicates.json: prompt``;
+    collate.v1 for a run written before the key existed), or None before any collate."""
+    path = ctx.path("collation", "replicates.json")
+    if not path.is_file():
+        return None
+    return str(json.loads(path.read_text(encoding="utf-8")).get("prompt", collator.PROMPT_V1))
+
+
+def check_prompt(ctx: RunContext) -> str | None:
+    """Refuse a configured ``tasks.collate.prompt`` other than the version this run collated
+    with (like ``context.check_backend`` for the backend): perturbing or digest-checking a
+    v1 consensus as v2 (or the reverse) would mix two instruments. Returns that version."""
+    recorded, configured = collated_prompt(ctx), collator.TaskSettings.from_config(ctx.settings.llm).prompt
+    if recorded is not None and recorded != configured:
+        raise StageError(f"{ctx.run_dir} was collated with {recorded}, but config/llm.yaml selects "
+                         f"tasks.collate.prompt: {configured}; set it back to {recorded}, or collate anew")
+    return recorded
+
+
 def replicate_paths(ctx: RunContext, tag: str) -> tuple[Path, Path]:
     return ctx.path("alignments", f"claude.{tag}.jsonl"), ctx.path("collation", f"{tag}.json")
 
 
 def read_replicates(ctx: RunContext) -> list[Collation]:
-    """The verified replicates written by the latest ``collate`` (see ``collation/replicates.json``)."""
+    """The verified replicates written by the latest ``collate`` (see ``collation/replicates.json``,
+    whose ``prompt`` names the prompt version; absent in runs before collate.v2 = collate.v1)."""
     index = require(ctx.path("collation", "replicates.json"), "collate")
     tags = json.loads(index.read_text(encoding="utf-8"))["tags"]
     out = []
@@ -129,7 +161,7 @@ def read_replicates(ctx: RunContext) -> list[Collation]:
 # --------------------------------------------------------------------------- collate
 def collate(ctx: RunContext, chapters: str | None = None, replicates: int | None = None,
             dry_run: bool = False) -> dict[str, Any]:
-    """Run T1 for every window and replicate, verify (V1-V11) and write each replicate.
+    """Run T1 for every window and replicate, verify (V1-V12) and write each replicate.
 
     ``--chapters`` restricts this invocation; ``build`` reads what the latest invocation
     wrote, so assemble the whole text by rerunning without ``--chapters`` (cached windows
@@ -152,11 +184,11 @@ def collate(ctx: RunContext, chapters: str | None = None, replicates: int | None
     except CacheMiss as exc:
         raise StageError(f"{exc}; the cache does not hold this collation (run online once, or check the prompt "
                          "and configuration have not changed)") from exc
-    lexicon = CheckLexicon.load(ctx.data_dir, texts.witness)
+    lexicon = cplan.lexicon(ctx, texts)
     summary: dict[str, Any] = {"windows": len(cplan.windows), "tags": list(cplan.tags), "replicates": {}}
     for tag in cplan.tags:
         verified, overlap = verify_all(cplan.windows, parsed[tag], lexicon,
-                                       collator.source_name(cplan.settings.model, tag))
+                                       collator.source_name(cplan.settings.model, tag, cplan.settings.prompt))
         a_path, c_path = replicate_paths(ctx, tag)
         write_alignment(a_path, verified.alignment)
         c_path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,7 +199,8 @@ def collate(ctx: RunContext, chapters: str | None = None, replicates: int | None
         print(f"collate {tag}: {len(verified.alignment.by_ref())} units resolved, {len(verified.unresolved)} "
               f"UNALIGNED, overlap agreement {overlap.rate if overlap.rate is None else round(overlap.rate, 3)}")
     ctx.path("collation", "replicates.json").write_text(
-        json.dumps({"tags": list(cplan.tags), "chapters": sorted({w.chapter for w in cplan.windows}),
+        json.dumps({"tags": list(cplan.tags), "prompt": cplan.settings.prompt,
+                    "chapters": sorted({w.chapter for w in cplan.windows}),
                     "windows": [w.key for w in cplan.windows],
                     "request_keys": sorted(r.key() for _, _, r in cplan.requests())}, indent=1) + "\n",
         encoding="utf-8")
@@ -275,20 +308,21 @@ def perturb(ctx: RunContext, fraction: float = 0.05, seed: int | None = None,
     """
     texts = load_texts(ctx)
     expected = read_alignment(require(ctx.path("alignments", CONSENSUS_FILE), "build"))
+    check_prompt(ctx)                 # the expected counterparts come from the collated version
     seed = int((ctx.settings.prereg.get("stats") or {}).get("seed", 0)) if seed is None else seed
     base = plan_collation(ctx, ",".join(dev_chapters(ctx.settings.prereg)) or None, 1, texts)
     order = texts.concordance.local_order[texts.witness_id]
     wrong = [wrong_window(w, [far_chapter(w, order)]) for w in base.windows]
     deleted = [delete_segments(w, fraction, seed) for w in base.windows
                if any(s.id in w.core and s.kind in CONTENT_KINDS for s in w.text)]
-    lexicon = CheckLexicon.load(ctx.data_dir, texts.witness)
+    lexicon = base.lexicon(ctx, texts)
     negated = negation_windows(ctx, texts, base.windows, lexicon) if negation else []
     windows = [w for w, _ in wrong] + [w for w, _ in deleted] + [w for w, _ in negated]
     if not ctx.offline and not has_credentials(ctx.settings):
         raise StageError(f"perturb needs {credentials_hint(ctx.settings)}, or --offline with a filled cache")
     parsed = collator.collate(windows, make_client(ctx), base.settings, ("r1",), base.examples, base.template,
                               workers=int(ctx.settings.llm.get("workers", 1)))["r1"]
-    results = [verify(p, w, lexicon, collator.source_name(base.settings.model, "perturb"))
+    results = [verify(p, w, lexicon, collator.source_name(base.settings.model, "perturb", base.settings.prompt))
                for w, p in zip(windows, parsed)]
     n_wrong, n_del = len(wrong), len(deleted)
     ww = _sum(false_link_rate(t, r.alignment) for (_, t), r in zip(wrong, results[:n_wrong]))

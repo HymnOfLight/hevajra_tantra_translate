@@ -13,6 +13,11 @@
                          Manski bounds; E3 (counts, A2 bound, O/E/O-E, phi) and E4 only where
                          gate G4 passes
 
+E1_any_conv is the sensitivity variant with conventions counted (collate.v2): D_any plus every
+counted unit carrying a standing rendering or a transcribed name, comparable with a caliber that
+counts transcription as deviation. It is printed beside E1_any with the conventions it counted,
+and is never the primary outcome; for a collate.v1 run it equals E1_any.
+
 At every level: human-verified (grade A) counts, printed as instrument-independent lower
 bounds; the confirmatory/exploratory line; and for every estimand that cannot be printed
 ``NOT_ESTIMABLE: <gate>: <reason>``, never a zero. ``render`` is pure: the pipeline
@@ -26,7 +31,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..core.types import Alignment, Cell, Estimate, Grade, OutcomeClass, Relation
+from ..core.types import (COUNTED_STATUSES, FLAG_CONVENTION_UNSUPPORTED, Alignment, Cell, Convention, Estimate, Grade,
+                          OutcomeClass, Relation, convention_of)
 from ..evaluation.gate import GateReport
 from ..evaluation.sentinels import SentinelResult
 from ..matrix.status import cell_outcome, outcome_class
@@ -47,6 +53,7 @@ SOURCE_LABELS = {"claude:consensus": "Claude consensus", "dp:zero": "P1 length-o
 PLACEBO_PREFIX = "placebo:"
 ESTIMANDS = (
     ("E1_any", "E1 share of units deviating (D_any)"),
+    ("E1_any_conv", "E1 share deviating, conventions counted (D_any_conv; sensitivity variant, not primary)"),
     ("E1_cov", "E1 share of units losing coverage (D_cov, partial or absent)"),
     ("E1_absent", "E1 share of units absent"),
     ("E1_partial", "E1 share of units partial"),
@@ -59,11 +66,17 @@ CALIBRATED = 2                        # every estimate needs report level 2
 SCORE_COLUMNS = (("link_f1", "link F1"), ("status_kappa", "status kappa"), ("null_precision", "NULL precision"),
                  ("null_recall", "NULL recall"), ("witness_only_recall", "witness-only recall"))
 BREAKDOWN_LABELS = {"relation_recall": "recall of relation", "status_agreement": "status agreement",
-                    "dany_agreement": "D_any agreement", "refusal_rate": "refusal rate, topic"}
+                    "dany_agreement": "D_any agreement", "refusal_rate": "refusal rate, topic",
+                    # collate.v2 (n/a for a source without conventions); a bare key is the all-units value
+                    "dany_conv_agreement": "D_any_conv agreement", "relation_kappa": "relation kappa",
+                    "dany_conv_kappa": "D_any_conv kappa", "convention_precision": "convention precision",
+                    "convention_recall": "convention recall"}
 _DECIMAL = re.compile(r"(?<![\w.:])-?\d+\.\d+(?![\w.])")
 _INTERVAL = re.compile(r"\[[^\]]*\d[^\]]*\]")
 WITHHELD = "<withheld>"
 _SENTINEL_REASON = ": verified sentinel "
+CONVENTION_KEYS = (Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value)
+MANSKI_LABELS = {"any_conv": "any_conv (conventions counted, sensitivity)"}
 
 
 @dataclass(frozen=True)
@@ -85,6 +98,7 @@ class ReportInputs:
     ``scores``             source -> metric -> ``Estimate`` with its bootstrap interval
     ``estimates``          estimand name -> ``Estimate`` (from the stats stage)
     ``manski``             outcome -> (lo, hi) share bounds over unresolved units
+    ``conventions``        ``convention_counts`` of the matrix the estimates used
     ``notes``              translator notes relevant to the decomposition (id, class, host)
     """
 
@@ -108,6 +122,7 @@ class ReportInputs:
     reliability: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # source -> scores.json reliability
     e3_details: Mapping[str, Any] = field(default_factory=dict)              # stats/details.json "e3"
     negation: Mapping[str, int] | None = None                                # perturbations.json "negation"
+    conventions: Mapping[str, int] = field(default_factory=dict)             # stats/details.json "conventions"
 
 
 # --------------------------------------------------------------------------- counting (pure)
@@ -136,6 +151,22 @@ def human_verified_counts(cells: Iterable[Cell], ref_kinds: Mapping[str, str]) -
             continue
         outcome = cell_outcome(c, ref_kinds.get(c.unit_id, ""))
         counts[outcome.value if isinstance(outcome, OutcomeClass) else "unaligned"] += 1
+    return dict(counts)
+
+
+def convention_counts(cells: Iterable[Cell]) -> dict[str, int]:
+    """Counted reference-unit cells per convention, how many of them lack code support
+    (``convention_unsupported``) and how many were decided by a human (grade A)."""
+    counts = Counter({key: 0 for key in (*CONVENTION_KEYS, "unsupported", "human")})
+    for c in cells:
+        if c.unit_id.startswith("+") or c.status not in COUNTED_STATUSES:
+            continue
+        convention = convention_of(c.flags)
+        if convention is Convention.NONE:
+            continue
+        counts[convention.value] += 1
+        counts["unsupported"] += FLAG_CONVENTION_UNSUPPORTED in c.flags
+        counts["human"] += c.grade is Grade.A
     return dict(counts)
 
 
@@ -265,7 +296,8 @@ def _scores(inputs: ReportInputs) -> list[str]:
 
 
 def _score_breakdowns(inputs: ReportInputs) -> list[str]:
-    """Per-relation recall, per-class agreement and refusal by topic group (synthesis 5.2)."""
+    """Per-relation recall, per-class agreement, refusal by topic group (synthesis 5.2) and the
+    collate.v2 convention scores."""
     keys = sorted({k for m in inputs.scores.values() for k in m if k.split(":", 1)[0] in BREAKDOWN_LABELS})
     if not keys:
         return []
@@ -333,6 +365,8 @@ def _estimates(inputs: ReportInputs, gate: GateReport) -> list[str]:
                 out += _revision(inputs) if name == "E1_any" else []
             if name == "E4":
                 out += _e4_diagnostics(inputs.e4_details)
+            if name == "E1_any_conv":
+                out += _conventions(inputs.conventions)
             prior = inputs.estimates.get(f"{name}_prior")
             if prior is not None and prior.point is not None:
                 out.append(f"  - prior sensitivity (Dirichlet symmetric in D, not Jeffreys): {_interval(prior)}")
@@ -340,8 +374,22 @@ def _estimates(inputs: ReportInputs, gate: GateReport) -> list[str]:
         out += ["", "Manski bounds over units still unresolved after review:"]
         for outcome, (lo, hi) in inputs.manski.items():
             wide = " (wider than the gate allows)" if hi - lo > inputs.max_manski_width else ""
-            out.append(f"- {outcome}: [{_num(lo)}, {_num(hi)}]{wide}")
+            out.append(f"- {MANSKI_LABELS.get(outcome, outcome)}: [{_num(lo)}, {_num(hi)}]{wide}")
     return out + [""]
+
+
+def _conventions(counts: Mapping[str, int]) -> list[str]:
+    """What E1_any_conv adds to E1_any: the caliber and the conventions it counted."""
+    out = ["  - caliber: a unit also counts when it carries a convention (standing rendering or transcribed "
+           "name), read from the matrix (human on grade A, consensus majority otherwise), not imputed"]
+    if not counts:
+        return out
+    total = sum(counts.get(k, 0) for k in CONVENTION_KEYS)
+    if not total:
+        return out + ["  - no counted unit carries a convention (e.g. a collate.v1 run): equals E1_any"]
+    per = ", ".join(f"{k} {counts.get(k, 0)}" for k in CONVENTION_KEYS)
+    return out + [f"  - conventions counted: {total} units ({per}); {counts.get('unsupported', 0)} without code "
+                  f"support (convention_unsupported), {counts.get('human', 0)} human-decided"]
 
 
 def _revision(inputs: ReportInputs) -> list[str]:

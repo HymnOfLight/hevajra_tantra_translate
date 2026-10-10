@@ -33,6 +33,13 @@ estimate with the verdicts made before the annotator saw the machine output, whi
 pre-registered automation-bias sensitivity. ``revision_rate`` reports blind -> final changes.
 A verify or audit verdict whose reveal is not imported yet has no final decision: it is
 absent from the final column (as it is from the matrix), never read as a final one.
+
+D_any_conv (``any_conv``, collate.v2) is a sensitivity outcome of E1 on the final column only:
+a unit counts if its drawn class deviates OR it carries a convention. The convention is
+plugged in from the built matrix (``unit_conventions``: the human convention on grade A cells,
+"" read as none; the consensus-majority convention otherwise), not imputed; its error is
+reported by evaluation (convention precision/recall), not propagated into the interval. Strata
+and E2 stay on D_any, the blind column on D_any/D_cov, and E3, E4, the prior and G3 on the primary.
 """
 
 from __future__ import annotations
@@ -44,7 +51,7 @@ from dataclasses import dataclass
 from typing import Iterable, Literal, Mapping, Sequence
 
 from ..core.types import COUNTED_STATUSES, Cell, Estimate, Grade, OutcomeClass, Relation, Status, Verdict
-from ..matrix.status import cell_outcome, deviates, outcome_class
+from ..matrix.status import PRIMARY_OUTCOMES, cell_outcome, deviates, has_convention, outcome_class
 
 Column = Literal["final", "blind"]
 
@@ -305,11 +312,25 @@ def draws(
     return out
 
 
-def indicator(outcome: OutcomeClass, which: str) -> bool:
-    """D for ``which``: "any" (D_any), "cov" (D_cov), or one outcome class (e.g. "absent")."""
-    if which in ("any", "cov"):
-        return deviates(outcome, which)  # type: ignore[arg-type]
+def indicator(outcome: OutcomeClass, which: str, convention: bool | None = None) -> bool:
+    """D for ``which``: "any" (D_any), "cov" (D_cov), "any_conv" (D_any_conv: ``convention``
+    must be given, else ValueError), or one outcome class (e.g. "absent")."""
+    if which in ("any", "cov", "any_conv"):
+        return deviates(outcome, which, convention)  # type: ignore[arg-type]
     return outcome is OutcomeClass(which)
+
+
+def require_primary(outcome: str, what: str) -> str:
+    """``outcome`` if it may be a primary outcome; E2-E4, G3, the MDE and the prior sensitivity
+    never take the sensitivity variant ``any_conv`` (or a single class)."""
+    if outcome not in PRIMARY_OUTCOMES:
+        raise ValueError(f"{what} uses the primary outcome {PRIMARY_OUTCOMES}, not {outcome!r}")
+    return outcome
+
+
+def unit_conventions(cells: Iterable[Cell]) -> dict[str, bool]:
+    """Unit -> carries a convention, read from the built matrix (plugged in, never imputed)."""
+    return {cell.unit_id: has_convention(cell.flags) for cell in cells}
 
 
 def percentile(values: Sequence[float], q: float) -> float:
@@ -334,19 +355,22 @@ def summarise(values: Sequence[float], name: str, n: int, scope: str, sources: t
 def prevalence(
     draw_list: Sequence[Mapping[str, OutcomeClass]], outcome: str = "any",
     weights: Mapping[str, float] | None = None, name: str = "E1", scope: str = "",
+    conventions: Mapping[str, bool] | None = None,
 ) -> Estimate:
     """Finite-population share of units with the outcome (E1), or length-weighted (E2).
 
     With ``weights`` (e.g. syllables per unit) this is sum(l_u D_u) / sum(l_u). No chapter
-    bootstrap: the text is a census (synthesis 6.1).
+    bootstrap: the text is a census (synthesis 6.1). ``conventions`` (``unit_conventions``)
+    is required for "any_conv" and must cover every drawn unit.
     """
+    conv = conventions if outcome == "any_conv" else None
     values: list[float] = []
     for vector in draw_list:
         num = den = 0.0
         for unit, cls in vector.items():
             w = 1.0 if weights is None else float(weights[unit])
             den += w
-            num += w * indicator(cls, outcome)
+            num += w * indicator(cls, outcome, None if conv is None else conv[unit])
         if den > 0:
             values.append(num / den)
     if not values:
@@ -356,7 +380,8 @@ def prevalence(
 
 
 def unit_means(draw_list: Sequence[Mapping[str, OutcomeClass]], outcome: str = "any") -> dict[str, float]:
-    """Posterior mean of D per unit (the input of the permutation test and matching)."""
+    """Posterior mean of D per unit (the input of the permutation test and matching; E4)."""
+    require_primary(outcome, "unit_means (E4)")
     totals: dict[str, float] = {}
     for vector in draw_list:
         for unit, cls in vector.items():
@@ -369,7 +394,8 @@ def manski(
 ) -> tuple[float, float]:
     """Bounds on the share when every still-UNALIGNED unit deviates (hi) or none does (lo).
 
-    ``cells`` is the built matrix (human resolutions applied). LACUNA and NA stay excluded.
+    ``cells`` is the built matrix (human resolutions applied; "any_conv" reads each cell's
+    convention flag). LACUNA and NA stay excluded.
     Report the bounds as flagged when ``hi - lo`` exceeds ``gates.g3.max_manski_width``.
     """
     kinds = ref_kinds or {}
@@ -382,7 +408,7 @@ def manski(
         if cls is None:
             continue
         n += 1
-        d += indicator(cls, outcome)
+        d += indicator(cls, outcome, has_convention(cell.flags))
     total = n + u
     if total == 0:
         raise ValueError("no countable or unresolved units")

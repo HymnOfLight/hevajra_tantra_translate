@@ -12,12 +12,20 @@ Per reference unit (synthesis 4.2, 4.3)
                replicates' sets (the medoid; the earliest replicate on a tie). Taking the
                whole link from one replicate keeps relation, segments, polarity flag and
                quotes mutually consistent. Its flags are the union of every replicate's
-               flags for the unit, so no finding is lost.
+               flags for the unit, so no finding is lost, except for conventions
+    convention (collate.v2) voted, not united: a convention needs two thirds of the k
+               replicates among the resolved readings, else the link has none. The
+               medoid is taken among the majority readings with the voted convention
+               when there is one. ``convention_unsupported`` (V12) is kept only when a
+               reading holding the voted convention raised it: an outvoted claim changes
+               neither D_any nor D_any_conv (the replicate files keep it)
     UNALIGNED  a majority of unresolved replicates gives their most frequent reason (a
                unit refused by all replicates stays "refused:<category>"); no majority at
                all gives "no_majority"
     grade      X for UNALIGNED; B when all k replicates give the same class and no flag
-               other than ``corroborated`` is set; C otherwise
+               other than ``corroborated`` and the convention flags is set; C otherwise.
+               Conventions are descriptions, so neither a convention nor a split vote on
+               one ever lowers a grade; ``convention_unsupported`` is a finding (C)
 
 Witness-only material is decided per witness segment by the same two-thirds rule (kind
 by majority, ties in ``WitnessOnlyKind`` order) and never for a segment the consensus
@@ -35,19 +43,24 @@ from typing import Mapping, NamedTuple, Sequence
 
 from ..core.ids import orphan_row_id, sort_key
 from ..core.types import (
+    CONVENTION_FLAGS,
+    FLAG_CONVENTION_UNSUPPORTED,
     REASON_NO_MAJORITY,
     REASON_UNASSESSED,
     Alignment,
+    Convention,
     Grade,
     Link,
     OutcomeClass,
     WitnessOnlyKind,
+    convention_of,
+    with_convention,
 )
 from ..matrix.status import RELATION_PRIORITY, outcome_class
 from .verify import FLAG_CORROBORATED, Collation
 
 SOURCE_CONSENSUS = "claude:consensus"
-BENIGN_FLAGS = frozenset({FLAG_CORROBORATED})
+BENIGN_FLAGS = frozenset({FLAG_CORROBORATED, *CONVENTION_FLAGS})   # never lower a grade
 UNRESOLVED = "unresolved"
 
 
@@ -93,7 +106,7 @@ def consensus(replicates: Sequence[Collation], ref_kinds: Mapping[str, str],
         votes = Counter(c for c in classes if c is not None)
         top = votes.most_common(1)
         if top and has_majority(top[0][1], k):
-            link, unanimous = _majority_link(readings, classes, top[0][0], source), top[0][1] == k
+            link, unanimous = _majority_link(readings, classes, top[0][0], source, k), top[0][1] == k
             links.append(link)
             grades[uid] = Grade.B if unanimous and link.flags <= BENIGN_FLAGS else Grade.C
             continue
@@ -109,8 +122,15 @@ def consensus(replicates: Sequence[Collation], ref_kinds: Mapping[str, str],
     return Consensus(alignment, MappingProxyType(grades), MappingProxyType(reasons))
 
 
+def convention_vote(readings: Sequence[Link | None], k: int) -> Convention:
+    """The convention of at least two thirds of the k replicates among the resolved
+    readings, else NONE."""
+    votes = Counter(convention_of(link.flags) for link in readings if link is not None)
+    return next((c for c, n in votes.most_common() if has_majority(n, k)), Convention.NONE)
+
+
 def _majority_link(readings: Sequence[Link | None], classes: Sequence[OutcomeClass | None],
-                   top: OutcomeClass, source: str) -> Link:
+                   top: OutcomeClass, source: str, k: int) -> Link:
     members = [link for link, c in zip(readings, classes) if c == top and link is not None]
     counts = Counter(link.relation for link in members)
     best = max(counts.values())
@@ -123,10 +143,17 @@ def _majority_link(readings: Sequence[Link | None], classes: Sequence[OutcomeCla
         others.remove(own)
         return sum(jaccard(own, o) for o in others) / len(others) if others else 1.0
 
+    convention = convention_vote(readings, k)
     candidates = [link for link in members if link.relation == relation]
+    candidates = [link for link in candidates if convention_of(link.flags) is convention] or candidates
     medoid = max(candidates, key=centrality)          # max keeps the earliest on a tie
-    flags = frozenset().union(*(link.flags for link in readings if link is not None))
-    return replace(medoid, flags=flags, source=source)
+    resolved_links = [link for link in readings if link is not None]
+    flags = frozenset().union(*(link.flags for link in resolved_links)) - {FLAG_CONVENTION_UNSUPPORTED}
+    if convention is not Convention.NONE and any(
+            FLAG_CONVENTION_UNSUPPORTED in link.flags and convention_of(link.flags) is convention
+            for link in resolved_links):
+        flags |= {FLAG_CONVENTION_UNSUPPORTED}
+    return replace(medoid, flags=with_convention(flags, convention), source=source)
 
 
 def _witness_only(replicates: Sequence[Collation], linked: set[str], source: str) -> list[tuple[Link, Grade]]:
@@ -181,6 +208,9 @@ class Agreement:
     ``class_jaccard``      per outcome class, mean pairwise Jaccard of the replicates' unit
                            sets in that class: e.g. whether the replicates call the SAME
                            units ABSENT, not only the same number of them
+    ``convention_kappa``   (collate.v2) Fleiss kappa over the conventions of the ``units``;
+                           descriptive, never gated; None when every reading has the same
+                           convention (always so for collate.v1)
     """
 
     replicates: int
@@ -188,6 +218,7 @@ class Agreement:
     fleiss_kappa: float | None
     mean_link_jaccard: float | None
     class_jaccard: Mapping[str, float | None]
+    convention_kappa: float | None = None
 
 
 def agreement(replicates: Sequence[Collation], ref_kinds: Mapping[str, str]) -> Agreement:
@@ -196,6 +227,8 @@ def agreement(replicates: Sequence[Collation], ref_kinds: Mapping[str, str]) -> 
     classes = {uid: [None if uid not in m else outcome_class(m[uid].relation, m[uid].polarity_flip, kind)
                      for m in by_ref] for uid, kind in ref_kinds.items()}
     complete = [[c.value for c in cs] for cs in classes.values() if all(c is not None for c in cs)]
+    conventions = [[convention_of(m[uid].flags).value for m in by_ref] for uid, cs in classes.items()
+                   if all(c is not None for c in cs)]
     link_sims = [jaccard(frozenset(a.wit_ids), frozenset(b.wit_ids))
                  for uid in ref_kinds for a, b in combinations([m[uid] for m in by_ref if uid in m], 2)]
     per_class: dict[str, float | None] = {}
@@ -208,6 +241,7 @@ def agreement(replicates: Sequence[Collation], ref_kinds: Mapping[str, str]) -> 
         fleiss_kappa=fleiss_kappa(complete) if len(replicates) > 1 else None,
         mean_link_jaccard=sum(link_sims) / len(link_sims) if link_sims else None,
         class_jaccard=MappingProxyType(per_class),
+        convention_kappa=fleiss_kappa(conventions) if len(replicates) > 1 else None,
     )
 
 

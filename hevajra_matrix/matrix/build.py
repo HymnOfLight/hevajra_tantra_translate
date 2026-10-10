@@ -15,6 +15,9 @@ Precedence per reference unit (synthesis 4.4)
 
 Status comes from the relation alone (``matrix.status``); length never enters. The human
 decision values ``lacuna`` and ``unresolved`` give LACUNA and UNALIGNED("unresolved_by_human").
+A human convention (``review.verdicts.decision_convention``) becomes the cell's convention
+flag, as a collate.v2 consensus link carries it; the grade stays A. A human cell replaces
+the machine cell whole, so a human ``none`` also removes a machine convention.
 
 Descriptive dimensions (synthesis 4.5; never inputs to status)
     d_len  log(witness length / reference length) of the linked segments (``textnorm.length``)
@@ -56,8 +59,10 @@ from ..core.types import (
     Status,
     Verdict,
     WitnessOnlyKind,
+    with_convention,
 )
-from ..review.verdicts import HAS_COUNTERPART, LACUNA, UNRESOLVED, decision, decision_date, is_orphan
+from ..review.verdicts import (HAS_COUNTERPART, LACUNA, UNRESOLVED, decision, decision_convention, decision_date,
+                               is_orphan)
 from .status import RELATION_STATUS
 
 ChapterGroup = tuple[Collection[str], Collection[str]]   # (reference chapters, witness local chapters)
@@ -90,7 +95,7 @@ class _Human:
     value: str
     wit_ids: tuple[str, ...]
     polarity_flip: bool
-    flags: frozenset[str]
+    flags: frozenset[str]              # the human flags plus the decided convention's flag
     source: str
 
 
@@ -174,8 +179,18 @@ def _decisions(verdicts: Sequence[Verdict], kind: str) -> dict[str, _Human]:
     out = {}
     for uid, (_, _, v) in best.items():
         value, wit_ids = decision(v)  # type: ignore[misc]
-        out[uid] = _Human(value, tuple(wit_ids), v.polarity_flip, v.flags, f"{kind}:{v.batch_id}")
+        out[uid] = _Human(value, tuple(wit_ids), v.polarity_flip, _human_flags(v), f"{kind}:{v.batch_id}")
     return out
+
+
+def _human_flags(v: Verdict) -> frozenset[str]:
+    """The verdict's flags with its decided convention as a flag ("" = not annotated: none)."""
+    convention = decision_convention(v)
+    try:
+        return with_convention(v.flags, convention) if convention else frozenset(v.flags)
+    except ValueError:
+        raise ValueError(f"{v.unit_id}: {v.task} verdict {v.item_id} has an unknown convention "
+                         f"{convention!r}") from None
 
 
 # --------------------------------------------------------------------------- unit cells

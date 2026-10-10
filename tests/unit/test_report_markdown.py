@@ -79,7 +79,7 @@ def test_every_estimand_is_printed_or_not_estimable_with_a_gate_reason() -> None
     for level in (0, 1, 2):
         text = render(inputs(), gate(level))
         lines = [line for line in text.splitlines() if line.startswith("- E")]
-        assert len(lines) == 8
+        assert len(lines) == 9, "one line per ESTIMANDS row (E1_any_conv included)"
         for line in lines:
             value = line.split(": ", 1)[1]
             assert re.match(r"NOT_ESTIMABLE: (G\d|stats): \S", value) or re.match(r"\d\.\d{3} \[", value), line

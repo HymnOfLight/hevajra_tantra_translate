@@ -1,16 +1,19 @@
-# DRAFT standing renderings of the witness zh_T0892_song (for collate.v2; not in use).
+# Standing renderings of the witness zh_T0892_song against bo_derge_D417_418 (collate.v2).
 #
 # A standing rendering is a term that the witness renders the same way throughout the
 # text, as a convention of the translation. collate.v2 shows the listed entries to the
 # collator after the examples; a unit whose only difference from its rendering is a
 # listed entry gets convention standing_rendering and is judged as if the rendering were
-# the reference term (normally equivalent or paraphrase). The proposed code check V12
-# accepts that convention only when the linked witness lines contain a listed rendering
-# and the unit contains a listed reference form; otherwise the unit is flagged
+# the reference term (normally equivalent or paraphrase). The code check V12 accepts that
+# convention only when the unit's witness quote contains a listed rendering and its
+# reference quote a reference form of the same entry; otherwise the unit is flagged
 # convention_unsupported.
 #
-# Only entries with status: verified are shown to the collator. An entry is verified
-# by a researcher who has checked the counts and the passages (verified_by: real name).
+# Only entries with status: verified are shown to the collator (and accepted by V12); while
+# none is verified the prompt shows "(none)". An entry is verified by a researcher who has
+# checked the counts and the passages (verified_by: real name). Verifying an entry changes
+# the prompt, hence the collate instrument digest and every cache key.
+#
 # Counts are plain substring counts over the ingested texts (Derge D417-418 including
 # every kind; T0892 excluding note lines), made on 2026-10-10 from run
 # runs/pilot-20261010T145135Z. They are evidence for the decision, not proof: a
@@ -71,7 +74,7 @@ considered_not_listed:
     reason: >-
       Rendered by sound (na ji ni) and by meaning (kong xing). Not a single rendering; a
       class noun rendered by sound is transliterated content under the current rules,
-      which is a decision for the codebook (see the draft notes, question Q3).
+      which is a decision for the codebook (docs-zh/09-collate-v2-draft.md, question Q3).
   - id: yogini
     reference_forms: ["རྣལ་འབྱོར་མ"]
     witness_renderings_seen: ["瑜儗尼", "明妃"]

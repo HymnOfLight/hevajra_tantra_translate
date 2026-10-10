@@ -4,6 +4,9 @@ Kept from v0.2 with minimal changes (impl decisions): the distance between two w
 the mean, over reference units countable in both, of an outcome-class disagreement (via
 ``matrix.status``) plus the L1 difference of the descriptive dimensions d_len, d_ord, d_lit.
 A tree over two witnesses says nothing, so ``distance_matrix`` needs at least three.
+
+Conventions (collate.v2 flags) are deliberately not a dimension: the outcome class ignores
+them, and an unknown weight key (e.g. one meant for conventions) is refused, not ignored.
 """
 
 from __future__ import annotations
@@ -28,8 +31,11 @@ def witness_distance(
     """Mean per-unit distance over jointly countable units; None if there are none.
 
     ``weights`` may override "outcome" and any of ``DIMS`` (default 1.0 each). A missing
-    dimension value on either side contributes nothing for that unit.
+    dimension value on either side contributes nothing for that unit. Any other key raises.
     """
+    unknown = sorted(set(weights or {}) - {"outcome", *DIMS})
+    if unknown:
+        raise ValueError(f"unknown distance weight(s) {unknown}; expected 'outcome' or one of {DIMS}")
     cells = list(cells)
     wts = {"outcome": 1.0, **{d: 1.0 for d in DIMS}, **(weights or {})}
     kinds = ref_kinds or {}

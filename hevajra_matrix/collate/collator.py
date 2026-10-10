@@ -2,8 +2,9 @@
 
 Request layout (static first, so the prefix is cached across windows and replicates)
 
-    system   the template ``prompts/collate.v1.md`` followed by the three synthetic
-             examples of ``data/codebook/collate_examples.yaml``; cache breakpoint
+    system   the template of the configured prompt version followed by its three
+             synthetic examples and, for collate.v2, the STANDING RENDERINGS block of
+             verified glossary entries (``collate.prompt``); cache breakpoint
     context  the full witness text, one ``z0001<TAB>kind<TAB>text`` line per segment;
              identical for every window over the same text; cache breakpoint
     body     the reference chunk as ``r001<TAB>kind<TAB>text`` lines and the core-window
@@ -13,8 +14,9 @@ The request carries no coordinates, chapter keys, topic labels, footnotes or San
 readings: it is rendered from ``Window`` alone, which holds only segments of one reference
 and one witness (see ``collate.windows``), and only their kind and text are printed.
 
-``prompt_sha`` is the sha256 of the system prompt (template plus examples), so editing
-either changes every cache key and the instrument digest.
+``prompt_sha`` is the sha256 of the system prompt (template, examples and glossary), so
+editing any of them changes every cache key and the instrument digest. The schema is the
+version's (``schema_for``), and an answer is validated against the schema that was sent.
 
 Parsing never raises on a model answer: a refusal, a truncation, a schema-invalid answer
 and an answer served by a substituted model all become an ``Unresolved`` value whose
@@ -24,57 +26,54 @@ parsed proposal is kept as a reviewer hint only).
 
 from __future__ import annotations
 
-import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from importlib import resources
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from ..config import ConfigError, from_mapping
-from ..core.io import read_yaml
 from ..core.types import (
     REASON_INVALID,
     REASON_SUBSTITUTED_MODEL,
     REASON_TRUNCATED,
+    Convention,
     Relation,
     WitnessOnlyKind,
     failure_reason,
 )
-from ..llm.client import DEFAULT_MODEL, LLMClient, LLMRequest, LLMResponse, canonical_json, sha256_text
-from ..llm.schema import strict, validate
-from .windows import Window, prompt_kind
+from ..llm.client import DEFAULT_MODEL, LLMClient, LLMRequest, LLMResponse, sha256_text
+from ..llm.schema import validate
+from .prompt import (  # noqa: F401  (re-exported: the collator's public API predates the split)
+    CONFIDENCE,
+    DEFAULT_PAIR,
+    LANG_NAMES,
+    N_EXAMPLES,
+    PROMPT_V1,
+    PROMPT_V2,
+    SCHEMA_V1,
+    SCHEMA_V2,
+    VERSIONS,
+    Examples,
+    PromptVersion,
+    example_pairs,
+    examples_file,
+    glossary_file,
+    load_examples,
+    load_glossary,
+    load_template,
+    render_body,
+    render_context,
+    render_glossary,
+    schema_for,
+    system_prompt,
+)
+from .windows import Window
 
-TASK = "collate"
-PROMPT_ID = "collate.v1"
-TEMPLATE_FILE = "collate.v1.md"
-EXAMPLES_FILE = Path("codebook") / "collate_examples.yaml"
-DEFAULT_PAIR = ("bo", "zh")           # (reference, witness) languages of EXAMPLES_FILE
-N_EXAMPLES = 3
+TASK = "collate"                      # the same for every prompt version (cache keys, audit)
+PROMPT_ID = PROMPT_V1                 # v1 aliases, kept for callers of the single-version API
+TEMPLATE_FILE = VERSIONS[PROMPT_V1].template_file
+EXAMPLES_FILE = examples_file(*DEFAULT_PAIR, PROMPT_V1)
+SCHEMA = SCHEMA_V1
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-CONFIDENCE = ("high", "medium", "low")
-LANG_NAMES = {"bo": "Tibetan", "zh": "Chinese", "sa": "Sanskrit", "en": "English"}
-_LAYOUT_RE = re.compile(r"[\t\r\n]+")
-
-SCHEMA: Mapping[str, Any] = strict({
-    "type": "object",
-    "properties": {
-        "units": {"type": "array", "items": {"type": "object", "properties": {
-            "ref": {"type": "string"},
-            "wit": {"type": "array", "items": {"type": "string"}},
-            "relation": {"type": "string", "enum": [r.value for r in Relation]},
-            "polarity_flip": {"type": "boolean"},
-            "confidence": {"type": "string", "enum": list(CONFIDENCE)},
-            "ref_quote": {"type": "string"},
-            "wit_quote": {"type": "string"},
-        }}},
-        "witness_only": {"type": "array", "items": {"type": "object", "properties": {
-            "wit": {"type": "array", "items": {"type": "string"}},
-            "kind": {"type": "string", "enum": [k.value for k in WitnessOnlyKind]},
-            "wit_quote": {"type": "string"},
-        }}},
-    },
-})
 
 
 # --------------------------------------------------------------------------- settings
@@ -82,6 +81,8 @@ SCHEMA: Mapping[str, Any] = strict({
 class TaskSettings:
     """``config/llm.yaml: tasks.collate`` plus the top-level ``model``.
 
+    ``prompt`` selects the prompt version (``VERSIONS``); it is not an instrument
+    parameter of its own, because the prompt and schema shas already capture it.
     ``max_tokens`` defaults to 128,000: only generated tokens are billed, and a higher
     cap only lowers the truncation (hence UNALIGNED) rate.
     """
@@ -91,8 +92,11 @@ class TaskSettings:
     replicates: int = 3
     fallback: bool = False
     model: str = DEFAULT_MODEL
+    prompt: str = PROMPT_V1
 
     def __post_init__(self) -> None:
+        if self.prompt not in VERSIONS:
+            raise ConfigError(f"tasks.collate.prompt must be one of {tuple(VERSIONS)}, got {self.prompt!r}")
         if self.effort not in EFFORTS:
             raise ConfigError(f"tasks.collate.effort must be one of {EFFORTS}, got {self.effort!r}")
         for name in ("max_tokens", "replicates"):
@@ -115,132 +119,20 @@ def replicate_tags(k: int) -> tuple[str, ...]:
     return tuple(f"r{i}" for i in range(1, k + 1))
 
 
-def source_name(model: str, replicate: str) -> str:
+def source_name(model: str, replicate: str, prompt: str = PROMPT_V1) -> str:
     """``Link.source`` of one replicate, e.g. "claude-opus-5-5:collate.v1:r2"."""
-    return f"{model}:{PROMPT_ID}:{replicate}"
+    return f"{model}:{prompt}:{replicate}"
 
 
-# --------------------------------------------------------------------------- template and examples
-@dataclass(frozen=True)
-class Examples:
-    """The rendered few-shot block and the language pair it illustrates."""
-
-    reference_lang: str
-    witness_lang: str
-    text: str
-
-
-def load_template() -> str:
-    """The collation template shipped with the package (``prompts/collate.v1.md``)."""
-    return resources.files("hevajra_matrix").joinpath("prompts").joinpath(TEMPLATE_FILE).read_text("utf-8")
-
-
-def examples_file(ref_lang: str = DEFAULT_PAIR[0], wit_lang: str = DEFAULT_PAIR[1]) -> Path:
-    """Examples of one language pair, relative to ``data/``: ``codebook/collate_examples.yaml``
-    for the default pair (Tibetan reference, Chinese witness), else
-    ``codebook/collate_examples.<ref>-<wit>.yaml`` (e.g. ``sa-zh`` once the Sanskrit
-    reference is used)."""
-    if (ref_lang, wit_lang) == DEFAULT_PAIR:
-        return EXAMPLES_FILE
-    return EXAMPLES_FILE.with_name(f"collate_examples.{ref_lang}-{wit_lang}.yaml")
-
-
-def example_pairs(data_dir: Path) -> list[tuple[str, str]]:
-    """The language pairs that have an examples file, the default pair first."""
-    found = sorted(Path(data_dir).glob(str(EXAMPLES_FILE.with_name("collate_examples.*-*.yaml"))))
-    extra = [tuple(p.name.split(".")[1].split("-", 1)) for p in found]
-    return [DEFAULT_PAIR, *[(a, b) for a, b in extra if (a, b) != DEFAULT_PAIR]]
-
-
-def load_examples(data_dir: Path, ref_lang: str = DEFAULT_PAIR[0], wit_lang: str = DEFAULT_PAIR[1]) -> Examples:
-    """Read, check and render the examples of one language pair (``examples_file``).
-
-    The file must hold exactly three examples of the requested pair; each answer must be
-    valid against ``SCHEMA``, name only handles its example shows and record every
-    reference line exactly once. (That the answers also pass the V-checks is a unit test.)
-    A missing file raises ``FileNotFoundError``: examples are written by a researcher, never
-    borrowed from another language pair.
-    """
-    path = Path(data_dir) / examples_file(ref_lang, wit_lang)
-    if not path.is_file():
-        raise FileNotFoundError(f"{path} is missing: write three synthetic {ref_lang}->{wit_lang} examples "
-                                f"in the format of {EXAMPLES_FILE.name}")
-    doc = read_yaml(path)
-    if not isinstance(doc, Mapping) or set(doc) != {"schema_version", "reference_lang", "witness_lang", "examples"}:
-        raise ValueError(f"{path}: expected keys schema_version, reference_lang, witness_lang, examples")
-    if (doc["reference_lang"], doc["witness_lang"]) != (ref_lang, wit_lang):
-        raise ValueError(f"{path}: illustrates {doc['reference_lang']}->{doc['witness_lang']}, "
-                         f"expected {ref_lang}->{wit_lang}")
-    items = doc["examples"]
-    if doc["schema_version"] != 1 or not isinstance(items, list) or len(items) != N_EXAMPLES:
-        raise ValueError(f"{path}: schema_version 1 with exactly {N_EXAMPLES} examples required")
-    blocks = [_render_example(n, ex, doc["reference_lang"], doc["witness_lang"], f"{path}: example {n}")
-              for n, ex in enumerate(items, start=1)]
-    return Examples(doc["reference_lang"], doc["witness_lang"], "\n\n".join(blocks))
-
-
-def _render_example(n: int, ex: Any, ref_lang: str, wit_lang: str, where: str) -> str:
-    keys = {"title", "comment", "witness", "reference", "answer"}
-    if not isinstance(ex, Mapping) or set(ex) != keys:
-        raise ValueError(f"{where}: expected keys {sorted(keys)}")
-    wit = [(f"z{i:04d}", line["kind"], line["text"]) for i, line in enumerate(ex["witness"], start=1)]
-    ref = [(f"r{i:03d}", line["kind"], line["text"]) for i, line in enumerate(ex["reference"], start=1)]
-    answer = ex["answer"]
-    errors = validate(answer, SCHEMA)
-    if errors:
-        raise ValueError(f"{where}: answer violates the schema: {errors[:3]}")
-    named = [h for u in answer["units"] for h in u["wit"]] + [h for w in answer["witness_only"] for h in w["wit"]]
-    unknown = sorted({h for h in named if h not in {z for z, _, _ in wit}}
-                     | {u["ref"] for u in answer["units"] if u["ref"] not in {r for r, _, _ in ref}})
-    if unknown or [u["ref"] for u in answer["units"]] != [r for r, _, _ in ref]:
-        raise ValueError(f"{where}: the answer must record r001.. once each, in order, and name only shown "
-                         f"handles (unknown: {unknown})")
-    return "\n".join([
-        f"### Example {n}: {ex['title']}",
-        "",
-        str(ex["comment"]).strip(),
-        "",
-        render_context(wit, wit_lang),
-        "",
-        render_body(ref, ref_lang, [(wit[0][0], wit[-1][0])]),
-        "",
-        "ANSWER",
-        canonical_json(answer),
-    ])
-
-
-def system_prompt(template: str, examples: Examples) -> str:
-    return f"{template.rstrip()}\n\n{examples.text}\n"
-
-
-# --------------------------------------------------------------------------- rendering
-def _line(handle: str, kind: str, text: str) -> str:
-    """One prompt line; tabs and line breaks inside the text would break the format."""
-    return f"{handle}\t{prompt_kind(kind)}\t{_LAYOUT_RE.sub(' ', text).strip()}"
-
-
-def render_context(lines: Sequence[tuple[str, str, str]], lang: str) -> str:
-    """The witness text block: a header and one (handle, kind, text) line per segment."""
-    return "\n".join([f"WITNESS TEXT ({LANG_NAMES.get(lang, lang)})", *(_line(*x) for x in lines)])
-
-
-def render_body(lines: Sequence[tuple[str, str, str]], lang: str, core: Sequence[tuple[str, str]]) -> str:
-    """The reference chunk block and the core-window ranges."""
-    ranges = ", ".join(a if a == b else f"{a}-{b}" for a, b in core) or "(empty)"
-    return "\n".join([
-        f"REFERENCE CHUNK ({LANG_NAMES.get(lang, lang)})",
-        *(_line(*x) for x in lines),
-        "",
-        f"CORE WINDOW: {ranges}",
-    ])
-
-
+# --------------------------------------------------------------------------- requests
 def build_request(window: Window, settings: TaskSettings, replicate: str, examples: Examples,
                   template: str) -> LLMRequest:
     """The T1 request for one window and one replicate tag (pure)."""
     if (window.ref_lang, window.wit_lang) != (examples.reference_lang, examples.witness_lang):
         raise ValueError(f"window {window.key} is {window.ref_lang}->{window.wit_lang} but the examples "
                          f"illustrate {examples.reference_lang}->{examples.witness_lang}")
+    if settings.prompt != examples.prompt:
+        raise ValueError(f"the settings select {settings.prompt} but the examples are those of {examples.prompt}")
     system = system_prompt(template, examples)
     context = render_context(
         [(h, window.segment[sid].kind, window.segment[sid].text) for h, sid in window.wit_handles.items()],
@@ -249,7 +141,8 @@ def build_request(window: Window, settings: TaskSettings, replicate: str, exampl
         [(h, window.segment[uid].kind, window.segment[uid].text) for h, uid in window.ref_handles.items()],
         window.ref_lang, window.core_ranges())
     return LLMRequest(
-        task=TASK, prompt_sha=sha256_text(system), system=system, context=context, body=body, schema=SCHEMA,
+        task=TASK, prompt_sha=sha256_text(system), system=system, context=context, body=body,
+        schema=schema_for(examples.prompt),
         effort=settings.effort, max_tokens=settings.max_tokens, replicate=replicate,
         allow_fallback=settings.fallback, model=settings.model,
     )
@@ -258,7 +151,8 @@ def build_request(window: Window, settings: TaskSettings, replicate: str, exampl
 # --------------------------------------------------------------------------- parsing
 @dataclass(frozen=True)
 class RawUnit:
-    """One unit record as the model returned it (handles, not ids)."""
+    """One unit record as the model returned it (handles, not ids); a v1 answer has no
+    convention and parses as NONE."""
 
     ref: str
     wit: tuple[str, ...]
@@ -267,6 +161,7 @@ class RawUnit:
     confidence: str
     ref_quote: str
     wit_quote: str
+    convention: Convention = Convention.NONE
 
 
 @dataclass(frozen=True)
@@ -301,10 +196,12 @@ class Unresolved:
 Parsed = RawCollation | Unresolved
 
 
-def parse(response: LLMResponse, window: Window) -> Parsed:
-    """Turn a response into a raw collation or the reason it cannot be used."""
+def parse(response: LLMResponse, window: Window, schema: Mapping[str, Any] = SCHEMA_V1) -> Parsed:
+    """Turn a response into a raw collation or the reason it cannot be used. ``schema`` is
+    the one the request carried (an answer valid only under another version's schema is
+    invalid)."""
     if response.substituted_model:
-        hint = _raw(response.data, window) if response.status == "ok" else None
+        hint = _raw(response.data, window, schema) if response.status == "ok" else None
         return Unresolved(window.key, REASON_SUBSTITUTED_MODEL, hint if isinstance(hint, RawCollation) else None)
     if response.status == "refusal":
         return Unresolved(window.key, failure_reason(response.status, response.refusal_category))
@@ -312,16 +209,16 @@ def parse(response: LLMResponse, window: Window) -> Parsed:
         return Unresolved(window.key, REASON_TRUNCATED)
     if response.status != "ok":
         return Unresolved(window.key, REASON_INVALID)
-    return _raw(response.data, window)
+    return _raw(response.data, window, schema)
 
 
-def _raw(data: Mapping[str, Any] | None, window: Window) -> Parsed:
-    if data is None or validate(data, SCHEMA):
+def _raw(data: Mapping[str, Any] | None, window: Window, schema: Mapping[str, Any]) -> Parsed:
+    if data is None or validate(data, schema):
         return Unresolved(window.key, REASON_INVALID)
     units = tuple(
         RawUnit(ref=u["ref"].strip(), wit=tuple(h.strip() for h in u["wit"]), relation=Relation(u["relation"]),
                 polarity_flip=u["polarity_flip"], confidence=u["confidence"], ref_quote=u["ref_quote"],
-                wit_quote=u["wit_quote"])
+                wit_quote=u["wit_quote"], convention=Convention(u.get("convention", Convention.NONE.value)))
         for u in data["units"])
     witness_only = tuple(
         RawWitnessOnly(wit=tuple(h.strip() for h in w["wit"]), kind=WitnessOnlyKind(w["kind"]),
@@ -367,6 +264,6 @@ def collate(windows: Sequence[Window], client: LLMClient, settings: TaskSettings
                 future.cancel()
             raise
     out: dict[str, list[Parsed]] = {tag: [] for tag in replicates}
-    for (tag, window, _), response in zip(jobs, responses):
-        out[tag].append(parse(response, window))
+    for (tag, window, request), response in zip(jobs, responses):
+        out[tag].append(parse(response, window, request.schema))
     return {tag: tuple(results) for tag, results in out.items()}

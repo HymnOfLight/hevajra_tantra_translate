@@ -15,6 +15,9 @@ synthesis 6.3 and critique B13 pre-register:
 ``mde_on_labels`` re-runs ``stats.power.simulate_delta`` on the real topic labels (synthesis
 6.5): the smallest effect on a grid detected with 80% power. Gate G4 uses the larger of it
 and the preregistered MDE once ``stats/power.json`` exists.
+
+Everything here is on the primary outcome; the sensitivity variant ``any_conv`` is refused
+(``twophase.require_primary``) rather than computed as D_any under its name.
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ def tost_margin(prereg: Mapping[str, Any]) -> tuple[float, str | None]:
 
 def machine_indicator(machine: Sequence[Cell], ref_kinds: Mapping[str, str], outcome: str) -> dict[str, float]:
     """Naive D per unit from the machine cells (countable cells only)."""
+    twophase.require_primary(outcome, "the naive E4 indicator")
     out = {}
     for c in machine:
         cls = cell_outcome(c, ref_kinds.get(c.unit_id, "")) if c.status in COUNTED_STATUSES else None
@@ -68,6 +72,7 @@ def contrast_with_diagnostics(texts: Texts, cells: Sequence[Cell], machine: Sequ
                               verdicts: Sequence[Verdict], draws: Sequence[Mapping[str, OutcomeClass]], outcome: str,
                               seed: int, n_perm: int, margin: float, scope: str) -> tuple[Estimate, dict[str, Any]]:
     """Delta and every diagnostic listed in the module docstring."""
+    twophase.require_primary(outcome, "E4")
     exposed = exposure(cells, groups)
     all_lengths = {s.id: float(length(s.text, s.lang)) for s in texts.units}
     tertiles = contrast.tertile_strata(all_lengths, texts.chapter_of)
@@ -100,6 +105,7 @@ def mde_on_labels(texts: Texts, machine: Sequence[Cell], groups: Mapping[str, st
                   seed: int, n_sim: int = N_SIM) -> dict[str, Any]:
     """The smallest Delta on ``MDE_GRID`` detected with ``TARGET_POWER`` by the stratified test,
     for the real chapters, exposure shares and machine base rate (None: none on the grid)."""
+    twophase.require_primary(outcome, "the MDE on real labels")
     exposed = exposure(machine, groups)
     sizes: dict[str, list[int]] = {}
     for u, e in exposed.items():

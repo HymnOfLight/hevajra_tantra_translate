@@ -15,6 +15,14 @@ stay in every denominator: they count as missed links and as status disagreement
 
 Gold rows whose decision is ``lacuna`` or ``unresolved`` are not scored (listed in
 ``AlignmentScores.excluded``).
+
+Conventions (collate.v2): ``convention`` is kept apart from ``relation`` (draft Q6), so the
+v1 and the v2 caliber can both be computed from one gold. "" means not annotated (a file
+or sheet made before the column existed; a file without the column still loads), ``none``
+annotated without a convention. ``GoldRow.link`` carries a convention as the link flag of
+the same name, as a collate.v2 link does. ``score`` reads a predicted convention only when
+the caller says the source produces them (``conventions``); convention precision and
+recall, D_any_conv agreement and relation agreement are defined in ``scores``.
 """
 
 from __future__ import annotations
@@ -29,15 +37,19 @@ from typing import Iterable, Mapping, Sequence
 from ..collate.verify import FLAG_HINT, FLAG_UNKNOWN_HANDLE
 from ..core.ids import orphan_row_id
 from ..core.io import read_csv, write_csv
-from ..core.types import (REASON_UNASSESSED, REASON_VERIFICATION_FAILED, Alignment, Diagnostic, Link, Relation,
-                          Verdict, WitnessOnlyKind)
-from ..matrix.status import RELATION_STATUS, deviates, outcome_class
-from ..review.verdicts import FLAGS, UNIT_VALUES, decision, format_flags, is_orphan, parse_bool, parse_flags, parse_ids
+from ..core.types import (FLAG_CONVENTION_UNSUPPORTED, REASON_UNASSESSED, REASON_VERIFICATION_FAILED, Alignment,
+                          Convention, Diagnostic, Link, Relation, Verdict, WitnessOnlyKind, convention_of,
+                          with_convention)
+from ..matrix.status import RELATION_STATUS, deviates, has_convention, outcome_class
+from ..review.verdicts import (CONVENTIONS, UNIT_VALUES, convention_problem, decision, decision_convention,
+                               flag_problems, format_flags, is_orphan, parse_bool, parse_flags, parse_ids)
 from .resample import Interval, McNemar, mcnemar, paired_difference, window_bootstrap
 from .scores import (METRICS, UNALIGNED, AlignmentScores, UnitScore, WitnessOnlyScore, confidence_reliability,
-                     dany_kappa, interval_estimates, invalid_handle_rate, link_f1, link_precision, link_recall,
-                     null_precision, null_recall, quote_failure_rate, refusal_by_group, refusal_rate, relation_recall,
-                     status_correct, status_kappa, witness_only_kind_agreement, witness_only_recall)
+                     convention_f1, convention_precision, convention_recall, convention_unsupported_rate,
+                     dany_conv_kappa, dany_kappa, interval_estimates, invalid_handle_rate, link_f1, link_precision,
+                     link_recall, null_precision, null_recall, quote_failure_rate, refusal_by_group, refusal_rate,
+                     relation_kappa, relation_recall, status_correct, status_kappa, witness_only_kind_agreement,
+                     witness_only_recall)
 from .windows import (WINDOWS_COLUMNS, TestWindow, dev_region_units, draw_test_windows, region_window,
                       window_units)
 
@@ -48,14 +60,16 @@ __all__ = [
     "UnitScore", "WitnessOnlyScore", "AlignmentScores", "METRICS", "interval_estimates", "status_correct",
     "confidence_reliability",
     "link_precision", "link_recall", "link_f1", "null_precision", "null_recall", "witness_only_recall",
-    "witness_only_kind_agreement", "status_kappa", "dany_kappa", "relation_recall", "quote_failure_rate",
-    "invalid_handle_rate", "refusal_rate", "refusal_by_group",
+    "witness_only_kind_agreement", "status_kappa", "dany_kappa", "dany_conv_kappa", "relation_kappa",
+    "relation_recall", "convention_precision", "convention_recall", "convention_f1", "convention_unsupported_rate",
+    "quote_failure_rate", "invalid_handle_rate", "refusal_rate", "refusal_by_group",
     "TestWindow", "dev_region_units", "draw_test_windows", "region_window", "window_units",
     "window_bootstrap", "paired_difference", "mcnemar", "McNemar", "Interval", "UNALIGNED",
 ]
 
-GOLD_COLUMNS = ("set", "window_id", "row_type", "unit_id", "fingerprint", "wit_ids", "relation", "polarity_flip",
-                "flags", "witness_only_kind", "annotator", "date", "minutes")
+GOLD_COLUMNS = ("set", "window_id", "row_type", "unit_id", "fingerprint", "wit_ids", "relation", "convention",
+                "polarity_flip", "flags", "witness_only_kind", "annotator", "date", "minutes")
+GOLD_LEGACY_OPTIONAL = frozenset({"convention"})     # absent from files written before collate.v2
 SETS = ("dev", "test", "test_second")
 ROW_REF, ROW_WITNESS_ONLY = "ref", "witness_only"
 WINDOWS_FILE = "windows.csv"
@@ -85,6 +99,7 @@ class GoldRow:
     annotator: str = ""
     date: str = ""
     minutes: float | None = None
+    convention: str = ""               # ref rows: "" (not annotated) or a Convention value
 
     @property
     def scored(self) -> bool:
@@ -94,8 +109,9 @@ class GoldRow:
     def link(self, source: str) -> Link:
         if self.row_type == ROW_WITNESS_ONLY:
             return Link(None, self.wit_ids, WitnessOnlyKind(self.witness_only_kind), source=source)
+        flags = with_convention(self.flags, self.convention) if self.convention else self.flags
         return Link(self.unit_id, self.wit_ids, Relation(self.relation), polarity_flip=self.polarity_flip,
-                    flags=self.flags, source=source)
+                    flags=flags, source=source)
 
 
 @dataclass(frozen=True)
@@ -137,7 +153,7 @@ def load(path: Path, reference: str = "") -> GoldSet:
     if name not in SETS:
         raise GoldError(f"{path}: gold set must be one of {SETS}, got {name!r}")
     header, rows = _read(path)
-    if header != set(GOLD_COLUMNS):
+    if header not in (set(GOLD_COLUMNS), set(GOLD_COLUMNS) - GOLD_LEGACY_OPTIONAL):
         raise GoldError(f"{path}: wrong columns (unexpected {sorted(header - set(GOLD_COLUMNS))}, "
                         f"missing {sorted(set(GOLD_COLUMNS) - header)})")
     parsed = [_row(r, f"{path.name} line {n}", name) for n, r in enumerate(rows, start=2)]
@@ -172,7 +188,7 @@ def _row(raw: Mapping[str, str], where: str, set_name: str) -> GoldRow:
     row = GoldRow(set_name=set_name, window_id=v["window_id"], row_type=v["row_type"], unit_id=v["unit_id"],
                   fingerprint=v["fingerprint"], wit_ids=parse_ids(v["wit_ids"]), relation=v["relation"],
                   polarity_flip=flip, flags=parse_flags(v["flags"]), witness_only_kind=v["witness_only_kind"],
-                  annotator=v["annotator"], date=v["date"], minutes=minutes)
+                  annotator=v["annotator"], date=v["date"], minutes=minutes, convention=v["convention"])
     problem = _problem(row)
     if problem:
         raise GoldError(f"{where}: {row.unit_id or '(no unit_id)'}: {problem}")
@@ -182,10 +198,14 @@ def _row(raw: Mapping[str, str], where: str, set_name: str) -> GoldRow:
 def _problem(row: GoldRow) -> str | None:
     if not row.window_id or not row.unit_id:
         return "window_id and unit_id are required"
-    unknown = sorted(row.flags - set(FLAGS))
-    if unknown:
-        return f"unknown flag(s) {unknown}"
+    flagged = flag_problems(row.flags)
+    if flagged:
+        return "; ".join(flagged)
+    if row.convention and row.convention not in CONVENTIONS:
+        return f"convention {row.convention!r} is not one of {', '.join(CONVENTIONS)}"
     if row.row_type == ROW_WITNESS_ONLY:
+        if row.convention not in ("", Convention.NONE.value):
+            return "a witness_only row carries no convention"
         if row.relation or row.witness_only_kind not in _KINDS:
             return f"a witness_only row needs witness_only_kind in {sorted(_KINDS)} and no relation"
         if len(row.wit_ids) != 1 or row.unit_id != orphan_row_id(row.wit_ids[0]):
@@ -201,7 +221,7 @@ def _problem(row: GoldRow) -> str | None:
         return "no_counterpart names no witness segment"
     if row.relation in _RELATIONS - {Relation.NO_COUNTERPART.value} and not row.wit_ids:
         return f"relation {row.relation} needs witness segment ids"
-    return None
+    return convention_problem(row.unit_id, row.relation, row.convention)
 
 
 def _check_set(rows: Sequence[GoldRow], path: Path) -> None:
@@ -224,8 +244,9 @@ def save(gold: GoldSet, path: Path) -> None:
 def _to_row(r: GoldRow) -> dict[str, object]:
     return {"set": r.set_name, "window_id": r.window_id, "row_type": r.row_type, "unit_id": r.unit_id,
             "fingerprint": r.fingerprint, "wit_ids": " ".join(r.wit_ids), "relation": r.relation,
-            "polarity_flip": "true" if r.polarity_flip else "false", "flags": format_flags(r.flags),
-            "witness_only_kind": r.witness_only_kind, "annotator": r.annotator, "date": r.date,
+            "convention": r.convention, "polarity_flip": "true" if r.polarity_flip else "false",
+            "flags": format_flags(r.flags), "witness_only_kind": r.witness_only_kind, "annotator": r.annotator,
+            "date": r.date,
             "minutes": "" if r.minutes is None else r.minutes}
 
 
@@ -260,7 +281,8 @@ def from_verdicts(verdicts: Iterable[Verdict], set_name: str, witness: str, refe
             set_name=set_name, window_id=v.batch_id[len(prefix):], row_type=ROW_WITNESS_ONLY if orphan else ROW_REF,
             unit_id=v.unit_id, fingerprint=v.fingerprint, wit_ids=wit_ids, relation="" if orphan else value,
             polarity_flip=v.polarity_flip, flags=v.flags, witness_only_kind=value if orphan else "",
-            annotator=v.annotator, date=v.blind_date, minutes=v.minutes))
+            annotator=v.annotator, date=v.blind_date, minutes=v.minutes,
+            convention=decision_convention(v)))
     for n, row in enumerate(rows):
         problem = _problem(row)
         if problem:
@@ -273,14 +295,15 @@ def to_verdicts(gold: GoldSet) -> list[Verdict]:
     """The gold as ``task="gold"`` verdicts, the form ``matrix.build.build_cells`` takes."""
     return [Verdict(batch_id=f"{gold.name}_{r.window_id}", item_id=f"gold:{r.unit_id}", task="gold",
                     unit_id=r.unit_id, fingerprint=r.fingerprint, blind_relation=r.relation or r.witness_only_kind,
-                    blind_wit_ids=r.wit_ids, polarity_flip=r.polarity_flip, flags=r.flags, annotator=r.annotator,
-                    blind_date=r.date, minutes=r.minutes)
+                    blind_wit_ids=r.wit_ids, blind_convention=r.convention, polarity_flip=r.polarity_flip,
+                    flags=r.flags, annotator=r.annotator, blind_date=r.date, minutes=r.minutes)
             for r in gold.rows]
 
 
 def score(alignment: Alignment, gold: GoldSet, units: Iterable[str] | None = None, *,
           ref_kinds: Mapping[str, str], unresolved: Mapping[str, str] | None = None,
-          diagnostics: Sequence[Diagnostic] = (), topic_groups: Mapping[str, str] | None = None) -> AlignmentScores:
+          diagnostics: Sequence[Diagnostic] = (), topic_groups: Mapping[str, str] | None = None,
+          conventions: bool = False) -> AlignmentScores:
     """Score ``alignment`` against ``gold`` on the gold's scored units (or the subset ``units``).
 
     ``ref_kinds``     unit id -> reference segment kind (required: a transliterated mantra is
@@ -290,6 +313,11 @@ def score(alignment: Alignment, gold: GoldSet, units: Iterable[str] | None = Non
     ``diagnostics``   verification diagnostics of the run; a V4 failure on a unit marks a
                       quote failure
     ``topic_groups``  unit id -> topic group, for refusal rates per group
+    ``conventions``   the source produces conventions (a collate.v2 consensus; the caller
+                      knows, from ``collation/replicates.json: prompt``). It is never inferred
+                      from the links: a v2 link without a convention carries no flag, exactly
+                      like a v1 link. Without it every convention metric is None and the
+                      predicted D_any_conv is the source's D_any.
     Witness-only rows are kept for the windows that keep at least one unit.
     """
     hinted = sum(1 for link in alignment.links if FLAG_HINT in link.flags)
@@ -307,31 +335,40 @@ def score(alignment: Alignment, gold: GoldSet, units: Iterable[str] | None = Non
     quote_failed = {uid for d in diagnostics if d.kind == REASON_VERIFICATION_FAILED and _QUOTE_RULE.search(d.detail)
                     for uid in d.ref_ids}
     found = alignment.by_ref()
-    scored = tuple(_unit(rows[u], found.get(u), ref_kinds[u], reasons, u in quote_failed, groups.get(u, ""))
-                   for u in keep)
+    scored = tuple(_unit(rows[u], found.get(u), ref_kinds[u], reasons, u in quote_failed, groups.get(u, ""),
+                         conventions) for u in keep)
     windows = {s.window_id for s in scored}
     linked = {w for link in alignment.links if link.ref_id is not None for w in link.wit_ids}
     predicted = {w: str(link.relation) for link in alignment.witness_only() for w in link.wit_ids if w not in linked}
     only = tuple(WitnessOnlyScore(r.unit_id, r.window_id, r.wit_ids[0], r.witness_only_kind, predicted.get(r.wit_ids[0]))
                  for r in gold.witness_only_rows() if r.window_id in windows)
     excluded = tuple(r.unit_id for r in gold.ref_rows() if not r.scored)
-    return AlignmentScores(alignment.source, gold.name, scored, only, excluded)
+    return AlignmentScores(alignment.source, gold.name, scored, only, excluded, conventions)
 
 
 def _unit(row: GoldRow, link: Link | None, kind: str, reasons: Mapping[str, str], quote_failure: bool,
-          group: str) -> UnitScore:
+          group: str, conventions: bool) -> UnitScore:
     gold_rel = Relation(row.relation)
-    gold_dev = deviates(outcome_class(gold_rel, row.polarity_flip, kind))
+    gold_class = outcome_class(gold_rel, row.polarity_flip, kind)
+    gold_conv = Convention(row.convention) if row.convention else None     # "": not annotated
     common = dict(unit_id=row.unit_id, window_id=row.window_id, gold_relation=gold_rel.value,
-                  gold_status=RELATION_STATUS[gold_rel].value, gold_dev=gold_dev, gold_wit=frozenset(row.wit_ids),
-                  quote_failure=quote_failure, topic_group=group)
+                  gold_status=RELATION_STATUS[gold_rel].value, gold_dev=deviates(gold_class),
+                  gold_wit=frozenset(row.wit_ids), quote_failure=quote_failure, topic_group=group,
+                  gold_convention=None if gold_conv is None else gold_conv.value,
+                  gold_dev_conv=None if gold_conv is None else
+                  deviates(gold_class, "any_conv", gold_conv is not Convention.NONE))
     if link is None:
         return UnitScore(**common, pred_relation=None, pred_status=UNALIGNED, pred_dev=None,  # type: ignore[arg-type]
                          pred_wit=frozenset(), reason=reasons.get(row.unit_id, REASON_UNASSESSED))
     rel = Relation(link.relation)
+    pred_class = outcome_class(rel, link.polarity_flip, kind)
+    pred_conv = convention_of(link.flags) if conventions else None      # a source without conventions has none
     return UnitScore(**common, pred_relation=rel.value, pred_status=RELATION_STATUS[rel].value,  # type: ignore[arg-type]
-                     pred_dev=deviates(outcome_class(rel, link.polarity_flip, kind)), pred_wit=frozenset(link.wit_ids),
-                     invalid_handle=FLAG_UNKNOWN_HANDLE in link.flags, pred_confidence=link.confidence)
+                     pred_dev=deviates(pred_class), pred_wit=frozenset(link.wit_ids),
+                     invalid_handle=FLAG_UNKNOWN_HANDLE in link.flags, pred_confidence=link.confidence,
+                     pred_convention=None if pred_conv is None else pred_conv.value,
+                     pred_dev_conv=deviates(pred_class, "any_conv", conventions and has_convention(link.flags)),
+                     convention_unsupported=conventions and FLAG_CONVENTION_UNSUPPORTED in link.flags)
 
 
 def human_kappa(primary: GoldSet, second: GoldSet, ref_kinds: Mapping[str, str]) -> float | None:

@@ -119,8 +119,8 @@ One `core.types.Alignment` per file (`pipeline/store.py`). The first line is a h
 | `polarity_flip` | bool |
 | `confidence` | `high`, `medium`, `low` (T1 only) or null |
 | `quotes` | list of `{side: "ref" or "wit", text, segment_ids}` |
-| `flags` | sorted list of flags (see [llm-tasks.md](llm-tasks.md), V-checks) |
-| `source` | producer, e.g. `claude-opus-5-5:collate.v1:r2`, `claude:consensus`, `dp:zero`, `dp:anchor`, `placebo:shuffled`, `external:<name>` |
+| `flags` | sorted list of flags (see [llm-tasks.md](llm-tasks.md), V-checks); under collate.v2 a link's convention is one flag named by its value, `standing_rendering` or `transcribed_name` (none for `none`), plus `convention_unsupported` when V12 does not confirm it |
+| `source` | producer, e.g. `claude-opus-5-5:collate.v1:r2` (`...:collate.v2:r2` for the v2 prompt), `claude:consensus`, `dp:zero`, `dp:anchor`, `placebo:shuffled`, `external:<name>` |
 
 Files: `dp_zero.jsonl` (P1), `dp_anchor.jsonl` (B0), `external_<name>.jsonl`,
 `claude.r<k>.jsonl` (verified replicate k), `claude.jsonl` (consensus), `shuffled.jsonl` (P2).
@@ -133,9 +133,9 @@ reversal, category_name_omitted, transliterated, no_counterpart`. Witness-only k
 | File | Content |
 |---|---|
 | `r<k>.json` | per replicate: `unresolved` (unit id -> UNALIGNED reason), `diagnostics` (list of `{kind, ref_ids, wit_ids, detail}`), `hints` (links of substituted-model answers, same fields as an alignment link), `overlap` (`{compared, agreed, disagreeing}`, the V10 statistic) |
-| `replicates.json` | `{tags, chapters, windows, request_keys}` of the latest `collate` invocation; `build` reads these replicates; `request_keys` (sorted `LLMRequest.key()` of every request) are the measurement calls whose audit lines G2 checks for substitution (a file without them: every collate call counts) |
+| `replicates.json` | `{tags, prompt, chapters, windows, request_keys}` of the latest `collate` invocation; `prompt` is the prompt version collated with (`collate.v1` or `collate.v2`; a file without it is `collate.v1`), and `evaluate`, `perturb` and `review reveal` refuse a configured `tasks.collate.prompt` that differs; `build` reads these replicates; `request_keys` (sorted `LLMRequest.key()` of every request) are the measurement calls whose audit lines G2 checks for substitution (a file without them: every collate call counts) |
 | `consensus.json` | `{grades: unit -> B, C or X, reasons: unit -> UNALIGNED reason}` |
-| `integrity.json` | `replicates, units, quote_failures, quote_failure_rate, missing_units, missing_rate, fleiss_kappa, mean_link_jaccard, class_jaccard` (gate G2) |
+| `integrity.json` | `replicates, units, quote_failures, quote_failure_rate, missing_units, missing_rate, fleiss_kappa, mean_link_jaccard, class_jaccard` (gate G2), and `convention_kappa`: Fleiss kappa of the replicates' conventions (descriptive, never gated; null with one replicate or when every reading is `none`, as in a collate.v1 run) |
 | `diagnostics.jsonl` | `{replicate, kind, ref_ids, wit_ids, detail}` for every replicate's diagnostics |
 | `dry_run.json` | `calls, cached_calls, calls_to_send, input_tokens, assumed_output_tokens_per_call, projected_usd, token_count_method (count_tokens or heuristic), windows, replicates, budget_usd` |
 
@@ -162,7 +162,7 @@ Written by `build` (`matrix/export.py`). The CSVs hold ids, statuses and numbers
 | `grade` | `A` (human), `B`, `C`, `X` |
 | `reason` | UNALIGNED reason |
 | `wit_ids` | linked witness segment ids |
-| `flags` | flags |
+| `flags` | flags; may include the convention flags `standing_rendering`, `transcribed_name` and `convention_unsupported` (a convention never changes `status`) |
 | `d_len` | log(witness length / reference length) of the linked segments |
 | `d_ord` | signed rank displacement within the concordance chapter group |
 | `d_lit` | transliteration density of the linked witness text |
@@ -183,7 +183,7 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 
 | File | Content |
 |---|---|
-| `scores.<set>.json` | one per evaluation, never overwritten by another kind: `scores.test.json`, `scores.dev.json`, `scores.<set>_baselines.json` (`--baselines-only`). Keys: `gold_set`, `baselines_only`, `human_kappa`, `sources`: source -> `{counts, metrics, intervals}`. `counts`: `units, windows, excluded, gold_links, gold_null, gold_witness_only, unresolved`. `metrics`: the scalars `link_precision, link_recall, link_f1, null_precision, null_recall, witness_only_recall, witness_only_kind_agreement, status_kappa, dany_kappa, quote_failure_rate, invalid_handle_rate, refusal_rate`, then keyed metrics `<breakdown>:<key>`: `status_agreement:<status>`, `dany_agreement:dev` / `:nondev`, `relation_recall:<relation>`, `refusal_rate:<topic group>` (`evaluation/scores.py: METRICS, BREAKDOWNS`). `intervals`: metric -> an `Estimate` (below) with its 95% window-cluster bootstrap interval. `reliability` (`evaluation/scores.py: confidence_reliability`; null for a source without confidences): `outcome` (`status_correct`), `n` (units with a confidence), `accuracy`, `brier` (nominal probabilities high 0.9, medium 0.7, low 0.5), `brier_constant` (constant predictor at the observed accuracy), `beats_constant`, `table` (label -> `{n, correct, accuracy, nominal}`) |
+| `scores.<set>.json` | one per evaluation, never overwritten by another kind: `scores.test.json`, `scores.dev.json`, `scores.<set>_baselines.json` (`--baselines-only`). Keys: `gold_set`, `baselines_only`, `human_kappa`, `sources`: source -> `{counts, metrics, intervals}`. `counts`: `units, windows, excluded, gold_links, gold_null, gold_witness_only, unresolved`. `metrics`: the scalars `link_precision, link_recall, link_f1, null_precision, null_recall, witness_only_recall, witness_only_kind_agreement, status_kappa, dany_kappa, dany_conv_kappa, relation_kappa, convention_precision, convention_recall, convention_f1, convention_unsupported_rate, quote_failure_rate, invalid_handle_rate, refusal_rate`, then keyed metrics `<breakdown>:<key>`: `status_agreement:<status>`, `dany_agreement:dev` / `:nondev`, `dany_conv_agreement:dev` / `:nondev`, `relation_recall:<relation>`, `convention_precision:<convention>` and `convention_recall:<convention>` (`standing_rendering`, `transcribed_name`), `refusal_rate:<topic group>` (`evaluation/scores.py: METRICS, BREAKDOWNS`). The convention metrics (collate.v2): precision over the units where the source claims a convention and the gold annotates one, recall over the gold's units with a convention other than `none` (an unresolved unit is a miss), gold rows with an empty `convention` (not annotated) left out; null for a source that produces no conventions (the controls, the placebo, external alignments, a collate.v1 consensus). `relation_kappa` is the per-unit relation kappa (unresolved units as UNALIGNED); a v1 source scored on v2 gold is structurally lower on it. `dany_conv_kappa` scores D_any_conv, where a source without conventions is read by its own D_any. `counts` add `gold_convention_annotated, gold_conventions, pred_conventions` (the last null for a source without conventions). `intervals`: metric -> an `Estimate` (below) with its 95% window-cluster bootstrap interval. `reliability` (`evaluation/scores.py: confidence_reliability`; null for a source without confidences): `outcome` (`status_correct`), `n` (units with a confidence), `accuracy`, `brier` (nominal probabilities high 0.9, medium 0.7, low 0.5), `brier_constant` (constant predictor at the observed accuracy), `beats_constant`, `table` (label -> `{n, correct, accuracy, nominal}`) |
 | `scores.json` | the same content as the scores file of the evaluation that wrote `gate.json` |
 | `gate.json` | `level` (0, 1, 2), `confirmatory`, `passed` (gate -> bool), `reasons`, `deferred_null`, `not_estimable` (estimand -> reason), `scope_note`, `gating` (true only for the Claude consensus scored on test gold), `gold_set`, `baselines_only`. Once a gating evaluation exists, dev-gold and baselines-only evaluations write only their `scores.<set>.json` and leave `gate.json`, `scores.json` and `sentinels.jsonl` alone |
 | `sentinels.jsonl` | sentinel results of every stage checked (as in `ingest/`), written with `gate.json` |
@@ -197,8 +197,8 @@ for sampling strata): one `Cell` per line with the fields of `cells.csv` except 
 | `topics/prelabels.jsonl` | T3 hints: `unit_id, topics, cues ([topic, cue] pairs), flags, reason` |
 | `review/plan_<batch>.csv`, `review/strata_<batch>.json` | runs made before plans were committed only; now committed (section 3), read here as a fallback for a batch with no committed plan |
 | `review/` sheets | section 4; contain source text |
-| `stats/estimates.json` | estimand name -> `Estimate`: `name, point, lo, hi, n, scope, sources, level, not_estimable`. Names: `E1_any, E1_cov, E1_absent, E1_partial, E2_any`, the blind-column sensitivity `E1_any_blind, E1_cov_blind, E2_any_blind`, the prior sensitivity `E1_<primary>_prior` (primary outcome of `preregistration.yaml: primary_outcome`, Dirichlet prior symmetric in D; only when the final column has draws), `E3` (when computed: `point` = deviating units decomposed, `n` = countable units; the counts are in `details.json: e3`), `E3.phi_V`, `E3.phi_S` (only when E3 is computed), `E4`, `E5`. E5 counts human-verified witness-only rows except those on CBETA `note` segments |
-| `stats/details.json` | `revision` (stratum -> `{stratum, n, relation_changed, outcome_changed}`); `manski` (`any`/`cov` -> `[lo, hi]`); `uncalibrated` (`final`/`blind` -> stratum -> unverified units, when a stratum has no phase-2 sample verdict and E1/E2 are not estimable); `ingest_notes` (`{witness_only_rows}`: witness-only rows on CBETA `note` segments, classified at ingest and left out of verification and E5; descriptive); `e4`: `margin` always, `power` (the content of `stats/power.json`) when computed, and when Delta is computed also `permutation_p, equivalent_within_margin, overlap {n_strata, n_overlap_strata, n_units, n_used, dropped}, naive` (Delta on the machine labels), `attenuation` (corrected minus naive), `matched_rd {difference, pairs}`, `misclassification` (list of `{stratum, factor (chapter or tertile), level, n, errors, rate}`), `negative_control` (an `Estimate` of frame vs neutral); `e3` (`pipeline/e3.py`): `manuscripts` (registry manuscripts with readings), `editions_ignored` (reading columns naming an edition), `cowitness`, `cowitness_revised`, `m_min`, `readings_units`, `unknown_units` (reading ids that are not reference units), `estimable`, `reason`, and once a manuscript column exists `units`, `n_deviating`, `counts` (class -> n; `shared_revised` when the co-witness is revised), `by_unit` (unit -> class), `translator_flagged`, `verified_deviating`, `vorlage` and `shared` (`{n, observed, expected, excess, case_rate, base_rate, phi}`), `bound` (A2: `{counts, by_unit, shared, unverified_shared}` with unverified shared units counted as not shared); `distance` (Sanskrit reference only): `{labels, matrix, newick}` over the reference, the Derge and T0892 |
+| `stats/estimates.json` | estimand name -> `Estimate`: `name, point, lo, hi, n, scope, sources, level, not_estimable`. Names: `E1_any, E1_cov, E1_any_conv, E1_absent, E1_partial, E2_any`, where `E1_any_conv` is the sensitivity variant with conventions counted (D_any_conv: a unit also counts when it carries a convention, read from the built cells, human conventions on grade A; final column only, never primary, not estimable for the same reason as `E1_any`, equal to `E1_any` in a collate.v1 run), the blind-column sensitivity `E1_any_blind, E1_cov_blind, E2_any_blind`, the prior sensitivity `E1_<primary>_prior` (primary outcome of `preregistration.yaml: primary_outcome`, Dirichlet prior symmetric in D; only when the final column has draws), `E3` (when computed: `point` = deviating units decomposed, `n` = countable units; the counts are in `details.json: e3`), `E3.phi_V`, `E3.phi_S` (only when E3 is computed), `E4`, `E5`. E5 counts human-verified witness-only rows except those on CBETA `note` segments |
+| `stats/details.json` | `revision` (stratum -> `{stratum, n, relation_changed, outcome_changed}`); `manski` (`any`/`cov`/`any_conv` -> `[lo, hi]`); `conventions` (`{standing_rendering, transcribed_name, unsupported, human}`: counted reference units carrying each convention, those flagged `convention_unsupported`, and those decided by a human); `uncalibrated` (`final`/`blind` -> stratum -> unverified units, when a stratum has no phase-2 sample verdict and E1/E2 are not estimable); `ingest_notes` (`{witness_only_rows}`: witness-only rows on CBETA `note` segments, classified at ingest and left out of verification and E5; descriptive); `e4`: `margin` always, `power` (the content of `stats/power.json`) when computed, and when Delta is computed also `permutation_p, equivalent_within_margin, overlap {n_strata, n_overlap_strata, n_units, n_used, dropped}, naive` (Delta on the machine labels), `attenuation` (corrected minus naive), `matched_rd {difference, pairs}`, `misclassification` (list of `{stratum, factor (chapter or tertile), level, n, errors, rate}`), `negative_control` (an `Estimate` of frame vs neutral); `e3` (`pipeline/e3.py`): `manuscripts` (registry manuscripts with readings), `editions_ignored` (reading columns naming an edition), `cowitness`, `cowitness_revised`, `m_min`, `readings_units`, `unknown_units` (reading ids that are not reference units), `estimable`, `reason`, and once a manuscript column exists `units`, `n_deviating`, `counts` (class -> n; `shared_revised` when the co-witness is revised), `by_unit` (unit -> class), `translator_flagged`, `verified_deviating`, `vorlage` and `shared` (`{n, observed, expected, excess, case_rate, base_rate, phi}`), `bound` (A2: `{counts, by_unit, shared, unverified_shared}` with unverified shared units counted as not shared); `distance` (Sanskrit reference only): `{labels, matrix, newick}` over the reference, the Derge and T0892 |
 | `stats/power.json` | written by `stats` once topic labels are complete (`pipeline/e4.py: mde_on_labels`): `mde_on_labels` (smallest Delta on the grid detected with `target_power`; null: none), `target_power, p0, chapters, units, exposed, power_curve` (effect -> power), `n_sim`. Gate G4 uses the larger of it and `stats.mde` (the simulated MDE alone when `stats.mde` is unset) |
 | `components/components.jsonl` | T2 slot codes: `ref_id, wit_ids, slot, code, ref_quote, wit_quote, polarity_flip, flags, reason` |
 | `components/rendering_profile.csv` | `source_quote, rendering_quote, count, n_units, units, codes, slots` (descriptive) |
@@ -278,8 +278,14 @@ Details: [`data/annotations/gold/README.md`](../data/annotations/gold/README.md)
 `evaluation/gold.py`, `evaluation/windows.py`.
 
 - **`<set>.csv`**, `set` in `dev`, `test`, `test_second`; exactly the columns `GOLD_COLUMNS`:
-  `set, window_id, row_type, unit_id, fingerprint, wit_ids, relation, polarity_flip, flags,
-  witness_only_kind, annotator, date, minutes`. `row_type` is `ref` or `witness_only`;
+  `set, window_id, row_type, unit_id, fingerprint, wit_ids, relation, convention, polarity_flip,
+  flags, witness_only_kind, annotator, date, minutes` (14; a file written before collate.v2,
+  with the other 13, still loads and reads as not annotated for conventions). `convention` on a
+  `ref` row is `none`, `standing_rendering` or `transcribed_name`, empty = not annotated; a
+  convention other than `none` needs a linked relation (not `no_counterpart`, `lacuna` or
+  `unresolved`), `standing_rendering` a verified glossary entry, and `witness_only` rows carry
+  none. The relation and the convention are recorded apart, so one gold serves D_any and
+  D_any_conv; a gold convention becomes the cell flag of the same name. `row_type` is `ref` or `witness_only`;
   witness-only rows use the orphan id `+<segment id>`. Relations as above plus `lacuna` and
   `unresolved` (kept, not scored). Flags: `scope_list, uniform_across_list,
   instruction_as_mantra, reordered, unsure`.
@@ -289,14 +295,15 @@ Details: [`data/annotations/gold/README.md`](../data/annotations/gold/README.md)
 ### Review verdicts (`data/annotations/verdicts/<witness>/<batch>.csv`)
 
 Details: [`data/annotations/verdicts/README.md`](../data/annotations/verdicts/README.md). Code:
-`review/verdicts.py` (`COLUMNS`, `load`, `save`, `validate`, `decision`). Exactly 24 columns (a file
-written before `machine_polarity_flip` existed, with the other 23, still loads; the column then
-reads `false`):
+`review/verdicts.py` (`COLUMNS`, `load`, `save`, `validate`, `decision`, `decision_convention`). Exactly
+27 columns (a file written before `machine_polarity_flip` existed still loads, the column then
+reading `false`; one written before collate.v2 lacks all three convention columns and still loads,
+each reading `""`, not annotated; a file with only some of them is refused):
 
 `batch_id, item_id, task, stratum, inclusion_prob, unit_id, fingerprint, instrument_digest,
-machine_relation, machine_status, machine_polarity_flip, blind_relation, blind_wit_ids,
-final_relation, final_wit_ids, polarity_flip, flags, quote_ref, quote_zh, annotator, blind_date,
-final_date, minutes, note`
+machine_relation, machine_status, machine_polarity_flip, machine_convention, blind_relation,
+blind_wit_ids, blind_convention, final_relation, final_wit_ids, final_convention, polarity_flip,
+flags, quote_ref, quote_zh, annotator, blind_date, final_date, minutes, note`
 
 `task` is `verify`, `audit` or `resolve`. Decision values for a reference unit are a relation,
 `lacuna` or `unresolved`; for an orphan row a witness-only kind or `has_counterpart`. Quotes
@@ -304,7 +311,15 @@ are truncated on import to `run.yaml: review.quote_max_chars` (zh 30, bo 60, sa 
 exceed 60 characters. The matrix applies the final columns (resolve copies blind to final on
 import); estimation uses `final_*` as primary and `blind_*` for the automation-bias sensitivity
 estimate (critique A1). `machine_polarity_flip` is the machine's polarity call from the reveal
-sheet (`true`/`false`), kept for the E4 misclassification table.
+sheet (`true`/`false`), kept for the E4 misclassification table. The convention columns
+(collate.v2) hold `none`, `standing_rendering` or `transcribed_name` (`""` = not annotated, equal
+to `none` wherever a revision is judged): `machine_convention` is the consensus convention shown
+at reveal (`none` for a v1 consensus), `blind_convention` and `final_convention` the human ones
+(resolve copies blind to final). A convention needs a linked relation and is never allowed on
+an orphan row; `standing_rendering` is accepted on import only when the glossary check (V12's
+rule, on the unit and the linked segments) confirms a verified entry. The matrix applies the
+decided convention (`decision_convention`, same columns as `decision`) as a grade-A cell flag; a
+human `none` removes the machine's convention.
 
 ### Review plans and frozen strata (`data/annotations/verdicts/<witness>/`)
 
@@ -373,18 +388,22 @@ Written by `review export` under `runs/<run>/review/` (`review/sheets.py`, `gold
 
 | Sheet | File | Columns |
 |---|---|---|
-| gold, reference side | `gold/<set>_<window>.ref.csv` | `row, unit_id, fingerprint, locus, kind, text, links, relation, polarity_flip, flags, note` |
+| gold, reference side | `gold/<set>_<window>.ref.csv` | `row, unit_id, fingerprint, locus, kind, text, links, relation, convention, polarity_flip, flags, note` |
 | gold, witness side | `gold/<set>_<window>.wit.csv` | `handle, seg_id, locus, kind, text, witness_only` |
-| verify, audit (blind) | `<batch>.blind.csv` | `item_id, task, unit_id, fingerprint, locus, ref_text, zh_context_loci, zh_context, blind_relation, blind_wit_loci, blind_flags, note` |
+| verify, audit (blind) | `<batch>.blind.csv` | `item_id, task, unit_id, fingerprint, locus, ref_text, zh_context_loci, zh_context, blind_relation, blind_wit_loci, blind_convention, blind_flags, note` |
 | resolve | `<batch>_resolve.blind.csv` | the blind columns, then `hint_other_model`: the proposal of a substituted model for the unit (`collation/r<k>.json: hints`), as `FROM ANOTHER MODEL (substituted; not the instrument, never measured): <relation> [<witness loci>]`, distinct hints joined by ` \| `; empty without a hint |
-| reveal | `<batch>.reveal.csv` | the blind columns, then `machine_relation, machine_polarity_flip, machine_wit_loci, machine_quotes, machine_grade, final_relation, final_wit_loci, final_flags, revised_reason` |
+| reveal | `<batch>.reveal.csv` | the blind columns, then `machine_relation, machine_polarity_flip, machine_convention, machine_wit_loci, machine_quotes, machine_grade, final_relation, final_wit_loci, final_convention, final_flags, revised_reason`; `machine_convention` is the cell's convention (`none` without one, `<convention>:unsupported` with `convention_unsupported`, empty for a missing or UNALIGNED cell); the `final_*` columns are prefilled with the blind decision, and a changed convention alone is a revision that needs `revised_reason` |
+| glossary | `standing_renderings.csv` (beside every gold, blind and reveal sheet) | `entry, reference_forms, witness_renderings` (forms joined by ` \| `): the verified entries of `data/codebook/collate.v2/standing_renderings[.<ref>-<wit>].yaml`, the same the v2 prompt shows; header only while none is verified or the file names another pair of texts |
 | topics, first coder | `topics_<batch>.csv` | `unit_id, fingerprint, locus, text, context_before, context_after, prelabel_topics, prelabel_cue, topics, note` |
 | topics, second coder | `topics_<batch>.second.csv` | the same without `prelabel_topics` and `prelabel_cue` (critique A6) |
 
 Import (`review import`, `review reveal`, `topics import`) drops every text column
 (`text, ref_text, zh_context, context_before, context_after, machine_quotes`) and the
 `hint_other_model` column, and writes the committed files of section 3. A blind verify or audit
-sheet never contains a `machine_*` column.
+sheet never contains a `machine_*` column. On a sheet with a convention column a blank cell
+reads as `none`; a sheet exported before collate.v2 lacks all its convention columns and imports
+as not annotated (a sheet lacking only some is refused). Conventions and
+`convention_unsupported` are refused in a `flags` column.
 
 Export never overwrites a blind or reveal sheet that holds an item without an imported verdict
 (blind: no committed blind decision; reveal: no committed final decision) unless `--force` is
@@ -467,11 +486,16 @@ sentinels:
 | `note_kind` | `note` | `note_class` |
 | `paratext` | `from, to` | `count` |
 | `adjacent` | `first, second` | `max_between` |
-| `relation_in` | `ref_from, ref_to[, wit_from, wit_to]` | `relations[, polarity_flip][, flags]` |
+| `relation_in` | `ref_from, ref_to[, wit_from, wit_to]` | `relations[, polarity_flip][, flags][, conventions]` |
 | `status_in` | as `relation_in` | `statuses` |
 | `none_status` | as `relation_in` | `status` |
 | `linked_local` | as `relation_in` | `local` |
 | `witness_only` | `wit_from, wit_to` | `kinds` |
+
+`expect.conventions` (optional, a non-empty list of `none`, `standing_rendering`,
+`transcribed_name`) also restricts each unit's convention (read from the link or cell flags; an
+unresolved unit fails); without it the convention is not looked at, so a v1 expectation holds
+under v2.
 
 Only `verified` sentinels block a gate (G0 at ingest, G2 at proposal, G3 at final). The
 committed file holds 18 sentinels.
@@ -488,10 +512,23 @@ committed file holds 18 sentinels.
 | `lexicon/notes_zh.yaml` | `ingest/notes.py` | ordered (class, regex) rules for CBETA inline notes; Tokyo 335 marker |
 | `lexicon/motive_terms.yaml` | `experiments/overattribution/lexical.py` | motive terms, negation scope, breakers (en, zh, ja) |
 | `codebook/topics.yaml` | `topics/codebook.py` | topic definitions; names and groups must equal the code constants |
-| `codebook/collate_examples.yaml` | `collate/collator.py` | the 3 synthetic T1 few-shot examples |
+| `codebook/collate_examples.yaml` | `collate/prompt.py` | the 3 synthetic T1 few-shot examples of collate.v1 |
+| `codebook/collate.v2/examples.yaml` | `collate/prompt.py` | the 3 synthetic T1 examples of collate.v2: the v1 format plus a `convention` per unit and per-example `standing_renderings` |
+| `codebook/collate.v2/standing_renderings.yaml` | `core/lexicon.py: load_standing_renderings`, `collate/prompt.py` | the glossary of the witness's standing renderings (below) |
 | `codebook/components_examples.yaml` | `collate/components.py` | synthetic T2 examples |
 
 Each file documents its own schema in its header comment.
+
+**`codebook/collate.v2/standing_renderings[.<ref>-<wit>].yaml`** (schema version 1): `reference`
+and `witness` (text ids; a run on other texts stops with an error), `entries` (each `id,
+reference_forms, witness_renderings`, optional `sanskrit, counts, note`, `status` in `proposed,
+verified, retired`, `verified_by` required for and only for `verified`) and
+`considered_not_listed` (`id`, `reason`, and the forms and counts seen). The whole file is
+validated on load; only `verified` entries are returned, shown in the v2 prompt, used by V12 and
+written beside the review sheets. Counts, notes and names never reach the model. Verifying,
+adding or retiring an entry changes the v2 prompt, hence the collate instrument digest and every
+cache key. v2 requires the file for each language pair it runs (`entries: []` is allowed); the
+committed file lists one entry (`hevajra`, `status: proposed`), so the active glossary is empty.
 
 ---
 
@@ -516,7 +553,9 @@ which rejects unknown keys.
 
 `model, max_retries, timeout_s, workers, budget_usd, pricing_usd_per_mtok {input, output,
 cache_read, cache_write}`, `fallback_pricing_usd_per_mtok` (same keys; optional), and `tasks.<task>` with `effort, max_tokens, replicates, fallback`
-plus task-specific keys (`components.pairs_per_call`, `topics.units_per_call`,
+plus task-specific keys (`collate.prompt`: `collate.v1` (default) or `collate.v2`, the collator's
+prompt version, not part of the collate parameters hashed into `params_sha`, but selecting the
+template, examples and schema that are; `components.pairs_per_call`, `topics.units_per_call`,
 `scorer.double_score_fraction`). Tasks: `collate, components, topics, subject, scorer, check`.
 See [llm-tasks.md](llm-tasks.md).
 
@@ -527,7 +566,7 @@ See [llm-tasks.md](llm-tasks.md).
 | `schema_version` | 1 |
 | `frozen` | set to true by `prereg freeze` |
 | `instrument_digests` | task -> digest, written by `prereg freeze` |
-| `primary_outcome` | `any` (D_any) or `cov` (D_cov) |
+| `primary_outcome` | `any` (D_any) or `cov` (D_cov); never `any_conv` (conventions counted, an E1 sensitivity variant only): `prereg freeze` and `pipeline.measure.primary_outcome` refuse it |
 | `scope` | lines printed beside every number |
 | `gold.dev_regions` | list of `{chapter[, around, radius_units][, first_units][, last_units][, id]}` (`evaluation/windows.py`) |
 | `gold.test_windows` | `n_windows, width, second_annotator_windows, seed` |
@@ -564,4 +603,5 @@ Details: [`data/reference/README.md`](../data/reference/README.md). Code: `inges
 Collator examples for the Sanskrit pairs are committed files, not licensed text:
 `data/codebook/collate_examples.sa-bo.yaml` and `collate_examples.sa-zh.yaml`, in the format of
 `collate_examples.yaml` with `reference_lang: sa` (not committed yet; see
-[llm-tasks.md](llm-tasks.md)).
+[llm-tasks.md](llm-tasks.md)). Under collate.v2 a Sanskrit pair also needs
+`data/codebook/collate.v2/examples.<ref>-<wit>.yaml` and `standing_renderings.<ref>-<wit>.yaml`.

@@ -1,9 +1,10 @@
-"""Code checks V1-V11 on T1 answers: the model proposes, this module decides what stands.
+"""Code checks V1-V12 on T1 answers: the model proposes, this module decides what stands.
 
 Every function is pure. A failed check never turns into a silent PRESENT or ABSENT: a
 fatal failure makes the unit UNALIGNED with a reason (``Collation.unresolved``), a
-non-fatal one keeps the link with a flag (flags other than ``corroborated`` make the
-consensus grade C), and window-level findings become ``Diagnostic`` records.
+non-fatal one keeps the link with a flag (flags other than ``corroborated`` and the
+convention flags make the consensus grade C), and window-level findings become
+``Diagnostic`` records.
 
     V1  coverage         every reference handle exactly once. A duplicate keeps the first
                          record (flag ``duplicate_record``); a missing unit is
@@ -30,6 +31,14 @@ consensus grade C), and window-level findings become ``Diagnostic`` records.
                          (``core.translit``), else flag ``transliteration_unsupported``; a
                          non-mantra reference unit linked to a mantra segment gets the
                          candidate flag ``instruction_as_mantra``
+    V12 conventions      (collate.v2) a claimed convention goes on the link as its flag
+                         (``standing_rendering`` or ``transcribed_name``). A standing
+                         rendering needs a verified glossary entry (``CheckLexicon.
+                         standing_renderings``, the entries shown in the prompt) with a
+                         reference form in ``ref_quote`` and a rendering of the same entry
+                         in ``wit_quote``; a transcribed name needs a ``ref_quote`` and a
+                         witness quote that passes the V11 measure. Otherwise the claim is
+                         kept and the flag ``convention_unsupported`` added (never fatal)
 
 Witness-only records are checked for V2, V4 and V5 too; a failing one is dropped (its
 segments then show up under V9). A segment claimed both by a unit link and by a
@@ -38,20 +47,34 @@ witness-only record stays linked and leaves the record (flag ``witness_only_trim
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Iterable, Mapping, Sequence
 
-from ..core.lexicon import Negators, VariantForms, load_negators, load_variant_forms
-from ..core.textnorm import find_terms, fold_variants, for_quote, quote_in
-from ..core.translit import MIN_TRANSLITERATION_DENSITY, transliteration_charset, transliteration_density
-from ..core.types import (
+from ..core.lexicon import (
+    Negators,
+    StandingRenderings,
+    VariantForms,
+    load_negators,
+    load_variant_forms,
+)
+from ..core.textnorm import TSHEG, find_terms, fold_variants, for_quote, quote_in
+from ..core.translit import (  # noqa: F401  (MIN_TRANSLITERATION_DENSITY re-exported)
+    MIN_TRANSLITERATION_DENSITY,
+    looks_transcribed,
+    transliteration_charset,
+)
+from ..core.types import (  # noqa: F401  (CONVENTION_FLAGS, FLAG_CONVENTION_UNSUPPORTED re-exported)
+    CONVENTION_FLAGS,
+    FLAG_CONVENTION_UNSUPPORTED,
     REASON_INVALID,
     REASON_UNASSESSED,
     REASON_VERIFICATION_FAILED,
     Alignment,
+    Convention,
     Diagnostic,
     Link,
     Quote,
@@ -78,20 +101,28 @@ FLAG_DUPLICATE = "duplicate_record"
 FLAG_UNKNOWN_HANDLE = "unknown_handle"
 FLAG_WITNESS_ONLY_TRIMMED = "witness_only_trimmed"
 FLAG_HINT = "substituted_model_hint"
+# A Tibetan reference form may end in a fused particle (-s, -r, -'i, -'o, -'ang, -'am).
+_BO_FUSED_SUFFIX = "(?:\u0f66|\u0f62|\u0f60\u0f72|\u0f60\u0f7c|\u0f60\u0f44|\u0f60\u0f58)?"
 
 
 @dataclass(frozen=True)
 class CheckLexicon:
     """Word lists the checks need. Build it with ``load`` from the whole witness text, so
-    that the transliteration character set covers all of the witness's mantras."""
+    that the transliteration character set covers all of the witness's mantras.
+
+    ``standing_renderings`` (V12) must be the very object shown to the model
+    (``Examples.glossary`` of the collation plan), never a separately loaded copy."""
 
     negators: Negators
     variants: VariantForms
     translit_charset: frozenset[str] = frozenset()
+    standing_renderings: StandingRenderings = StandingRenderings()
 
     @classmethod
-    def load(cls, data_dir: Path, witness_segments: Iterable[Segment] = ()) -> "CheckLexicon":
-        return cls(load_negators(data_dir), load_variant_forms(data_dir), transliteration_charset(witness_segments))
+    def load(cls, data_dir: Path, witness_segments: Iterable[Segment] = (),
+             standing_renderings: StandingRenderings | None = None) -> "CheckLexicon":
+        return cls(load_negators(data_dir), load_variant_forms(data_dir), transliteration_charset(witness_segments),
+                   standing_renderings or StandingRenderings())
 
 
 @dataclass(frozen=True)
@@ -118,7 +149,7 @@ class Collation:
 
 # --------------------------------------------------------------------------- one window
 def verify(parsed: Parsed, window: Window, lexicon: CheckLexicon, source: str) -> Collation:
-    """Apply V1-V8 and V11 to one window's parsed answer."""
+    """Apply V1-V8, V11 and V12 to one window's parsed answer."""
     empty = Alignment(source, window.reference, window.witness)
     if isinstance(parsed, Unresolved):
         hints: tuple[Link, ...] = ()
@@ -219,14 +250,56 @@ def _check_unit(unit: Segment, rec: RawUnit, duplicate: bool, window: Window, le
         found.append(Diagnostic(FLAG_RELOCATION, (unit.id,), outside,
                                 detail=f"{window.key}: linked outside the core window {sorted(window.core_locals)} "
                                        f"to witness chapter(s) {where}"))
-    if relation is Relation.TRANSLITERATED and transliteration_density(      # V11
-            rec.wit_quote, window.wit_lang, lex.translit_charset) < MIN_TRANSLITERATION_DENSITY:
+    if relation is Relation.TRANSLITERATED and not looks_transcribed(               # V11
+            rec.wit_quote, window.wit_lang, lex.translit_charset):
         flags.add(FLAG_TRANSLITERATION_UNSUPPORTED)
     if unit.kind != "mantra" and any(window.segment[i].kind == "mantra" for i in wit_ids):
         flags.add(FLAG_INSTRUCTION_AS_MANTRA)
+    flags |= convention_flags(rec, window, lex)                                  # V12
     link = Link(ref_id=unit.id, wit_ids=wit_ids, relation=relation, polarity_flip=rec.polarity_flip,
                 confidence=rec.confidence, quotes=tuple(quotes), flags=frozenset(flags), source=source)
     return link, found
+
+
+def convention_flags(rec: RawUnit, window: Window, lex: CheckLexicon) -> set[str]:
+    """V12: the claimed convention as a flag, plus ``convention_unsupported`` when the
+    quotes do not support it (no flag at all for NONE)."""
+    if rec.convention is Convention.NONE:
+        return set()
+    if rec.convention is Convention.STANDING_RENDERING:
+        supported = standing_supported(rec.ref_quote, rec.wit_quote, window.ref_lang, window.wit_lang, lex)
+    else:
+        supported = bool(rec.ref_quote.strip()) and looks_transcribed(rec.wit_quote, window.wit_lang,
+                                                                      lex.translit_charset)
+    return {rec.convention.value} | (set() if supported else {FLAG_CONVENTION_UNSUPPORTED})
+
+
+def standing_supported(ref_quote: str, wit_quote: str, ref_lang: str, wit_lang: str, lex: CheckLexicon) -> bool:
+    """Whether one verified entry has a reference form in ``ref_quote`` and one of its own
+    renderings in ``wit_quote`` (quote keys, variant forms folded)."""
+    if not (ref_quote.strip() and wit_quote.strip()):
+        return False
+    ref_key = _folded(ref_quote, ref_lang, lex)
+    wit_key = _folded(wit_quote, wit_lang, lex)
+    return any(any(_term_in(_folded(f, ref_lang, lex), ref_key, ref_lang) for f in entry.reference_forms)
+               and any(_term_in(_folded(r, wit_lang, lex), wit_key, wit_lang) for r in entry.witness_renderings)
+               for entry in lex.standing_renderings.entries)
+
+
+def _folded(text: str, lang: str, lex: CheckLexicon) -> str:
+    key = for_quote(text, lang)
+    variants = lex.variants.for_lang(lang)
+    return fold_variants(key, variants) if variants else key
+
+
+def _term_in(term: str, key: str, lang: str) -> bool:
+    """A Tibetan term starts at a syllable and ends at one, or in a fused particle on its
+    last syllable (the Derge text writes the name with -'i, -s and -r); elsewhere a substring."""
+    if not term:
+        return False
+    if lang != "bo":
+        return term in key
+    return re.search(re.escape(f"{TSHEG}{term}") + _BO_FUSED_SUFFIX + TSHEG, f"{TSHEG}{key}{TSHEG}") is not None
 
 
 def _polarity_flags(relation: Relation, flip: bool, ref_quote: str, wit_quote: str, window: Window,

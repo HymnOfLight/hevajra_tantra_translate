@@ -178,14 +178,21 @@ further pair that has its own `data/codebook/collate_examples.<ref>-<wit>.yaml` 
 Sanskrit reference: `collate:sa-bo` and `collate:sa-zh`; `prereg.collate_task`). G2 and the
 reveal import use the digest of the run's pair (`pipeline/instrument.py: collate_digest`).
 
+The collate digests are those of the configured prompt version (`tasks.collate.prompt`, below):
+under collate.v2 the prompt sha covers the v2 template, the v2 examples and the block of
+verified standing renderings, and the schema sha the `convention` field. The version name
+itself is not hashed into `params_sha` (it selects what is hashed), so the collate.v1 digests
+and cache keys are exactly those of the runs made before collate.v2 existed (pinned in
+`tests/unit/test_collate_v2.py`: system prompt sha `3ab88636...`, schema sha `ed99b249...`).
+
 ## 2. The tasks
 
 Settings below are the committed `config/llm.yaml` values.
 
 | | T1 collate | T2 components | T3 topics | T4 subject | T5 scorer | check |
 |---|---|---|---|---|---|---|
-| Module | `collate/collator.py` | `collate/components.py` | `topics/prelabel.py` | `experiments/overattribution/run.py` | same | `llm/check.py` |
-| Prompt | `prompts/collate.v1.md` + `data/codebook/collate_examples.yaml` | `prompts/components.v1.md` + `data/codebook/components_examples.yaml` | `prompts/topics.v1.md` + `data/codebook/topics.yaml` | `prompts/subject.v1.md` + `evidence.yaml` | `prompts/scorer.v1.md` | constant |
+| Module | `collate/collator.py`, `collate/prompt.py` | `collate/components.py` | `topics/prelabel.py` | `experiments/overattribution/run.py` | same | `llm/check.py` |
+| Prompt | `prompts/collate.v1.md` + `data/codebook/collate_examples.yaml` (default); `prompts/collate.v2.md` + `data/codebook/collate.v2/` | `prompts/components.v1.md` + `data/codebook/components_examples.yaml` | `prompts/topics.v1.md` + `data/codebook/topics.yaml` | `prompts/subject.v1.md` + `evidence.yaml` | `prompts/scorer.v1.md` | constant |
 | Effort | high | high | medium | medium | high | low |
 | max_tokens | 128,000 | 32,000 | 16,000 | 16,000 | 8,000 | 1,024 |
 | Replicates | 3 | 1 | 1 | 3 | 1 (+ `r2` for a seeded 20%) | 1 |
@@ -203,13 +210,64 @@ classifier); tests assert this for every template (`test_template_never_asks_for
 
 ### T1 collator: the measurement instrument
 
+**Prompt versions** (`collate/prompt.py: VERSIONS`). `config/llm.yaml: tasks.collate.prompt`
+selects the version; an unknown name is a configuration error.
+
+| | `collate.v1` (default) | `collate.v2` |
+|---|---|---|
+| Template | `prompts/collate.v1.md` | `prompts/collate.v2.md` |
+| Examples | `data/codebook/collate_examples[.<ref>-<wit>].yaml` | `data/codebook/collate.v2/examples[.<ref>-<wit>].yaml` |
+| Glossary | none | `data/codebook/collate.v2/standing_renderings[.<ref>-<wit>].yaml`, required for each pair (`entries: []` allowed) |
+| Schema | `SCHEMA_V1` (`collator.SCHEMA`) | `SCHEMA_V2`: `convention` before `relation` in every unit |
+| Link source | `<model>:collate.v1:<tag>` | `<model>:collate.v2:<tag>` |
+
+The task name stays `collate` for both. v1 stays the default until the dev-gold comparison of
+v1 and v2 (docs-zh/09-collate-v2-draft.md, section 7) supports a switch. `collation/
+replicates.json` records the version a run collated with (absent = v1), and `evaluate`,
+`perturb` and `review reveal` refuse a configured version that differs
+(`pipeline/instrument.py: check_prompt`): one run directory holds one instrument. A switch
+after `prereg freeze` needs `prereg freeze --amend`.
+
+collate.v2 adds a second dimension next to the relation, the **convention**, for differences that
+are conventions of the translation rather than changes of content:
+
+- `standing_rendering`: the unit contains a reference term of a verified glossary entry and the
+  witness uses that entry's rendering (e.g. Hevajra as kong zhi jin gang); the relation is judged
+  as if the rendering were the reference term.
+- `transcribed_name`: the witness renders a proper name (deity, person, place, channel,
+  implement) or a syllable or letter treated as sound (seed syllables, alphabet letters) by
+  sound, the rest of the unit by meaning; the relation is judged as if the name had been
+  translated.
+- `none` otherwise. `transliterated` narrows to content words, explanatory text and mantras
+  rendered by sound (a class noun such as dakini or yogini rendered by sound stays
+  `transliterated`); a list merged into one collective expression is `generalised` for every
+  merged member, while ordinals in place of the names stay `category_name_omitted`.
+
+A convention only sets aside the name or rendering itself: any other loss, reversal or
+replacement in the unit is still recorded, and a convention never turns one into `equivalent`.
+The v2 examples illustrate ordinals vs a collective expression; a standing rendering with a
+reversal and a no-counterpart unit; transcribed names vs transliterated content, a mantra and a
+witness-only line. Each v2 example lists its own synthetic standing renderings, which never
+overlap the real glossary.
+
+**Glossary.** Only entries with `status: verified` (and `verified_by`) are shown, after the
+examples, under `## Standing renderings of this witness` as one `STANDING RENDERINGS` block (one
+line `form / form = rendering / rendering` per entry; `(none)` without an entry). Counts, notes
+and names never reach the model. V12 reads exactly the object shown in the prompt
+(`Examples.glossary`), and the review sheets list the same entries. The file names its
+reference and witness text ids; a run on other texts stops with an error. Verifying, adding or
+retiring an entry changes the prompt, hence the digest and every cache key. The committed file
+lists only `hevajra`, still `proposed`, so the active glossary is empty and every
+`standing_rendering` claim is flagged `convention_unsupported` until an expert signs it.
+
 **Input** (`collate/windows.py`, `collator.build_request`). One window = one chunk of one
 reference chapter (at most `windows.max_ref_units` = 150 units, the last `overlap` = 10 repeated
 at the start of the next chunk) plus the whole witness text. On the real texts this gives 35
 windows for 3,042 reference units in 23 chapters.
 
-- `system`: the template, then the three synthetic examples (a list whose category names become
-  ordinals, a reversal, a witness-only addition). Examples never reuse sentinel or test passages
+- `system`: the template, then the three synthetic examples (v1: a list whose category names
+  become ordinals, a reversal, a witness-only addition; v2: see above), then under v2 the
+  STANDING RENDERINGS block. Examples never reuse sentinel or test passages
   (tested). The examples must illustrate the window's language pair (`collator.examples_file`):
   `collate_examples.yaml` is Tibetan -> Chinese; under the Sanskrit reference the windows are
   Sanskrit -> Tibetan and Sanskrit -> Chinese and need `collate_examples.sa-bo.yaml` and
@@ -239,8 +297,10 @@ windows for 3,042 reference units in 23 chapters.
 ```
 
 `relation` is one of the 10 `Relation` values, `confidence` one of high/medium/low, `kind` one
-of the 4 `WitnessOnlyKind` values. A test asserts every enum value appears in the template and
-the schema.
+of the 4 `WitnessOnlyKind` values. `SCHEMA_V2` adds `"convention"` (`none`,
+`standing_rendering`, `transcribed_name`) to every unit, before `relation`. An answer is
+validated against the schema actually sent. A test asserts every enum value appears in the
+template and the schema of its version.
 
 **Checks** (`collate/verify.py`, `collate/merge.py`, all pure). Fatal failures make a unit
 UNALIGNED with a reason; non-fatal ones keep the link with a flag (any flag except
@@ -258,7 +318,8 @@ UNALIGNED with a reason; non-fatal ones keep the link with a flag (any flag exce
 | V8 order | units off the longest order-preserving chain | flag `crossing`; crossing count in a diagnostic; never removed |
 | V9 exhaustiveness | after merging a chapter's chunks, every core-window witness segment is linked or witness-only | `unaccounted` diagnostic |
 | V10 overlap | the 10 overlap units read in two chunks are compared | flag `overlap_disagreement`; agreement rate in `collation/r<k>.json` |
-| V11 transliteration | `transliterated` needs a witness quote at least 50% transcription (`core/translit.py`) | flag `transliteration_unsupported`; prose unit linked to a mantra segment: flag `instruction_as_mantra` |
+| V11 transliteration | `transliterated` needs a witness quote at least 50% transcription (`core/translit.py: looks_transcribed`, `MIN_TRANSLITERATION_DENSITY`); under v2 `transliterated` covers content and mantras only | flag `transliteration_unsupported`; prose unit linked to a mantra segment: flag `instruction_as_mantra` |
+| V12 conventions (v2) | the claimed convention becomes a link flag of the same name. `standing_rendering`: both quotes non-empty, and one verified entry has a reference form in `ref_quote` and one of its own renderings in `wit_quote` (quote keys, variant forms folded; Tibetan matched from a syllable start, the last syllable may carry a fused particle -s, -r, -'i, -'o, -'ang, -'am). `transcribed_name`: a non-empty `ref_quote` and a `wit_quote` that passes the V11 density | flag `convention_unsupported` beside the convention flag; never fatal; grade C |
 
 Witness-only records are checked for V2, V4 and V5 as well. A refusal, truncation, invalid
 answer or substituted model makes every unit of the window UNALIGNED with reason
@@ -269,7 +330,26 @@ answer or substituted model makes every unit of the window UNALIGNED with reason
 the k replicates; the relation is the most frequent among the majority (ties broken by
 `matrix.status.RELATION_PRIORITY`); the link comes from the medoid replicate; flags are the
 union. No majority gives UNALIGNED(`no_majority`). Grade B = all replicates agree and no flag
-other than `corroborated`; C otherwise; X for UNALIGNED.
+other than `corroborated` and the convention flags; C otherwise; X for UNALIGNED. The convention
+is voted separately, not taken from the flag union: a convention needs two thirds of the k
+replicates among the resolved readings, else `none`; the medoid is taken from the readings
+holding the elected convention, and `convention_unsupported` is kept only when one of those
+readings carried it. Convention flags never lower a grade; `convention_unsupported` gives C.
+`collation/integrity.json: convention_kappa` (Fleiss kappa of the replicates' conventions) is
+descriptive, never gated. A v1 consensus (every reading `none`) is byte-identical to the one
+made before collate.v2.
+
+**Conventions in the measurement.** The relation-to-status mapping is unchanged and a convention
+never changes a status, D_any or D_cov; the primary outcome stays `any` or `cov`. The outcome
+`any_conv` (D_any_conv: deviating, or carrying a convention) is computed only as the E1
+sensitivity estimate `E1_any_conv` and its Manski bounds, for comparison with published counts that
+include transcriptions (omission + rewriting + transliteration). Human gold and verdicts record the relation
+and the convention separately, so both calibers come from one gold. On gold, `evaluate` adds
+`relation_kappa`, `dany_conv_kappa`, convention precision, recall and F1 (overall and per
+convention) and `convention_unsupported_rate`; they are null for sources that produce no
+conventions (the controls, the placebo, external alignments, a v1 consensus). No gate uses a
+convention metric. Sentinels of kind `relation_in` may restrict conventions with
+`expect.conventions`.
 
 **Perturbations** (`collate/perturb.py`, stage `perturb`, gate G2), run on the windows of the
 dev-gold chapters with one replicate: *P-wrong-window* moves the core window to the most

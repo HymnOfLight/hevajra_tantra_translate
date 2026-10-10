@@ -15,7 +15,8 @@ Inputs (synthesis 6.4, critique A2/A3):
                  the label ``shared_revised``
     m_min        ``preregistration.yaml: gates.g4.min_manuscripts_per_unit``
 
-The deviation indicator is the primary outcome of the final matrix (human decisions applied).
+The deviation indicator is the primary outcome of the final matrix (human decisions applied);
+the sensitivity variant ``any_conv`` is refused (``twophase.require_primary``).
 A2: the units entering E3 must be verified or bounded, so beside the decomposition as
 measured the stage reports the bound in which every shared unit not human-verified in both
 columns (grade A) counts as not shared (``decompose.bound_unverified_shared``).
@@ -37,7 +38,7 @@ from ..ingest.sanskrit import ReadingTable, load_readings
 from ..matrix.status import cell_deviates
 from ..registry import load_manuscripts, load_witnesses
 from ..review.verdicts import is_orphan
-from ..stats import decompose
+from ..stats import decompose, twophase
 from .context import RunContext, StageError, Texts
 from .store import read_cells
 
@@ -97,6 +98,7 @@ def e3_inputs(ctx: RunContext, texts: Texts) -> E3Inputs:
 
 def unit_evidence(texts: Texts, cells: Sequence[Cell], inputs: E3Inputs, outcome: str) -> list[decompose.UnitEvidence]:
     """One ``UnitEvidence`` per countable unit (uncountable cells are left out)."""
+    twophase.require_primary(outcome, "E3")
     hosts: dict[str, set[str]] = {}
     for s in texts.witness:
         if s.kind == "note" and s.extra.get("host"):
@@ -130,6 +132,7 @@ def verified_units(cells: Sequence[Cell], inputs: E3Inputs) -> set[str]:
 def e3_stats(ctx: RunContext, texts: Texts, cells: Sequence[Cell], outcome: str,
              scope: str) -> tuple[dict[str, Estimate], dict[str, Any]]:
     """E3 estimates (``E3``, ``E3.phi_V``, ``E3.phi_S``) and ``stats/details.json: e3``."""
+    twophase.require_primary(outcome, "E3")
     inputs = e3_inputs(ctx, texts)
     m_min = GateSpecs.from_prereg(ctx.settings.prereg).g4.min_manuscripts_per_unit
     known = set(texts.ref_kinds)

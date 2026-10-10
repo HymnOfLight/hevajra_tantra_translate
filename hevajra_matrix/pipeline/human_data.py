@@ -7,6 +7,10 @@ Committed files live under ``data/annotations/`` (ids and short quotes only). Re
 ``data/annotations/verdicts/<witness>/``, so a new run directory still finds them. Runs made
 before plans were committed kept them under ``<run>/review/``; those are read as a fallback
 for any batch with no committed plan.
+
+The verified standing renderings (``standing_renderings``) are read here too: annotators
+see them beside the sheets, and the import checks a human ``standing_rendering`` against
+them.
 """
 
 from __future__ import annotations
@@ -16,7 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from ..collate import prompt as collate_prompt
 from ..core.ids import orphan_row_id
+from ..core.lexicon import StandingRenderings
 from ..core.types import Verdict
 from ..evaluation import gold as gold_sets
 from ..matrix.build import segment_fingerprint
@@ -89,6 +95,22 @@ def current_verdicts(verdicts: Sequence[Verdict], texts: Texts) -> list[Verdict]
 
 def codebook(ctx: RunContext) -> TopicCodebook:
     return load_codebook(ctx.data_dir / "codebook" / "topics.yaml")
+
+
+def standing_renderings(ctx: RunContext, texts: Texts) -> StandingRenderings:
+    """The verified standing renderings of the run's witness against its reference.
+
+    The same file and loader as the collate.v2 prompt (draft section 5: annotators see the
+    list the collator sees), whatever ``tasks.collate.prompt`` is, because gold does not
+    depend on the instrument. Empty when the language pair has no glossary file or the
+    file lists another pair of texts (e.g. under a Sanskrit reference).
+    """
+    ref_lang, wit_lang = texts.reference[0].lang, texts.witness[0].lang
+    rel = collate_prompt.glossary_file(ref_lang, wit_lang, collate_prompt.PROMPT_V2)
+    if rel is None or not (ctx.data_dir / rel).is_file():
+        return StandingRenderings.empty()
+    glossary, pair, _ = collate_prompt.load_glossary(ctx.data_dir, ref_lang, wit_lang, collate_prompt.PROMPT_V2)
+    return glossary if pair == (texts.reference_id, texts.witness_id) else StandingRenderings.empty()
 
 
 @dataclass(frozen=True)

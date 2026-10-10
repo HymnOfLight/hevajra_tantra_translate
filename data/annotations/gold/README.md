@@ -24,7 +24,9 @@ filled in (with text) live under `runs/<id>/review/` and are never committed.
 
 ## `<set>.csv`
 
-UTF-8 (a byte-order mark is tolerated). Exactly these 13 columns, in any order:
+UTF-8 (a byte-order mark is tolerated). Exactly these 14 columns, in any order. A file
+written before collate.v2 has no `convention` column (13 columns); it still loads, and every
+row then reads as not annotated for conventions.
 
 | Column | Content |
 |---|---|
@@ -35,6 +37,7 @@ UTF-8 (a byte-order mark is tolerated). Exactly these 13 columns, in any order:
 | `fingerprint` | the text fingerprint when annotated; gold is applied to the matrix only while it matches |
 | `wit_ids` | witness segment ids, separated by spaces; empty for `no_counterpart`; for `witness_only` the one segment |
 | `relation` | `ref` rows: `equivalent`, `paraphrase`, `generalised`, `abridged`, `expanded`, `substitution`, `reversal`, `category_name_omitted`, `transliterated`, `no_counterpart`, or `lacuna` / `unresolved`; empty for `witness_only` rows |
+| `convention` | `ref` rows: `none`, `standing_rendering` or `transcribed_name` (collate.v2); empty = not annotated (rows made before the column existed); `witness_only` rows: empty |
 | `polarity_flip` | `true` or `false` |
 | `flags` | any of `scope_list`, `uniform_across_list`, `instruction_as_mantra`, `reordered`, `unsure`, separated by `;` |
 | `witness_only_kind` | `witness_only` rows: `addition`, `translator_note`, `paratext` or `belongs_elsewhere`; empty for `ref` rows |
@@ -44,9 +47,28 @@ UTF-8 (a byte-order mark is tolerated). Exactly these 13 columns, in any order:
 
 Rules checked on load: every relation except `no_counterpart` names at least one witness
 segment and `no_counterpart` names none; a unit appears once; a segment is never both
-linked and witness-only. Status (PRESENT / PARTIAL / ABSENT) is never stored: it is derived
-from the relation (`hevajra_matrix.matrix.status`). Rows decided `lacuna` or `unresolved` are
-kept but not scored.
+linked and witness-only; a convention other than `none` goes with a relation that names
+witness segments (not `no_counterpart`, `lacuna` or `unresolved`), and `witness_only` rows
+carry none; `flags` never holds a convention or `convention_unsupported` (a code-check flag).
+Status (PRESENT / PARTIAL / ABSENT) is never stored: it is derived from the relation
+(`hevajra_matrix.matrix.status`). Rows decided `lacuna` or `unresolved` are kept but not
+scored.
+
+## Relation and convention (collate.v2)
+
+The relation and the convention are recorded separately (draft question Q6), so that one gold
+serves both calibers: the primary D_any, which sets conventions aside, and the sensitivity
+D_any_conv, which counts them as deviations (the v1 instrument's reading). On the blind ref
+sheet (`<set>_<window>.ref.csv`) the `convention` column comes after `relation`; a blank cell
+is imported as `none`. `standing_rendering` is only for a term of the verified glossary of the
+witness's standing renderings: `standing_renderings.csv` beside the sheets lists exactly the
+entries the collate.v2 prompt shows, and the import refuses a `standing_rendering` (naming the
+line) unless the unit contains a listed reference form and the linked witness segments a
+rendering of the same entry; while no entry is verified every one is refused.
+`transcribed_name` is for a proper name, seed syllable or letter rendered by sound. Fill the
+relation as if the name or term had been translated; a convention never turns a missing,
+reversed or replaced element into `equivalent`. In the matrix and in `GoldSet.alignment` a
+convention travels as the link or cell flag of the same name.
 
 ## `windows.csv`
 

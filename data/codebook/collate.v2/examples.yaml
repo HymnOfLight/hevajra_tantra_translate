@@ -1,17 +1,20 @@
-# DRAFT few-shot examples of the T1 collator for collate.v2 (not in use).
+# Few-shot examples of the T1 collator for collate.v2 (bo -> zh).
 #
-# Same format and rules as ../../collate_examples.yaml (all SYNTHETIC: invented sentences,
+# Same format and rules as ../collate_examples.yaml (all SYNTHETIC: invented sentences,
 # not taken from the Hevajratantra, its sentinel passages or the gold regions), plus:
 #   * every unit of an answer has a `convention` (none, standing_rendering,
-#     transcribed_name);
+#     transcribed_name); a unit with a convention quotes the name or term on both sides;
 #   * an example may list its own `standing_renderings` (reference form -> witness
-#     rendering), rendered into the example as the STANDING RENDERINGS block, so that the
-#     example never shows an entry of the real list.
+#     rendering), rendered into the example as its STANDING RENDERINGS block, so that the
+#     example never shows an entry of the real list (standing_renderings.yaml; a form of
+#     that file may not appear here).
 # Example 1 contrasts category_name_omitted (one ordinal slot per member) with
 # generalised (members merged into one collective expression). Example 2 shows a standing
 # rendering next to a reversal and a unit without counterpart. Example 3 contrasts names
 # and syllables rendered by sound (transcribed_name) with a content word rendered by sound
-# (transliterated), and keeps a mantra and witness-only material.
+# (transliterated), and keeps a mantra and witness-only material. Every answer passes the
+# code checks V1-V12 with the example's own standing renderings and, as transcription
+# characters, those of the example's own mantra line (a unit test).
 
 schema_version: 1
 reference_lang: bo
@@ -173,7 +176,7 @@ examples:
   - kind: prose
     text: 以嚕地囉塗其像。
   - kind: mantra
-    text: 唵娑攞吽娑嚩賀
+    text: 唵鉢訥摩嚕地囉吽
   - kind: note
     text: 二合
   - kind: prose
@@ -186,7 +189,7 @@ examples:
   - kind: prose
     text: ཁྲག་གིས་སྐུ་གཟུགས་བྱུགས།
   - kind: mantra
-    text: ཨོཾ་ས་ལ་ཧཱུྃ་སྭཱ་ཧཱ།
+    text: ཨོཾ་པདྨ་རུ་དྷི་ར་ཧཱུྃ།
   answer:
     units:
     - ref: r001
@@ -206,7 +209,7 @@ examples:
       confidence: high
       convention: transcribed_name
       ref_quote: ཧཱུྃ
-      wit_quote: 吽字出生金剛杵
+      wit_quote: 吽
     - ref: r003
       wit:
       - z0004
@@ -223,8 +226,8 @@ examples:
       polarity_flip: false
       confidence: high
       convention: none
-      ref_quote: ཨོཾ་ས་ལ་ཧཱུྃ
-      wit_quote: 唵娑攞吽
+      ref_quote: ཨོཾ་པདྨ་རུ་དྷི་ར་ཧཱུྃ
+      wit_quote: 唵鉢訥摩嚕地囉吽
     witness_only:
     - wit:
       - z0001

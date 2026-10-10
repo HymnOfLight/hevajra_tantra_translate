@@ -21,10 +21,12 @@ from . import e4 as e4_stage
 from . import human_data as ann
 from .context import RunContext, Texts, load_texts, record_stage, scope_lines
 from .instrument import read_consensus
-from .measure import control_alignments, read_built_cells, read_gate
+from .measure import control_alignments, primary_outcome, read_built_cells, read_gate
 from .store import estimate_from_dict, estimate_to_dict, read_cells, sentinel_result_from_dict
 
-OUTCOMES = ("any", "cov", "absent", "partial")
+OUTCOMES = ("any", "cov", "any_conv", "absent", "partial")     # E1, final column
+BLIND_OUTCOMES = ("any", "cov")                                # E1, blind column
+MANSKI_OUTCOMES = ("any", "cov", "any_conv")
 NO_PHASE2 = "G3: no phase-2 verification or audit verdict yet"
 PRIOR_SUFFIX = "_prior"    # E1_<primary>_prior: the primary E1 with a prior symmetric in D
 TRANSLATOR_NOTE_CLASSES = (decompose.VORLAGE_NOTE, decompose.TRANSLATOR_NOTE)
@@ -36,6 +38,11 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     witness distances (UPGMA) once three texts share the reference.
 
     E3 comes from ``pipeline.e3`` (manuscript readings, co-witness, A2 bound).
+
+    ``E1_any_conv`` (final column only) is the sensitivity variant with conventions counted:
+    the same draws as ``E1_any``, plus every unit whose built cell carries a convention
+    (``twophase.unit_conventions``; plugged in, not imputed). Without convention flags (a
+    collate.v1 run) it equals ``E1_any``. ``details.json: conventions`` counts them.
 
     ``E1_<primary>_prior`` repeats E1 of the primary outcome with ``twophase.PRIOR_SYMMETRIC_D``
     (the spec's Jeffreys prior leans 3/4 toward deviation in sparse strata). A column whose
@@ -57,7 +64,8 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     params = ctx.settings.prereg.get("stats") or {}
     n_draws, seed = int(params.get("n_draws", 500)), int(params.get("seed", 0))
     scope = "; ".join(scope_lines(ctx))
-    primary = str(ctx.settings.prereg.get("primary_outcome", "any"))
+    primary = primary_outcome(ctx)             # any_conv is never primary (StageError)
+    conventions = twophase.unit_conventions(cells)
     est: dict[str, Estimate] = {}
     extra: dict[str, Any] = {}
     draws: dict[str, list] = {}
@@ -65,7 +73,8 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
         weights = {s.id: float(length(s.text, s.lang)) for s in texts.units}
         for column in ("final", "blind"):
             suffix = "" if column == "final" else "_blind"
-            names = [f"E1_{o}{suffix}" for o in (OUTCOMES if column == "final" else ("any", "cov"))]
+            outcomes = OUTCOMES if column == "final" else BLIND_OUTCOMES
+            names = [f"E1_{o}{suffix}" for o in outcomes]
             names.append(f"E2_any{suffix}")
             try:
                 draws[column] = twophase.draws(cells, verdicts, strata, n_draws, seed, column, texts.ref_kinds)
@@ -73,9 +82,9 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
                 extra.setdefault("uncalibrated", {})[column] = err.strata
                 est.update({name: Estimate.missing(name, str(err), scope) for name in names})
                 continue
-            for outcome in OUTCOMES if column == "final" else ("any", "cov"):
+            for outcome in outcomes:
                 est[f"E1_{outcome}{suffix}"] = twophase.prevalence(draws[column], outcome, name=f"E1_{outcome}{suffix}",
-                                                                   scope=scope)
+                                                                   scope=scope, conventions=conventions)
             est[f"E2_any{suffix}"] = twophase.prevalence(draws[column], "any", weights, name=f"E2_any{suffix}", scope=scope)
         if "final" in draws:      # prior sensitivity: Dirichlet symmetric in D instead of Jeffreys
             sym = twophase.draws(cells, verdicts, strata, n_draws, seed, "final", texts.ref_kinds, prior="symmetric_d")
@@ -83,10 +92,11 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
             est[name] = twophase.prevalence(sym, primary, name=name, scope=scope)
         extra["revision"] = {s: vars(r) for s, r in twophase.revision_rate(verdicts, texts.ref_kinds).items()}
     else:
-        for name in ("E1_any", "E1_cov", "E1_absent", "E1_partial", "E2_any"):
+        for name in [f"E1_{o}" for o in OUTCOMES] + ["E2_any"]:
             est[name] = Estimate.missing(name, NO_PHASE2, scope)
     if cells:
-        extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in ("any", "cov")}
+        extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in MANSKI_OUTCOMES}
+    extra["conventions"] = markdown.convention_counts(cells)
     e3, extra["e3"] = e3_stage.e3_stats(ctx, texts, cells, primary, scope)
     est.update(e3)
     tree = witness_tree(ctx, texts, cells)
@@ -210,7 +220,7 @@ def report_inputs(ctx: RunContext) -> markdown.ReportInputs:
         revision=details.get("revision") or {}, e4_details=details.get("e4") or {},
         reliability={src: s["reliability"] for src, s in (scores_doc.get("sources") or {}).items()
                      if s.get("reliability")},
-        e3_details=details.get("e3") or {},
+        e3_details=details.get("e3") or {}, conventions=details.get("conventions") or {},
         negation=_read_json(ctx.path("evaluation", "perturbations.json")).get("negation"))
 
 

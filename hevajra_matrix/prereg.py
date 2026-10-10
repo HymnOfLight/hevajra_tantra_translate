@@ -5,9 +5,11 @@ the rendered static prompt, the output schema, the code version, the task parame
 the number of replicates (``core.types.InstrumentId``). Its digest changes whenever any of
 these change, which is what makes a validated instrument re-validatable:
 
-    collate     T1, the measurement instrument (gate G2 compares its digest with the prereg);
-                one more digest ``collate:<ref>-<wit>`` per extra language pair that has its
-                own examples file (the Sanskrit reference: ``collate:sa-bo``, ``collate:sa-zh``)
+    collate     T1, the measurement instrument (gate G2 compares its digest with the prereg)
+                in the configured prompt version (``tasks.collate.prompt``); one more
+                digest ``collate:<ref>-<wit>`` per extra language pair that has its own
+                examples file in that version (the Sanskrit reference: ``collate:sa-bo``,
+                ``collate:sa-zh``)
     topics      T3 pre-labeller (orders human work; frozen for provenance)
     components  T2 component coder (descriptive)
     subject     T4 experiment subject
@@ -83,11 +85,15 @@ def instruments(settings: Settings) -> dict[str, InstrumentId]:
     ref_lang = load_witnesses(data / "registry" / "witnesses.yaml")[reference].lang
 
     t1 = collator.TaskSettings.from_config(llm)
-    template = collator.load_template()
+    template = collator.load_template(t1.prompt)
+    # The prompt version is captured by prompt_sha and schema_sha; keeping it out of the
+    # parameters leaves the collate.v1 digests as they were before versions existed.
+    t1_params = {k: v for k, v in asdict(t1).items() if k != "prompt"}
     collate = {collate_task(*pair): _instrument(
-        "collate", t1.model, t1.effort, collator.system_prompt(template, collator.load_examples(data, *pair)),
-        collator.SCHEMA, (t1, WindowParams.from_config(settings.run)), t1.replicates)
-        for pair in collator.example_pairs(data)}
+        "collate", t1.model, t1.effort,
+        collator.system_prompt(template, collator.load_examples(data, *pair, prompt=t1.prompt)),
+        collator.schema_for(t1.prompt), (t1_params, WindowParams.from_config(settings.run)), t1.replicates)
+        for pair in collator.example_pairs(data, t1.prompt)}
     t3 = TopicTaskSettings.from_config(llm)
     codebook = load_codebook(data / "codebook" / "topics.yaml")
     t2 = components.ComponentTaskSettings.from_config(llm)

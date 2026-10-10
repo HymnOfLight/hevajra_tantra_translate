@@ -17,6 +17,12 @@ matrix ``Cell``s (after verdicts, orphan cells included). Only ``verified`` sent
 block a gate; ``proposed`` ones are evaluated and reported beside them. A locus that does
 not resolve, or a missing input, fails the check (``passed`` False) with the reason in
 ``detail``: a fact that cannot be checked is not a fact that holds.
+
+Conventions (collate.v2) are read as everywhere else, from the convention flag of a link or
+cell (``core.types.convention_of``). ``relation_in`` takes an optional ``conventions``: the
+conventions every unit in the range may carry ("none" for a unit without one). Without it
+a unit's convention is never looked at, so an expectation written before collate.v2 holds
+whatever conventions a v2 consensus adds; extra convention flags never fail ``flags``.
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from ..core.io import read_yaml
 from ..core.textnorm import quote_in
-from ..core.types import Alignment, Cell, Relation, Segment, Status
+from ..core.types import Alignment, Cell, Convention, Relation, Segment, Status, convention_of
 from ..ingest import CONTENT_KINDS
 from ..matrix.status import RELATION_STATUS
 
@@ -36,6 +42,7 @@ STAGES = ("ingest", "proposal", "final")
 STATUSES = ("proposed", "verified", "retired")
 CHECKS = ("note_kind", "paratext", "adjacent", "relation_in", "status_in", "none_status", "linked_local",
           "witness_only")
+CONVENTIONS = tuple(c.value for c in Convention)
 _FIELDS = frozenset({"id", "status", "verified_by", "source", "stage", "check", "loci", "quotes", "expect"})
 
 
@@ -87,6 +94,11 @@ def load(path: Path) -> list[Sentinel]:
             raise SentinelError(f"{where}: bad status, stage or check ({rec['status']}, {rec['stage']}, {rec['check']})")
         if rec["status"] == "verified" and not rec["verified_by"]:
             raise SentinelError(f"{where}: a verified sentinel names who verified it")
+        conventions = (rec["expect"] or {}).get("conventions")
+        if conventions is not None and (rec["check"] != "relation_in" or not conventions
+                                        or not set(conventions) <= set(CONVENTIONS)):
+            raise SentinelError(f"{where}: expect.conventions is a non-empty list of {CONVENTIONS} "
+                                "(relation_in only)")
         out.append(Sentinel(id=str(rec["id"]), status=rec["status"], stage=rec["stage"], check=rec["check"],
                             loci=dict(rec["loci"] or {}), quotes=dict(rec["quotes"] or {}),
                             expect=dict(rec["expect"] or {}), verified_by=rec["verified_by"],
@@ -153,6 +165,13 @@ class _Unit:
     polarity_flip: bool
     flags: frozenset[str]
     wit_ids: tuple[str, ...]
+    convention: str | None = None  # None: unresolved
+
+    @property
+    def label(self) -> str:
+        """Relation (or status), with the convention when the unit carries one."""
+        base = self.relation or self.status
+        return base if self.convention in (None, Convention.NONE.value) else f"{base}+{self.convention}"
 
 
 class _View:
@@ -167,11 +186,12 @@ class _View:
                     if c.relation is not None:
                         self.witness_only.update({w: c.relation for w in c.wit_ids})
                 else:
-                    self.units[c.unit_id] = _Unit(c.relation, c.status.value, c.polarity_flip, c.flags, c.wit_ids)
+                    self.units[c.unit_id] = _Unit(c.relation, c.status.value, c.polarity_flip, c.flags, c.wit_ids,
+                                                  None if c.relation is None else convention_of(c.flags).value)
         elif alignment is not None:
             for uid, link in alignment.by_ref().items():
                 self.units[uid] = _Unit(str(link.relation), RELATION_STATUS[Relation(link.relation)].value,
-                                        link.polarity_flip, link.flags, link.wit_ids)
+                                        link.polarity_flip, link.flags, link.wit_ids, convention_of(link.flags).value)
             self.witness_only = {w: str(link.relation) for link in alignment.witness_only() for w in link.wit_ids}
         self.linked = {w for u in self.units.values() for w in u.wit_ids}
 
@@ -212,15 +232,17 @@ def _ref_units(s: Sentinel, texts: Mapping[str, _Text], view: _View) -> tuple[li
 
 
 def _failures(units: list[tuple[str, _Unit]], bad) -> tuple[bool, str]:
-    wrong = [f"{uid}={u.relation or u.status}" for uid, u in units if bad(u)]
+    wrong = [f"{uid}={u.label}" for uid, u in units if bad(u)]
     return not wrong, f"{len(units)} unit(s); failing: {', '.join(wrong[:5]) or 'none'}"
 
 
 def _relation_in(s: Sentinel, texts: Mapping[str, _Text], view: _View) -> tuple[bool, str]:
     units, wit = _ref_units(s, texts, view)
     allowed, flags, flip = set(s.expect["relations"]), set(s.expect.get("flags", ())), s.expect.get("polarity_flip")
+    conventions = s.expect.get("conventions")
     return _failures(units, lambda u: u.relation not in allowed or (flip is not None and u.polarity_flip != flip)
-                     or not flags <= u.flags or (wit is not None and not wit.issuperset(u.wit_ids)))
+                     or not flags <= u.flags or (wit is not None and not wit.issuperset(u.wit_ids))
+                     or (conventions is not None and u.convention not in conventions))
 
 
 def _status_in(s: Sentinel, texts: Mapping[str, _Text], view: _View) -> tuple[bool, str]:

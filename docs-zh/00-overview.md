@@ -169,7 +169,7 @@ v0.2 的思路是"见证矩阵"：
 
 ### 2.3 新增了什么
 
-Claude 客户端栈、整品对勘与 V1–V11 核验、共识与证据等级、人工复核表格的全套导入导出、金标准评估与门控、哨兵事实、两阶段统计、分解与零模型、功效模拟、组件层、主题预标、过度归因实验 v2、梵文参照模式、预注册与评估账本、语言规范测试。
+Claude 客户端栈、整品对勘与 V1–V12 核验（V12 仅用于 collate.v2）、共识与证据等级、人工复核表格的全套导入导出、金标准评估与门控、哨兵事实、两阶段统计、分解与零模型、功效模拟、组件层、主题预标、过度归因实验 v2、梵文参照模式、预注册与评估账本、语言规范测试。
 
 ---
 
@@ -251,6 +251,8 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 | `no_counterpart` | 找不到对应 | — |
 | 仅见于见证：`addition` / `translator_note` / `paratext` / `belongs_elsewhere` | 汉文独有的材料：增写、译者夹注、副文本、属于别处的内容 | 汉文末尾三偈 |
 
+**collate.v2（已实现、可选用，默认仍是 v1）**：在关系之外另记一个**惯例**（`convention`）：`standing_rendering`（已核实译名表中的固定译名，如 Hevajra 作"空智金剛"）或 `transcribed_name`（专名、种子字、字母的音写）。`transliterated` 收窄为内容词、说明文字和真言；列表合并为总称记 `generalised`。惯例不改变状态，也不计入 D_any；"连惯例一起算"的 E1_any_conv 只作敏感性分析。由 `config/llm.yaml` 的 `tasks.collate.prompt` 选择版本，详见 [`09-collate-v2-draft.md`](09-collate-v2-draft.md)。
+
 ### 4.3 API 用法与技术约束
 
 **请求方式**：
@@ -294,7 +296,7 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 
 **审计**：每次调用（包括缓存命中）在 `llm_audit.jsonl` 中写一行：任务、提示词与 schema 哈希、请求与实际服务的模型、是否 fallback、停止原因、拒绝类别、用量、费用估计。**不含任何原文**，因为原文受许可限制。
 
-**提示词**：五个版本化的提示词文件在 `hevajra_matrix/prompts/`（`collate.v1` 等）。示例一律用合成材料，从不使用哨兵或测试段落，以免"教会"模型通过考试。受试提示中不含任何动机词，由测试强制；所有提示都不要求模型"展示推理过程"。
+**提示词**：六个版本化的提示词文件在 `hevajra_matrix/prompts/`（`collate.v1`、`collate.v2` 等；对勘用哪个版本由 `tasks.collate.prompt` 选择，默认 v1）。示例一律用合成材料，从不使用哨兵或测试段落，以免"教会"模型通过考试。受试提示中不含任何动机词，由测试强制；所有提示都不要求模型"展示推理过程"。
 
 ---
 
@@ -334,7 +336,7 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 - 汉文全文作为可缓存的上下文发送，因此 Claude 能在全经范围内寻找对应。这正是 II.9 → 汉第 18 品这类跨品现象能够浮现的原因。
 - 默认每品重复 3 次。`--chapters` 可以只跑指定品；`--dry-run` 只估算 token 与费用，不发送请求。
 
-### 6.2 V1–V11 核验（`collate/verify.py`，全部是纯函数）
+### 6.2 V1–V12 核验（`collate/verify.py`，全部是纯函数）
 
 | 编号 | 检查内容 | 失败后果 |
 |---|---|---|
@@ -349,6 +351,7 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 | V9 | 汉文侧穷尽：核心窗口内每个汉文片段要么被链接，要么列为仅见于汉文 | 汉文末尾三偈就是这样被抓住的 |
 | V10 | 相邻块重叠部分的判断一致 | C 级 |
 | V11 | 音写的字符比例检查 | 疑似"说明被音写" |
+| V12 | （仅 collate.v2）惯例有据：固定译名须是已核实译名表中同一条目的原词与译名；专名音写的汉文引文须像音写 | 非致命标记 `convention_unsupported`，C 级 |
 
 核验失败的单元不会悄悄变成 PRESENT 或 ABSENT，而是记为 `UNALIGNED(原因)`，并排在复核队列最前。
 
@@ -370,7 +373,7 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 
 ### 6.4 共识与证据等级（`collate/consensus.py`、`matrix/build.py`）
 
-三次重复按"结果类"投票，≥2/3 为多数；无多数记为 `UNALIGNED(no_majority)`。
+三次重复按"结果类"投票，≥2/3 为多数；无多数记为 `UNALIGNED(no_majority)`。collate.v2 的惯例另行投票，≥2/3 才记，否则为 `none`。
 
 | 等级 | 规则 |
 |---|---|
@@ -765,7 +768,7 @@ README.md                 英文总说明
 pyproject.toml            v0.3.0；依赖 PyYAML；可选 [claude]=anthropic、[dev]=pytest
 config/                   run.yaml、llm.yaml、preregistration.yaml
 hevajra_matrix/           软件包（全英文）
-  prompts/                五个版本化提示词
+  prompts/                六个版本化提示词（对勘有 v1、v2 两版）
 tests/
   unit/                   单元测试（含语言规范、模块大小测试）
   integration/            真实数据测试（标记 realdata，需 data/raw/）
@@ -809,7 +812,7 @@ docs-zh/                  中文用户文档（本目录，仓库里唯一的中
 | `registry.py` | 见证清单与概表 |
 | `align/` | 动态规划、相似度、锚点、洗牌对照、外部导入 |
 | `llm/` | `LLMClient` 协议、schema、SDK 适配、订阅后端（`claude -p`）、假客户端、响应缓存、审计与预算、`claude-check` |
-| `collate/` | 窗口规划、对勘请求、V1–V11 核验、块合并、共识、扰动、组件层 |
+| `collate/` | 窗口规划、对勘请求、V1–V12 核验、提示词版本注册表（`prompt.py`）、块合并、共识、扰动、组件层 |
 | `topics/` | 码本、标签、预标 |
 | `matrix/` | 关系 → 状态、单元格构建、导出 |
 | `review/` | 各类复核表格、裁决导入、抽样与队列 |
@@ -891,7 +894,7 @@ docs-zh/                  中文用户文档（本目录，仓库里唯一的中
 **马上可以做的**（按顺序）：
 
 1. **Claude 访问**：在服务器上运行 `bash tools/server_check.sh subscription`（用包月订阅）或 `... api`（用 API 密钥），完成连通检查与费用估算（3 次重复约 105 次调用，按 API 价格折算约 $65），把生成的结果包发回。步骤见 [`07-server-runbook.md`](07-server-runbook.md)。密钥与登录令牌只放在环境变量里，永不写入文件。
-2. **开发集盲标**（约 18 小时）：先在开发集上看基线的表现，再用 Claude 调提示词与 effort。
+2. **开发集盲标**（约 18 小时）：先在开发集上看基线的表现，再用 Claude 调提示词与 effort。盲标时同时填关系和惯例（复核指南 §1a），然后按 [`09-collate-v2-draft.md`](09-collate-v2-draft.md) §7 对照 v1 与 v2，决定是否切换；译名表的 Hevajra 条目需专家签署。
 3. **抽测试窗并盲标**（约 15 小时），并请第二标注者标 4 窗（约 5 小时）。
 4. **哨兵签署**：`proposed` 的条目由专家核对后改为 `verified` 并署真名。
 5. `prereg freeze` → 全经对勘 → `evaluate --gold test`。只评一次，这时可得到"已验证"级报告。

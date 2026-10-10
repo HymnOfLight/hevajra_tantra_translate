@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from hevajra_matrix.core.types import Relation, Status, WitnessOnlyKind
+from hevajra_matrix.core.types import Convention, Relation, Status, WitnessOnlyKind
 from hevajra_matrix.ingest.notes import NOTE_CLASSES
 
 PATH = Path(__file__).resolve().parents[2] / "data" / "sentinels" / "sentinels.yaml"
@@ -29,7 +29,7 @@ KINDS = {
     "note_kind": ({"note"}, set(), {"note_class"}, set()),
     "paratext": ({"from", "to"}, set(), {"count"}, set()),
     "adjacent": ({"first", "second"}, set(), {"max_between"}, set()),
-    "relation_in": (*UNIT_RANGE, {"relations"}, {"polarity_flip", "flags"}),
+    "relation_in": (*UNIT_RANGE, {"relations"}, {"polarity_flip", "flags", "conventions"}),
     "status_in": (*UNIT_RANGE, {"statuses"}, set()),
     "none_status": (*UNIT_RANGE, {"status"}, set()),
     "linked_local": (*UNIT_RANGE, {"local"}, set()),
@@ -74,6 +74,7 @@ def test_sentinel_check_loci_and_expectation(s):
 def _check_expect_values(expect: dict) -> None:
     assert set(expect.get("relations", [])) <= {r.value for r in Relation}
     assert set(expect.get("flags", [])) <= GOLD_FLAGS
+    assert set(expect.get("conventions", [])) <= {c.value for c in Convention}
     assert set(expect.get("statuses", [])) | ({expect["status"]} if "status" in expect else set()) <= {
         s.value for s in Status}
     assert set(expect.get("kinds", [])) <= {k.value for k in WitnessOnlyKind}

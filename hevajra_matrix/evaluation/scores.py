@@ -9,6 +9,30 @@ Conventions: a unit the aligner left unresolved has ``pred_relation`` None and s
 "UNALIGNED"; it stays in every denominator (a missed link, a status disagreement). A metric
 with an empty denominator is None. Link metrics count (reference unit, witness segment)
 pairs; NULL metrics count units with relation ``no_counterpart``.
+
+collate.v2 conventions (``standing_rendering``, ``transcribed_name``) are scored apart from
+the relation (draft section 7), never gated:
+
+    convention_precision   among units the aligner gave a convention, the share whose gold
+                           convention is the same
+    convention_recall      among gold units with a convention, the share given that very
+                           convention (an unresolved unit is a miss)
+    convention_f1, convention_unsupported_rate (V12 could not confirm the convention),
+    and per convention ``convention_precision:<c>`` / ``convention_recall:<c>``
+
+Only an aligner that produces conventions (``AlignmentScores.conventions``: a collate.v2
+consensus) has them; for every other source (baselines, the placebo, external alignments,
+a collate.v1 consensus) they are None (n/a), never 0, because a link without a convention
+flag cannot say whether its source was asked. Gold rows without an annotated convention
+("" in the gold file) are left out of convention precision and recall and of the D_any_conv
+agreement.
+
+Two calibers come from one gold (draft Q6): ``dany_kappa`` on D_any (the primary outcome,
+conventions not counted) and ``dany_conv_kappa`` on D_any_conv (``matrix.status`` outcome
+``any_conv``: a convention also counts as a deviation; for a source without conventions its
+own D_any). ``relation_kappa`` is the overall relation agreement the adoption rule compares;
+a collate.v1 source scored on v2 gold loses agreement by construction where v2 changed the
+codebook (``generalised`` for merged lists; names and seed syllables judged as translated).
 """
 
 from __future__ import annotations
@@ -18,12 +42,14 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
 
-from ..core.types import REASON_REFUSED, REASON_SUBSTITUTED_MODEL, Estimate, Relation, Status
+from ..core.types import REASON_REFUSED, REASON_SUBSTITUTED_MODEL, Convention, Estimate, Relation, Status
 from .resample import cohen_kappa, f1, percentile_interval, positive_agreement, ratio, resample_windows
 
 STATUS_CLASSES = (Status.PRESENT.value, Status.PARTIAL.value, Status.ABSENT.value)
 
 UNALIGNED = Status.UNALIGNED.value
+_NONE = Convention.NONE.value
+CONVENTION_CLASSES = (Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value)
 
 
 @dataclass(frozen=True)
@@ -45,6 +71,13 @@ class UnitScore:
     invalid_handle: bool = False
     topic_group: str = ""
     pred_confidence: str | None = None    # the instrument's own confidence (T1: high, medium, low)
+    # collate.v2 conventions (``Convention`` values). gold_convention None: the gold row has
+    # none annotated; pred_convention None: unresolved, or a source without conventions.
+    gold_convention: str | None = None
+    pred_convention: str | None = None
+    gold_dev_conv: bool | None = None       # D_any_conv; None when gold_convention is None
+    pred_dev_conv: bool | None = None       # None: unresolved
+    convention_unsupported: bool = False    # V12 could not confirm the predicted convention
 
     @property
     def status_correct(self) -> bool:
@@ -72,6 +105,7 @@ class AlignmentScores:
     units: tuple[UnitScore, ...]
     witness_only: tuple[WitnessOnlyScore, ...] = ()
     excluded: tuple[str, ...] = ()
+    conventions: bool = False      # the source produces conventions (a collate.v2 consensus)
 
     def windows(self) -> tuple[str, ...]:
         """Window ids (the bootstrap clusters), in first-appearance order."""
@@ -89,7 +123,7 @@ class AlignmentScores:
         for w in self.witness_only:
             only.setdefault(w.window_id, []).append(w)
         return AlignmentScores(self.source, self.gold_set, tuple(x for w in windows for x in units.get(w, ())),
-                               tuple(x for w in windows for x in only.get(w, ())), self.excluded)
+                               tuple(x for w in windows for x in only.get(w, ())), self.excluded, self.conventions)
 
     def metrics(self) -> dict[str, float | None]:
         """Every scalar metric, plus per-class agreement, per-relation recall and refusal by group."""
@@ -98,16 +132,25 @@ class AlignmentScores:
         out.update({f"status_agreement:{c}": positive_agreement(pairs, c) for c in STATUS_CLASSES})
         dev = _dev_pairs(self)
         out.update({f"dany_agreement:{c}": positive_agreement(dev, c) for c in ("dev", "nondev")})
+        dev_conv = _dev_conv_pairs(self)
+        out.update({f"dany_conv_agreement:{c}": positive_agreement(dev_conv, c) for c in ("dev", "nondev")})
+        out.update({f"convention_precision:{c}": convention_precision(self, c) for c in CONVENTION_CLASSES})
+        out.update({f"convention_recall:{c}": convention_recall(self, c) for c in CONVENTION_CLASSES})
         out.update({f"relation_recall:{r}": v for r, v in relation_recall(self).items()})
         out.update({f"refusal_rate:{g}": v for g, v in refusal_by_group(self).items()})
         return out
 
-    def counts(self) -> dict[str, int]:
+    def counts(self) -> dict[str, int | None]:
+        """Sizes behind the metrics; ``pred_conventions`` is None for a source without conventions."""
         return {"units": len(self.units), "windows": len(self.windows()), "excluded": len(self.excluded),
                 "gold_links": sum(len(u.gold_wit) for u in self.units),
                 "gold_null": sum(1 for u in self.units if u.gold_relation == Relation.NO_COUNTERPART.value),
                 "gold_witness_only": len(self.witness_only),
-                "unresolved": sum(1 for u in self.units if u.pred_relation is None)}
+                "unresolved": sum(1 for u in self.units if u.pred_relation is None),
+                "gold_convention_annotated": sum(1 for u in self.units if u.gold_convention is not None),
+                "gold_conventions": sum(1 for u in self.units if _marked(u.gold_convention)),
+                "pred_conventions": sum(1 for u in self.units if _marked(u.pred_convention))
+                if self.conventions else None}
 
     def confusion(self) -> dict[tuple[str, str], int]:
         """(gold status, predicted status) -> number of units."""
@@ -166,6 +209,24 @@ def dany_kappa(s: AlignmentScores) -> float | None:
     return cohen_kappa(_dev_pairs(s))
 
 
+def _dev_conv_pairs(s: AlignmentScores) -> list[tuple[str, str]]:
+    """D_any_conv labels on the units whose gold convention is annotated."""
+    def label(dev: bool | None) -> str:
+        return "unresolved" if dev is None else ("dev" if dev else "nondev")
+    return [(label(u.gold_dev_conv), label(u.pred_dev_conv)) for u in s.units if u.gold_dev_conv is not None]
+
+
+def dany_conv_kappa(s: AlignmentScores) -> float | None:
+    """Cohen's kappa on D_any_conv (conventions counted as deviations; the caliber of a
+    collate.v1 source) over the units whose gold convention is annotated."""
+    return cohen_kappa(_dev_conv_pairs(s))
+
+
+def relation_kappa(s: AlignmentScores) -> float | None:
+    """Cohen's kappa on the relation per unit (unresolved units predicted "UNALIGNED")."""
+    return cohen_kappa([(u.gold_relation, u.pred_relation or UNALIGNED) for u in s.units])
+
+
 def relation_recall(s: AlignmentScores) -> dict[str, float | None]:
     """Per gold relation, the share of its units given exactly that relation."""
     out: dict[str, float | None] = {}
@@ -173,6 +234,43 @@ def relation_recall(s: AlignmentScores) -> dict[str, float | None]:
         units = [u for u in s.units if u.gold_relation == rel]
         out[rel] = ratio(sum(1 for u in units if u.pred_relation == rel), len(units))
     return out
+
+
+def _marked(convention: str | None) -> bool:
+    return convention is not None and convention != _NONE
+
+
+def convention_precision(s: AlignmentScores, convention: str | None = None) -> float | None:
+    """Among units the source gave a convention (or ``convention``) and whose gold convention
+    is annotated, the share with the same gold convention. None for a source without
+    conventions."""
+    if not s.conventions:
+        return None
+    given = [u for u in s.units if u.gold_convention is not None and _marked(u.pred_convention)
+             and (convention is None or u.pred_convention == convention)]
+    return ratio(sum(1 for u in given if u.gold_convention == u.pred_convention), len(given))
+
+
+def convention_recall(s: AlignmentScores, convention: str | None = None) -> float | None:
+    """Among gold units with a convention (or ``convention``), the share the source gave the
+    same convention; an unresolved unit is a miss. None for a source without conventions."""
+    if not s.conventions:
+        return None
+    gold = [u for u in s.units if _marked(u.gold_convention) and (convention is None or u.gold_convention == convention)]
+    return ratio(sum(1 for u in gold if u.pred_convention == u.gold_convention), len(gold))
+
+
+def convention_f1(s: AlignmentScores) -> float | None:
+    return f1(convention_precision(s), convention_recall(s))
+
+
+def convention_unsupported_rate(s: AlignmentScores) -> float | None:
+    """Among scored units the source gave a convention, the share V12 could not confirm
+    (``convention_unsupported``; gold annotation not needed). None without conventions."""
+    if not s.conventions:
+        return None
+    given = [u for u in s.units if _marked(u.pred_convention)]
+    return ratio(sum(1 for u in given if u.convention_unsupported), len(given))
 
 
 def quote_failure_rate(s: AlignmentScores) -> float | None:
@@ -205,14 +303,18 @@ METRICS: Mapping[str, Callable[[AlignmentScores], float | None]] = {
     "link_precision": link_precision, "link_recall": link_recall, "link_f1": link_f1,
     "null_precision": null_precision, "null_recall": null_recall,
     "witness_only_recall": witness_only_recall, "witness_only_kind_agreement": witness_only_kind_agreement,
-    "status_kappa": status_kappa, "dany_kappa": dany_kappa,
+    "status_kappa": status_kappa, "dany_kappa": dany_kappa, "dany_conv_kappa": dany_conv_kappa,
+    "relation_kappa": relation_kappa,
+    "convention_precision": convention_precision, "convention_recall": convention_recall,
+    "convention_f1": convention_f1, "convention_unsupported_rate": convention_unsupported_rate,
     "quote_failure_rate": quote_failure_rate, "invalid_handle_rate": invalid_handle_rate,
     "refusal_rate": refusal_rate,
 }
 
 
-BREAKDOWNS = ("status_agreement", "dany_agreement", "relation_recall", "refusal_rate")
-# keyed metrics of ``AlignmentScores.metrics``: "<breakdown>:<class, relation or group>"
+BREAKDOWNS = ("status_agreement", "dany_agreement", "dany_conv_agreement", "relation_recall",
+              "convention_precision", "convention_recall", "refusal_rate")
+# keyed metrics of ``AlignmentScores.metrics``: "<breakdown>:<class, relation, convention or group>"
 
 
 def interval_estimates(s: AlignmentScores, n_boot: int, seed: int,

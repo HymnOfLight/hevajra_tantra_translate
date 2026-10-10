@@ -24,6 +24,15 @@ Decision values
                      rejected: the segment does translate some reference unit; record that
                      link with a verdict on the unit)
 
+Conventions (collate.v2; ``core.types.Convention``)
+    ``machine_convention``, ``blind_convention`` and ``final_convention`` record a
+    convention apart from the relation, each in its own column (never in ``flags``): the
+    blind value must survive the reveal. Three states: "" = not annotated (a file or sheet
+    made before the columns existed), ``none``, or a convention. "" and ``none`` are equal
+    wherever a revision is judged (``same_convention``). A convention other than none needs
+    a linked relation (a ``Relation`` other than no_counterpart; never lacuna, unresolved or
+    an orphan row); ``decision_convention`` follows the column rule of ``decision``.
+
 ``VerdictRecord`` extends the frozen ``core.types.Verdict`` with the three committed columns
 the core type does not carry (``quote_ref``, ``quote_zh``, ``minutes``). It is a ``Verdict``,
 so every consumer of verdicts accepts it.
@@ -39,16 +48,20 @@ from typing import Iterable, Mapping, Sequence
 
 from ..core.ids import id_kind, orphan_source
 from ..core.io import write_csv
-from ..core.types import Relation, Segment, Verdict, WitnessOnlyKind
+from ..core.types import (CONVENTION_FLAGS, FLAG_CONVENTION_UNSUPPORTED, Convention, Relation, Segment, Verdict,
+                          WitnessOnlyKind)
 
 COLUMNS: tuple[str, ...] = (
     "batch_id", "item_id", "task", "stratum", "inclusion_prob", "unit_id", "fingerprint",
-    "instrument_digest", "machine_relation", "machine_status", "machine_polarity_flip", "blind_relation",
-    "blind_wit_ids",
-    "final_relation", "final_wit_ids", "polarity_flip", "flags", "quote_ref", "quote_zh",
+    "instrument_digest", "machine_relation", "machine_status", "machine_polarity_flip", "machine_convention",
+    "blind_relation", "blind_wit_ids", "blind_convention",
+    "final_relation", "final_wit_ids", "final_convention", "polarity_flip", "flags", "quote_ref", "quote_zh",
     "annotator", "blind_date", "final_date", "minutes", "note",
 )
-LEGACY_OPTIONAL = frozenset({"machine_polarity_flip"})   # absent from files written before 2026-10-01
+CONVENTION_COLUMNS = frozenset({"machine_convention", "blind_convention", "final_convention"})
+# Absent from older files: machine_polarity_flip before 2026-10-01, the convention columns
+# before collate.v2 (all three or none of them; a missing column reads as "").
+LEGACY_OPTIONAL = frozenset({"machine_polarity_flip"}) | CONVENTION_COLUMNS
 TASKS: tuple[str, ...] = ("gold", "verify", "audit", "resolve")
 REVIEW_TASKS: tuple[str, ...] = ("verify", "audit", "resolve")
 
@@ -58,8 +71,12 @@ HAS_COUNTERPART = "has_counterpart"
 UNIT_VALUES: tuple[str, ...] = tuple(r.value for r in Relation) + (LACUNA, UNRESOLVED)
 ORPHAN_VALUES: tuple[str, ...] = tuple(k.value for k in WitnessOnlyKind) + (HAS_COUNTERPART,)
 
-# Human flags (synthesis 7.3 A); free-form flags are refused so typos cannot hide.
+# Human flags (synthesis 7.3 A); free-form flags are refused so typos cannot hide. A
+# convention is never a flag here: it has its own columns, and convention_unsupported is
+# set by the code checks (V12) only.
 FLAGS: tuple[str, ...] = ("scope_list", "uniform_across_list", "instruction_as_mantra", "reordered", "unsure")
+CONVENTIONS: tuple[str, ...] = tuple(c.value for c in Convention)
+LINKED_RELATIONS = frozenset(r.value for r in Relation) - {Relation.NO_COUNTERPART.value}
 ID_SEPARATOR = " "
 FLAG_SEPARATOR = ";"
 MAX_COMMITTED_QUOTE = 60           # hard licence cap, whatever the config says
@@ -93,8 +110,51 @@ def decision(v: Verdict) -> tuple[str, tuple[str, ...]] | None:
     return (v.final_relation, v.final_wit_ids) if v.final_relation else None
 
 
+def decision_convention(v: Verdict) -> str:
+    """The convention of the decision ``decision`` applies ("" when not annotated or not final)."""
+    if v.task == "gold" and not v.final_relation:
+        return v.blind_convention if v.blind_relation else ""
+    return v.final_convention if v.final_relation else ""
+
+
 def decision_date(v: Verdict) -> str:
     return v.final_date or v.blind_date
+
+
+# --------------------------------------------------------------------------- conventions
+def normalise_convention(value: str | None) -> str:
+    """A convention cell of a sheet that HAS the column: blank means ``none``."""
+    return (value or "").strip() or Convention.NONE.value
+
+
+def same_convention(a: str, b: str) -> bool:
+    """Whether two recorded conventions agree; "" (not annotated) equals ``none``."""
+    return (a or Convention.NONE.value) == (b or Convention.NONE.value)
+
+
+def convention_problem(unit_id: str, relation: str, convention: str) -> str | None:
+    """Why ``convention`` cannot go with this decision, or None ("" = not annotated: fine)."""
+    if convention and convention not in CONVENTIONS:
+        return f"convention {convention!r} is not one of {', '.join(CONVENTIONS)}"
+    if convention in ("", Convention.NONE.value):
+        return None
+    if is_orphan(unit_id) or relation not in LINKED_RELATIONS:
+        return (f"convention {convention} needs a linked relation (not {relation or 'an empty relation'}; "
+                "never no_counterpart, lacuna, unresolved or an orphan row)")
+    return None
+
+
+def flag_problems(flags: Iterable[str]) -> list[str]:
+    """Human flags outside ``FLAGS``, with a pointer when a convention was put among them."""
+    out = []
+    for f in sorted(set(flags) - set(FLAGS)):
+        if f in CONVENTION_FLAGS:
+            out.append(f"flag {f!r} is a convention: put it in the convention column, not among the flags")
+        elif f == FLAG_CONVENTION_UNSUPPORTED:
+            out.append(f"flag {f!r} is set by the code checks only, never by an annotator")
+        else:
+            out.append(f"unknown flag {f!r}; allowed: {', '.join(FLAGS)}")
+    return out
 
 
 # --------------------------------------------------------------------------- parse / format
@@ -137,7 +197,8 @@ def from_row(row: Mapping[str, str]) -> VerdictRecord:
         inclusion_prob=_float(v["inclusion_prob"], "inclusion_prob"),
         instrument_digest=v["instrument_digest"], machine_relation=v["machine_relation"],
         machine_status=v["machine_status"], machine_polarity_flip=parse_bool(v["machine_polarity_flip"]),
-        blind_relation=v["blind_relation"],
+        machine_convention=v["machine_convention"], blind_convention=v["blind_convention"],
+        final_convention=v["final_convention"], blind_relation=v["blind_relation"],
         blind_wit_ids=parse_ids(v["blind_wit_ids"]), final_relation=v["final_relation"],
         final_wit_ids=parse_ids(v["final_wit_ids"]), polarity_flip=parse_bool(v["polarity_flip"]),
         flags=parse_flags(v["flags"]), annotator=v["annotator"], blind_date=v["blind_date"],
@@ -155,6 +216,8 @@ def to_row(v: Verdict) -> dict[str, str]:
         "unit_id": v.unit_id, "fingerprint": v.fingerprint, "instrument_digest": v.instrument_digest,
         "machine_relation": v.machine_relation, "machine_status": v.machine_status,
         "machine_polarity_flip": "true" if v.machine_polarity_flip else "false",
+        "machine_convention": v.machine_convention, "blind_convention": v.blind_convention,
+        "final_convention": v.final_convention,
         "blind_relation": v.blind_relation, "blind_wit_ids": ID_SEPARATOR.join(v.blind_wit_ids),
         "final_relation": v.final_relation, "final_wit_ids": ID_SEPARATOR.join(v.final_wit_ids),
         "polarity_flip": "true" if v.polarity_flip else "false", "flags": format_flags(v.flags),
@@ -166,9 +229,12 @@ def to_row(v: Verdict) -> dict[str, str]:
 
 # --------------------------------------------------------------------------- files
 def read_file(path: Path) -> list[VerdictRecord]:
-    """Read one committed verdict CSV; the header must be exactly ``COLUMNS`` (any order;
-    a file written before ``machine_polarity_flip`` was committed may lack that column,
-    which then reads as false)."""
+    """Read one committed verdict CSV; the header must be exactly ``COLUMNS`` (any order).
+
+    Older files may lack ``machine_polarity_flip`` (reads as false) or the three convention
+    columns together (read as "", not annotated); a file with only some of the convention
+    columns is refused.
+    """
     with Path(path).open(encoding="utf-8-sig", newline="") as fh:
         reader = csv.DictReader(fh)
         header = list(reader.fieldnames or ())
@@ -178,6 +244,9 @@ def read_file(path: Path) -> list[VerdictRecord]:
     if extra or missing or len(header) != len(set(header)):
         raise VerdictError(f"{path}: wrong columns (unexpected {extra}, missing {missing}); "
                            f"a committed verdict file holds no text columns")
+    partial = sorted(CONVENTION_COLUMNS - set(header))
+    if partial and len(partial) < len(CONVENTION_COLUMNS):
+        raise VerdictError(f"{path}: convention columns missing {partial}: a file has all three or none")
     out = []
     for line, row in enumerate(rows, start=2):
         if None in row:
@@ -244,8 +313,12 @@ def _row_problems(v: Verdict, index: Mapping[str, Segment], max_quote: int) -> l
     if v.unit_id:
         out += _unit_problems(v.unit_id, index)
     allowed = ORPHAN_VALUES if is_orphan(v.unit_id) else UNIT_VALUES
-    for column, value, ids in (("blind", v.blind_relation, v.blind_wit_ids),
-                               ("final", v.final_relation, v.final_wit_ids)):
+    for column, value, ids, conv in (("blind", v.blind_relation, v.blind_wit_ids, v.blind_convention),
+                                     ("final", v.final_relation, v.final_wit_ids, v.final_convention)):
+        if conv and not value:
+            out.append(f"{column}_convention {conv!r} without a {column}_relation")
+        elif value and (problem := convention_problem(v.unit_id, value, conv)):
+            out.append(f"{column}: {problem}")
         if value and value not in allowed:
             out.append(f"{column}_relation {value!r} is not one of {', '.join(allowed)}")
         if value == Relation.NO_COUNTERPART.value and ids:
@@ -258,7 +331,9 @@ def _row_problems(v: Verdict, index: Mapping[str, Segment], max_quote: int) -> l
     decided = decision(v)
     if decided and decided[0] == Relation.REVERSAL.value and not v.polarity_flip:
         out.append("reversal requires polarity_flip = true")
-    out += [f"unknown flag {f!r}; allowed: {', '.join(FLAGS)}" for f in sorted(v.flags - set(FLAGS))]
+    if v.machine_convention and v.machine_convention not in CONVENTIONS:
+        out.append(f"machine_convention {v.machine_convention!r} is not one of {', '.join(CONVENTIONS)}")
+    out += flag_problems(v.flags)
     if v.inclusion_prob is not None and not 0 < v.inclusion_prob <= 1:
         out.append(f"inclusion_prob {v.inclusion_prob} is not in (0, 1]")
     if v.task in ("verify", "audit") and v.inclusion_prob is None:

@@ -21,11 +21,11 @@
 | `equivalent` | 意思完整保留 | — |
 | `paraphrase` | 保留，但措辞自由 | — |
 | `expanded` | 保留，并有增补 | — |
-| `generalised` | 用上位词概括 | "狗肉"→"肉" |
+| `generalised` | 用上位词概括；或列表中几项被合并成一个总称（如"三身"），这时每一项都填 `generalised`、链接到总称所在的那一行 | "狗肉"→"肉"；"三身三業" |
 | `substitution` | 指称被换成别的东西 | II.9"杀"→"降伏" |
 | `reversal` | 肯定/否定、命令/禁止翻转（同时把 `polarity_flip` 填 1） | II.3"你当杀生"→"不應殺害" |
-| `category_name_omitted` | 列表成员保留，类名被略去或换成序数 | I.7 十二处 |
-| `transliterated` | 只音写、不意译 | — |
+| `category_name_omitted` | 列表每项在汉文里仍各占一位，只是名字换成了序数或计数 | I.7 十二处；"第一門、第二門" |
+| `transliterated` | 内容词、说明文字或真言只音写、不意译（专名、种子字、字母的音写不在此列，见 1a 节） | "金剛妃之 bhaga"→"金剛喻施婆倪" |
 | `abridged` | 只保留了一部分 | — |
 | `no_counterpart` | 在映射的汉文品及相邻品里都找不到对应 | — |
 | `lacuna` | 汉文此处物理残缺（不是没译） | — |
@@ -34,6 +34,30 @@
 可选标记（`flags`，多个用分号隔开）：`scope_list`（整张列表的现象）、`uniform_across_list`（整表包括中性成员都做了同样处理，这类单元不进入敏感/中性对比）、`instruction_as_mantra`（说明文字被当成真言音写）、`reordered`（顺序被调整）、`unsure`（不确定）。
 
 仅见于汉文的片段（参照里没有的材料）在汉文侧表格的 `witness_only` 列填：`addition`（增写）、`translator_note`（译者夹注）、`paratext`（题记等副文本）、`belongs_elsewhere`（其实属于别处的内容）。
+
+---
+
+## 1a 惯例（`convention`，与关系码分开填）
+
+有些差异只是译法上的习惯，不是内容的改变。这类情况另记在"惯例"一栏，和关系码分开：
+
+| 惯例 | 何时填 |
+|---|---|
+| 空 | 没有惯例（导入时读作 `none`） |
+| `standing_rendering` | 单元里出现**译名表**所列的原词，汉文用了表中的译名（如 Hevajra 作"空智金剛"）。只能用于译名表中**已核实**的条目 |
+| `transcribed_name` | 汉文把**专名**（尊名、人名、地名、脉名、法器名）或**被当作声音的音节和字母**（种子字、字母表中的字母）按音写出，单元其余部分是意译的 |
+
+填写规则：
+
+- 填了惯例的单元，关系码按"名字已被翻译"来填：只差译名或音写的单元，通常是 `equivalent` 或 `paraphrase`。
+- 惯例只免除名字或译名这一处差异。单元里其他内容的缺失、反转或替换照常记录：名字是音写的、同时少了一个短语，就填 `transcribed_name` 加 `abridged`。惯例**永远不会**把缺失、反转或替换变成"等价"。
+- 惯例只能用在有链接的关系上：`no_counterpart`、`lacuna`、`unresolved` 以及仅见于汉文的行不能填惯例。
+- 内容词、说明文字和真言的音写仍是关系码 `transliterated`，不填惯例。类名（ḍākinī "拏吉尼"、yoginī "瑜儗尼" 等）被音写，目前按内容音写处理，即 `transliterated`。
+- 惯例不要写进 `flags` 栏；`convention_unsupported` 是程序的标记，人工不填。
+
+**译名表。** 每张金标准表、盲表和揭示表旁边都有 `standing_renderings.csv`，列出已核实的条目（`entry`、`reference_forms`、`witness_renderings`，多个形式用 ` | ` 分隔）。这份表与提示词里给 Claude 的是同一份；没有已核实条目时只有表头，这时不能填 `standing_rendering`。导入时程序会核对：所链接的汉文段里须有该条目的译名，参照单元里须有同一条目的原词（藏文从音节开头匹配，末音节可带黏着助词）。核对不通过的行会按行号报错，整张表不导入。
+
+关系和惯例分开记录，金标准就不会被将来口径的选择锁死：主结果 D_any 不把惯例算作偏移，"连惯例一起算"的版本（D_any_conv）作为敏感性分析同时报告，两种口径都能从同一份金标准算出来。
 
 ---
 
@@ -54,7 +78,7 @@ hevajra-matrix review export --task gold --set dev     # 或 --set test / --set 
 hevajra-matrix review import --task gold --file <填好的 .ref.csv> --annotator 姓名 --minutes 用时
 ```
 
-- 参照侧表（`.ref.csv`）每行一个参照单元：在 `links` 填对应汉文片段的句柄（汉文侧表 `handle` 列，多个用空格隔开；无对应就留空），在 `relation` 填关系码。
+- 参照侧表（`.ref.csv`）每行一个参照单元：在 `links` 填对应汉文片段的句柄（汉文侧表 `handle` 列，多个用空格隔开；无对应就留空），在 `relation` 填关系码，在 `convention` 填惯例（见 1a 节；没有就留空）。
 - 汉文侧表（`.wit.csv`）只需要给仅见于汉文的片段填 `witness_only`。
 - 在整品范围内搜索对应，不要只看相邻几行：II.9 的开头就在汉文第 18 品后半。
 
@@ -78,14 +102,16 @@ hevajra-matrix review import --task gold --file <填好的 .ref.csv> --annotator
 
 ```bash
 hevajra-matrix review export --task verify --hours 4 --competence bo,zh   # 按优先级出 4 小时的题（已盲判的条目跳过）
-# 盲判：填 <批次>.blind.csv 的 blind_relation / blind_wit_loci / blind_flags
+# 盲判：填 <批次>.blind.csv 的 blind_relation / blind_wit_loci / blind_convention / blind_flags
 hevajra-matrix review import --task verify --file <填好的盲表> --annotator 姓名 --minutes 用时
 hevajra-matrix review export --task reveal --batch <批次>                # 导出揭示表（只含尚未揭示的条目）
-# 看机器结论后填 final_relation / final_wit_loci / final_flags；如果改判，在 revised_reason 写原因
+# 看机器结论后填 final_relation / final_wit_loci / final_convention / final_flags；如果改判，在 revised_reason 写原因
 hevajra-matrix review reveal --file <填好的揭示表> --annotator 姓名
 hevajra-matrix review status                                              # 看各层完成度
 # 再次 review export --task verify --hours 4，得到下一批；如此循环直到各层完成
 ```
+
+揭示表的 `machine_convention` 是机器多数决的惯例（collate.v1 的运行一律为 `none`）；程序未能核实的惯例显示为 `<惯例>:unsupported`。`final_*` 各栏预填盲判的结论。只改惯例也算改判，同样要写 `revised_reason`。
 
 同一批次的盲表和揭示表文件名固定（`<批次>.blind.csv`、`<批次>.reveal.csv`）。表中所有条目都已导入后，下一批会直接覆盖它；只要表中还有**未导入**的条目，导出就会拒绝覆盖并列出这些条目——先导入，或确认放弃后加 `--force`。
 
@@ -115,6 +141,8 @@ hevajra-matrix review import --task topics --file <表> --annotator 姓名
 ## 5 哨兵事实的签署
 
 `data/sentinels/sentinels.yaml` 里状态为 `proposed` 的条目（S1b 十二类名、S2 重排、S7、S8、S9、S10）是设计阶段的新读法。请专家核对原文后，把 `status` 改为 `verified` 并在 `verified_by` 写上真名；只有 `verified` 的哨兵会阻断门控。不同意的改为 `retired` 并在 `source` 里注明理由。
+
+译名表 `data/codebook/collate.v2/standing_renderings.yaml` 的条目也要这样签署：核对计数和原文段落后，把 `status: proposed` 改为 `verified`，在 `verified_by` 写真名。只有 `verified` 的条目才会给 Claude 看、出现在表格旁的 `standing_renderings.csv` 里、被导入时的核对接受。改动译名表就改变了 collate.v2 的提示词，相当于换了测量工具，详见 [`09-collate-v2-draft.md`](09-collate-v2-draft.md) §6。
 
 ---
 

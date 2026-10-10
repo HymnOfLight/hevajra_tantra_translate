@@ -9,11 +9,16 @@ import pytest
 from hevajra_matrix.core.types import Segment, Verdict
 from hevajra_matrix.review.verdicts import (
     COLUMNS,
+    CONVENTION_COLUMNS,
+    CONVENTIONS,
     VerdictError,
     VerdictRecord,
     decision,
+    decision_convention,
     load,
+    normalise_convention,
     read_file,
+    same_convention,
     save,
     validate,
 )
@@ -34,7 +39,8 @@ def record(**kw) -> VerdictRecord:
 
 def test_round_trip(tmp_path: Path) -> None:
     rows = [record(flags=frozenset({"unsure", "scope_list"}), quote_ref="ka", quote_zh="ab", minutes=2.5,
-                   note="own words, any language"),
+                   note="own words, any language", machine_convention="none", blind_convention="transcribed_name",
+                   final_convention="none"),
             record(item_id="resolve:x", task="resolve", inclusion_prob=None, polarity_flip=True,
                    blind_relation="reversal", final_relation="reversal")]
     path = tmp_path / "zh_wit" / "verify_1.csv"
@@ -57,6 +63,45 @@ def test_machine_polarity_flip_is_committed_and_old_files_still_load(tmp_path: P
     old = [",".join(legacy)] + [",".join(v for k, v in enumerate(line.split(",")) if k != index) for line in lines[1:]]
     path.write_text("\n".join(old) + "\n", encoding="utf-8")
     assert read_file(path)[0].machine_polarity_flip is False
+
+
+def _drop_columns(path: Path, dropped: set[str]) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    keep = [k for k, c in enumerate(lines[0].split(",")) if c not in dropped]
+    path.write_text("\n".join(",".join(line.split(",")[k] for k in keep) for line in lines) + "\n", encoding="utf-8")
+
+
+def test_conventions_are_committed_and_old_files_still_load(tmp_path: Path) -> None:
+    assert len(COLUMNS) == 27 and CONVENTION_COLUMNS <= set(COLUMNS)
+    assert COLUMNS.index("machine_convention") == COLUMNS.index("machine_polarity_flip") + 1
+    assert COLUMNS.index("blind_convention") == COLUMNS.index("blind_wit_ids") + 1
+    assert COLUMNS.index("final_convention") == COLUMNS.index("final_wit_ids") + 1
+    path = tmp_path / "zh_wit" / "verify_1.csv"
+    rec = record(machine_convention="transcribed_name", blind_convention="none", final_convention="transcribed_name")
+    save([rec], path)
+    assert read_file(path) == [rec]
+    _drop_columns(path, set(CONVENTION_COLUMNS))                     # a 24-column file of before collate.v2
+    old = read_file(path)[0]
+    assert (old.machine_convention, old.blind_convention, old.final_convention) == ("", "", "")
+    assert old == record()
+    _drop_columns(path, {"machine_polarity_flip"})                    # and a 23-column one
+    assert read_file(path)[0].machine_polarity_flip is False
+
+
+def test_a_partially_legacy_header_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "zh_wit" / "verify_1.csv"
+    save([record(blind_convention="none", final_convention="none")], path)
+    _drop_columns(path, {"final_convention"})
+    with pytest.raises(VerdictError, match="all three or none"):
+        read_file(path)
+
+
+def test_convention_states() -> None:
+    assert CONVENTIONS == ("none", "standing_rendering", "transcribed_name")
+    assert normalise_convention("") == normalise_convention(None) == normalise_convention("  ") == "none"
+    assert normalise_convention(" transcribed_name ") == "transcribed_name"
+    assert same_convention("", "none") and same_convention("none", "") and same_convention("", "")
+    assert not same_convention("", "transcribed_name") and not same_convention("none", "standing_rendering")
 
 
 def test_load_missing_directory_is_empty(tmp_path: Path) -> None:
@@ -94,11 +139,25 @@ def test_decision_rule() -> None:
     assert decision(gold) == ("equivalent", (WIT.id,))
 
 
+def test_decision_convention_follows_the_decision_rule() -> None:
+    both = dict(blind_convention="transcribed_name", final_convention="none")
+    assert decision_convention(record(**both)) == "none"                                        # final
+    assert decision_convention(record(final_relation="", final_wit_ids=(), **both)) == ""        # not revealed yet
+    gold = dict(task="gold", final_relation="", final_wit_ids=(), final_convention="")
+    assert decision_convention(record(**gold, blind_convention="transcribed_name")) == "transcribed_name"
+    assert decision_convention(record(**gold)) == ""                                             # legacy gold
+    resolve = record(task="resolve", blind_convention="transcribed_name", final_convention="transcribed_name")
+    assert decision_convention(resolve) == "transcribed_name"
+
+
 def test_valid_rows_have_no_problems() -> None:
     orphan = record(item_id="verify:+x", unit_id="+" + WIT.id, fingerprint=WIT.fingerprint,
                     blind_relation="addition", final_relation="has_counterpart", stratum="pos:witness_only",
-                    inclusion_prob=1.0)
-    assert validate([record(), orphan], INDEX) == []
+                    inclusion_prob=1.0, blind_convention="none", final_convention="none")
+    named = record(item_id="verify:n", machine_convention="none", blind_convention="transcribed_name",
+                   final_convention="standing_rendering")
+    absent = record(item_id="verify:a", final_relation="no_counterpart", final_wit_ids=(), final_convention="none")
+    assert validate([record(), orphan, named, absent], INDEX) == []
 
 
 @pytest.mark.parametrize("change, message", [
@@ -118,6 +177,19 @@ def test_valid_rows_have_no_problems() -> None:
     (dict(blind_relation="", final_relation=""), "no decision"),
     (dict(fingerprint=""), "fingerprint is empty"),
     (dict(unit_id="+" + WIT.id, final_relation="abridged"), "is not one of addition"),
+    (dict(final_convention="proper_name"), "convention 'proper_name' is not one of none"),
+    (dict(machine_convention="name"), "machine_convention 'name'"),
+    (dict(final_relation="no_counterpart", final_wit_ids=(), final_convention="transcribed_name"),
+     "final: convention transcribed_name needs a linked relation"),
+    (dict(final_relation="lacuna", final_wit_ids=(), final_convention="standing_rendering"),
+     "needs a linked relation"),
+    (dict(blind_relation="unresolved", blind_wit_ids=(), blind_convention="transcribed_name"),
+     "blind: convention transcribed_name needs a linked relation"),
+    (dict(unit_id="+" + WIT.id, blind_relation="addition", final_relation="has_counterpart",
+          final_convention="transcribed_name"), "needs a linked relation"),
+    (dict(final_relation="", final_wit_ids=(), final_convention="none"), "final_convention 'none' without"),
+    (dict(flags=frozenset({"transcribed_name"})), "is a convention: put it in the convention column"),
+    (dict(flags=frozenset({"convention_unsupported"})), "set by the code checks only"),
 ])
 def test_validate_reports_problems(change, message) -> None:
     problems = validate([record(**change)], INDEX)

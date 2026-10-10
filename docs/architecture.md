@@ -40,8 +40,10 @@ labelled "unvalidated instrument output", printed beside the controls.
 
 1. *Claude proposes.* Claude Opus 5.5 (`claude-opus-5-5`) reads one reference chunk against the
    full Chinese text and returns, for every unit, the linked witness segments, a relation from
-   a closed list, a polarity flag and verbatim quotes (task T1). Three replicates are run.
-2. *Code verifies.* Pure functions check every handle and every quote (V1-V11). A failed check
+   a closed list, a polarity flag and verbatim quotes (task T1); under the prompt version
+   collate.v2 also a convention (standing rendering or transcribed name) recorded apart from the
+   relation. Three replicates are run.
+2. *Code verifies.* Pure functions check every handle and every quote (V1-V12). A failed check
    never becomes a silent PRESENT or ABSENT: the unit becomes UNALIGNED with a reason, or keeps
    its link with a flag. Replicates are combined by a two-thirds vote; agreement and flags give
    the grade (B, C, X).
@@ -80,24 +82,24 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `pipeline/context.py` | - | `RunContext` (reference mode, `witnesses`, `for_witness`, `each_witness`, per-witness `path`), `StageError`, `new_run_dir`, `latest_run_dir`, `make_client`, `load_texts` / `Texts`, `all_segments`, `scope_lines`, `record_stage` (manifest) |
 | `pipeline/store.py` | - | JSON forms of segments, alignments, collations, cells, estimates, gate reports, sentinel results (pure `*_to_dict` / `*_from_dict` pairs) |
 | `pipeline/texts.py` | `fetch`, `ingest`, `baselines`, `baselines_import` | Claude-free; G0 and ingest-stage sentinels; ingest loads the Sanskrit reference when its TSV exists |
-| `pipeline/instrument.py` | `collate` (incl. `--dry-run`), `perturb` (incl. `--negation`), `components_stage`, `claude_check` | every stage that calls Claude except topics and the experiment; `collate_digest` of the run's language pair |
-| `pipeline/measure.py` | `build`, `evaluate` | Claude-free; G2-G4 facts (`_integrity`, `_calibration`, `design_mde`), ledger deduplication (`already_ledgered`) |
+| `pipeline/instrument.py` | `collate` (incl. `--dry-run`), `perturb` (incl. `--negation`), `components_stage`, `claude_check` | every stage that calls Claude except topics and the experiment; `collate_digest` of the run's language pair and configured prompt version; `collated_prompt`, `check_prompt` (one run, one collate version) |
+| `pipeline/measure.py` | `build`, `evaluate` | Claude-free; G2-G4 facts (`_integrity`, `_calibration`, `design_mde`), ledger deduplication (`already_ledgered`, on the metrics both records carry), `primary_outcome` (refuses `any_conv`) |
 | `pipeline/results.py` | `stats`, `report` | Claude-free; `witness_tree` (distances and UPGMA once three texts share the reference) |
 | `pipeline/e3.py` | - | E3 for `stats` and G4: readings, manuscript columns (editions set aside), co-witness, A2 bound (`e3_inputs`, `e3_stats`, `e3_reason`) |
 | `pipeline/e4.py` | - | E4 for `stats`: Delta with its diagnostics (`contrast_with_diagnostics`) and the MDE simulated on the real topic labels (`mde_on_labels`) |
-| `pipeline/review.py` | `topics_prelabel`, `sample`, `review_export`, `review_import`, `review_status` | human-work stages |
-| `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans and frozen strata (committed beside the verdicts; run-directory fallback for old runs); `annotations_dir` (per reference) and `ledger_path` (per reference and witness pair) |
+| `pipeline/review.py` | `topics_prelabel`, `sample`, `review_export`, `review_import`, `review_status` | human-work stages; `glossary_check` (V12's rule for human `standing_rendering` decisions) |
+| `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans and frozen strata (committed beside the verdicts; run-directory fallback for old runs); `annotations_dir` (per reference) and `ledger_path` (per reference and witness pair); `standing_renderings` (the verified collate.v2 glossary of the run's texts, empty for another pair) |
 | `pipeline/experiment.py` | `experiment_plan`, `experiment_run`, `experiment_score` | the over-attribution experiment |
 
 ### Core (`core/`, no I/O except `core/io.py`)
 
 | Module | Role | Public entry points |
 |---|---|---|
-| `core/types.py` | shared frozen value types (frozen contract) | `Segment`, `Quote`, `Link`, `Alignment`, `Diagnostic`, `Cell`, `Verdict`, `Estimate`, `InstrumentId`; enums `Status`, `Relation`, `WitnessOnlyKind`, `Grade`, `OutcomeClass`; `REASON_*` |
+| `core/types.py` | shared frozen value types (frozen contract) | `Segment`, `Quote`, `Link`, `Alignment`, `Diagnostic`, `Cell`, `Verdict`, `Estimate`, `InstrumentId`; enums `Status`, `Relation`, `WitnessOnlyKind`, `Grade`, `OutcomeClass`, `Convention`; `REASON_*`; conventions as flags: `CONVENTION_FLAGS`, `FLAG_CONVENTION_UNSUPPORTED`, `convention_of`, `with_convention` |
 | `core/ids.py` | coordinate-derived ids | `segment_id`, `note_id`, `orphan_row_id`, `orphan_source`, `assign_ids`, `id_kind`, `parse_segment_id`, `parse_snellgrove_id`, `sort_key`, `REF_CHAPTERS` |
 | `core/textnorm.py` | tokenisation, quote keys, fingerprints, numerals | `chunks`, `for_quote`, `quote_in`, `fingerprint`, `fold_variants`, `find_terms`, `bo_syllables`, `length`, `numerals` |
-| `core/translit.py` | transliteration density (V11 and `d_lit`) | `transliteration_charset`, `transliteration_density` |
-| `core/lexicon.py` | loaders for `data/lexicon/*.yaml` | `load_numerals`, `load_negators`, `load_variant_forms`, `read_lexicon` |
+| `core/translit.py` | transliteration density (V11, V12, C4 and `d_lit`) | `transliteration_charset`, `transliteration_density`, `looks_transcribed`, `MIN_TRANSLITERATION_DENSITY` |
+| `core/lexicon.py` | loaders for `data/lexicon/*.yaml` and the collate.v2 glossary | `load_numerals`, `load_negators`, `load_variant_forms`, `read_lexicon`, `load_standing_renderings` (verified entries only), `StandingRenderings`, `StandingEntry` |
 | `core/io.py` | YAML/CSV/JSONL I/O, atomic writes, git, manifest | `read_yaml`, `read_csv`, `write_csv`, `read_jsonl`, `write_jsonl`, `append_jsonl`, `sha256_file`, `git_commit`, `write_manifest` |
 
 ### Ingest (`ingest/`)
@@ -139,10 +141,11 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | Module | Role | Public entry points |
 |---|---|---|
 | `collate/windows.py` | reference chunks + full witness text + core window; prompt-local handles | `plan`, `Window`, `WindowParams` |
-| `collate/collator.py` | T1 requests, parsing, thread pool; examples per language pair | `build_request`, `build_requests`, `collate`, `parse`, `SCHEMA`, `TaskSettings`, `load_examples`, `examples_file`, `example_pairs` |
-| `collate/verify.py` | V1-V8, V11 on one window | `verify`, `Collation`, `CheckLexicon.load`, `quote_match` |
+| `collate/prompt.py` | T1 prompt versions (`collate.v1`, `collate.v2`): template, examples and glossary per language pair, schemas, system prompt | `VERSIONS`, `version`, `schema_for`, `SCHEMA_V1`, `SCHEMA_V2`, `load_template`, `load_examples`, `Examples`, `examples_file`, `glossary_file`, `load_glossary`, `render_glossary`, `example_pairs`, `system_prompt` |
+| `collate/collator.py` | T1 requests, parsing, thread pool (re-exports `prompt`) | `build_request`, `build_requests`, `collate`, `parse`, `SCHEMA`, `TaskSettings` (incl. `prompt`), `source_name` |
+| `collate/verify.py` | V1-V8, V11, V12 on one window | `verify`, `Collation`, `CheckLexicon.load`, `quote_match`, `convention_flags`, `standing_supported` |
 | `collate/merge.py` | V9, V10, chapter and text merge | `verify_all`, `merge_chapter`, `merge_text`, `compare_overlaps` |
-| `collate/consensus.py` | replicate vote, grades, Fleiss kappa | `consensus`, `agreement` |
+| `collate/consensus.py` | replicate vote, grades, Fleiss kappa; the convention by its own two-thirds vote | `consensus`, `agreement`, `convention_vote`, `BENIGN_FLAGS` |
 | `collate/perturb.py` | perturbation placebos and their scores | `wrong_window`, `delete_segments`, `negated_pairs`, `remove_negators`, `false_link_rate`, `deletion_recall`, `negation_recall` |
 | `collate/components.py` | T2 component coder (descriptive only): pair selection, run loop, outputs; re-exports the two modules below | `select_pairs`, `code_components`, `verify`, `rendering_profile`, `invention_rate` |
 | `collate/components_request.py` | T2 settings, schema, batches with full segment texts, prompts, few-shot examples | `ComponentTaskSettings`, `plan_batches`, `build_requests`, `load_system`, `load_examples` |
@@ -152,27 +155,28 @@ module. Every module below is English only (enforced, see [contributing](contrib
 
 | Module | Role | Public entry points |
 |---|---|---|
-| `matrix/status.py` | relation -> status -> outcome: the only status derivation (frozen contract) | `RELATION_STATUS`, `status_of`, `outcome_class`, `deviates`, `cell_outcome`, `cell_deviates`, `RELATION_PRIORITY` |
-| `matrix/build.py` | cells with precedence gold > final verdict > consensus; `d_len`, `d_lit`, `d_ord`; orphan rows | `build_cells`, `StaleVerdict` |
+| `matrix/status.py` | relation -> status -> outcome: the only status derivation (frozen contract); outcomes `any`, `cov` (primary) and `any_conv` (conventions counted) | `RELATION_STATUS`, `status_of`, `outcome_class`, `deviates`, `cell_outcome`, `cell_deviates`, `has_convention`, `RELATION_PRIORITY`, `OUTCOMES`, `PRIMARY_OUTCOMES` |
+| `matrix/build.py` | cells with precedence gold > final verdict > consensus (a human convention becomes the grade-A cell's flag); `d_len`, `d_lit`, `d_ord`; orphan rows | `build_cells`, `StaleVerdict` |
 | `matrix/export.py` | `cells.csv`, `units.csv`, `wide_status.csv`, `stale_verdicts.csv` | `write_matrix` |
 | `review/sampling.py` | verification and audit plans, review queue, coverage | `draw_verification`, `draw_audit`, `queue`, `coverage`, `machine_strata`, `note_rows`, `write_plan` / `read_plan` |
-| `review/sheets.py` | blind, reveal and resolve sheets (resolve: substituted-model hint column); import strips text | `export`, `import_`, `hint_text` |
+| `review/sheets.py` | blind and resolve sheets (resolve: substituted-model hint column), the verified glossary beside the sheets; import strips text and checks conventions | `export`, `import_`, `hint_text`, `check_decision`, `GlossaryCheck` |
+| `review/reveal_sheets.py` | reveal sheets: machine relation and convention, final decisions | `export_reveal`, `import_reveal`, `machine_relation`, `machine_convention` |
 | `review/gold_sheets.py` | blind gold sheets | `export_gold`, `import_gold` (via `sheets`) |
 | `review/topic_sheets.py` | topic sheets (second coder without prelabels) | `export_topics`, `import_topics`, `merge_topic_labels` |
-| `review/verdicts.py` | committed verdict CSVs | `load`, `save`, `validate`, `decision`, `COLUMNS` |
+| `review/verdicts.py` | committed verdict CSVs (27 columns, three for conventions) | `load`, `save`, `validate`, `decision`, `decision_convention`, `convention_problem`, `COLUMNS` |
 | `evaluation/gold.py` | gold format and scoring of any `Alignment` | `load`, `save`, `score`, `human_kappa`, `from_verdicts`, `to_verdicts` |
-| `evaluation/scores.py` | per-unit scores and metrics; confidence reliability | `AlignmentScores`, `METRICS`, `interval_estimates`, `confidence_reliability`, `CONFIDENCE_PROBABILITY` |
+| `evaluation/scores.py` | per-unit scores and metrics (incl. `relation_kappa`, `dany_conv_kappa`, convention precision and recall, null for a source without conventions); confidence reliability | `AlignmentScores`, `METRICS`, `BREAKDOWNS`, `interval_estimates`, `confidence_reliability`, `CONFIDENCE_PROBABILITY` |
 | `evaluation/resample.py` | kappa, window-cluster and paired bootstrap, McNemar | `cohen_kappa`, `window_bootstrap`, `paired_difference`, `mcnemar` |
 | `evaluation/windows.py` | dev regions and test-window draw | `dev_region_units`, `draw_test_windows` |
-| `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages | `load`, `check`, `applicable` (alignment checks only on their own text pair), `text_prefixes` |
+| `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages (`relation_in` may restrict conventions) | `load`, `check`, `applicable` (alignment checks only on their own text pair), `text_prefixes` |
 | `evaluation/gate.py` | G0-G4, report level, confirmatory flag, ledger | `evaluate`, `check_g1`, `GateSpecs.from_prereg`, `ledger_append`, `ledger_summary` |
-| `stats/twophase.py` | strata, posterior-predictive draws, E1/E2, Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata` |
+| `stats/twophase.py` | strata, posterior-predictive draws, E1/E2 (and the sensitivity `E1_any_conv`), Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata`, `unit_conventions`, `require_primary` |
 | `stats/contrast.py` | Delta (E4), permutation test, TOST, matching, diagnostics; length strata are mid-rank tertiles | `delta`, `tertile_strata`, `permutation_p`, `tost`, `matched_rd`, `overlap_diagnostics`, `misclassification_table` |
 | `stats/decompose.py` | E3 classes, O / E / O-E, excess fractions, NOT_ESTIMABLE gate | `decompose`, `excess`, `e3`, `not_estimable_reason` |
 | `stats/power.py` | planning simulations | `simulate_delta`, `simulate_experiment` |
 | `stats/distance.py` | witness distance and UPGMA (>= 3 witnesses; `stats` writes it under the Sanskrit reference) | `witness_distance`, `distance_matrix`, `average_linkage_newick` |
 | `topics/` | codebook, human labels and agreement, T3 pre-labeller | `load_codebook`, `topic_group`, `load_labels`, `human_agreement`, `prelabel_agreement`, `build_request`, `parse_prelabels` |
-| `report/markdown.py` | level-gated `summary.md` | `render(inputs, gate)`, `ReportInputs` |
+| `report/markdown.py` | level-gated `summary.md` | `render(inputs, gate)`, `ReportInputs`, `convention_counts` |
 | `report/sections.py` | E3 section; confidence reliability and P-negation section | `e3`, `reliability` |
 | `report/svg.py` | status strip and chapter heatmap | `status_strip`, `chapter_heatmap` |
 
@@ -191,8 +195,11 @@ The experiment depends only on `core`, `llm` and the topic codebook and never fe
 
 ### Prompts
 
-`hevajra_matrix/prompts/{collate,components,topics,subject,scorer}.v1.md`, English, shipped as
-package data. Few-shot examples are synthetic and live in `data/codebook/`.
+`hevajra_matrix/prompts/{collate,components,topics,subject,scorer}.v1.md` and
+`collate.v2.md`, English, shipped as package data. `config/llm.yaml: tasks.collate.prompt`
+selects the collator's version (`collate.v1` by default). Few-shot examples are synthetic and
+live in `data/codebook/` (collate.v2: `data/codebook/collate.v2/`, beside its glossary
+`standing_renderings.yaml`).
 
 ## 4. Data flow
 
@@ -207,7 +214,8 @@ ingest   -> ingest/segments_<witness>.jsonl, footnotes.jsonl, variants.csv,
   baselines              -> alignments/dp_zero.jsonl (P1), dp_anchor.jsonl (B0)
   baselines import --tsv -> alignments/external_<name>.jsonl
   collate (T1, k reps)   -> alignments/claude.r<k>.jsonl, collation/r<k>.json,
-                            collation/replicates.json (incl. the request keys), llm_audit.jsonl,
+                            collation/replicates.json (incl. the request keys and the prompt
+                            version), llm_audit.jsonl,
                             cache entries, <cache>/llm_spend.jsonl
     build                -> alignments/claude.jsonl (consensus), alignments/shuffled.jsonl (P2),
                             collation/consensus.json, integrity.json, diagnostics.jsonl,
@@ -256,6 +264,9 @@ samples; blind-then-reveal review (`review export --hours` chunks: export, fill,
 1. **Status is derived in one place.** `matrix/status.py` maps relation (plus polarity flag and
    reference kind) to status and outcome class. A `Link` never stores a status; gold, verdict
    and machine cells all go through the same table. Length enters only the descriptive `d_len`.
+   A convention (collate.v2) is a flag beside the relation and never changes a status, D_any
+   or D_cov; only the outcome `any_conv` (the E1 sensitivity estimate) counts it, and it is
+   never the primary outcome.
 2. **Stable coordinate ids and fingerprints.** Segment ids come from witness coordinates
    (`T0892:0592a29.1`, `D418:17b.6.2`, notes `T0892:0592a27.n1`, orphan rows
    `+T0892:0601c01.2`), never from a running counter, so they survive re-ingest. Every segment
@@ -304,7 +315,7 @@ Implemented in `evaluation/gate.py`, thresholds from `config/preregistration.yam
 |---|---|
 | G0 integrity | 521 notes and 181 footnotes (T0892), 26 variants and 3 paratext segments (Derge), 0 duplicate ids, 0 unclassified notes, verified ingest sentinels pass |
 | G1 validity | on test windows: link F1 >= 0.80 and the paired window-cluster bootstrap of F1(Claude) - F1(best control) has CI_low > 0; status kappa >= 0.70, >= 0.8 x human kappa, and the same paired rule; witness-only recall >= 0.70 when gold has >= 10 witness-only segments; NULL precision/recall >= 0.70 when gold has >= 20 NULLs, else deferred to G3 |
-| G2 instrument | replicate Fleiss kappa >= 0.80; quote failures <= 2%; missing units <= 1%; no substituted call among the collate requests that fed the consensus (`collation/replicates.json: request_keys`; perturbation calls do not count); collate digest = preregistered digest; P-wrong-window false links <= 0.10; P-deletion recall >= 0.70 (each unit scored once, chunk overlaps included); verified proposal-stage sentinels pass |
+| G2 instrument | replicate Fleiss kappa >= 0.80; quote failures <= 2%; missing units <= 1%; no substituted call among the collate requests that fed the consensus (`collation/replicates.json: request_keys`; perturbation calls do not count); collate digest (of the configured prompt version) = preregistered digest; P-wrong-window false links <= 0.10; P-deletion recall >= 0.70 (each unit scored once, chunk overlaps included); verified proposal-stage sentinels pass |
 | G3 calibration | a verification plan exists and every stratum reached its planned n; no stratum holds unverified units without a phase-2 sample verdict (an uncalibrated stratum would be estimated from the prior; `twophase.uncalibrated_strata`); every machine-negative stratum audited >= 40 (a fully verified smaller census meets it); deferred NULL precision (blind verdicts on machine-ABSENT units) and NULL recall (two-phase imputation on the blind column) >= 0.70 when G1 deferred them; unresolved units resolved or Manski width <= 0.05; verified final-stage sentinels pass |
 | G4 estimands | E3: a Sanskrit manuscript column (registry manuscripts only; editions never count) and a co-witness other than the reference whose matrix is built; E4: topic labels complete, human-human topic kappa >= 0.70, MDE <= 0.10 (the larger of `stats.mde` and the MDE simulated on the labels, `stats/power.json`; the simulated one alone when `stats.mde` is unset); E6: scorer kappa >= 0.80, else two-phase-corrected outcomes |
 

@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 from ..align.placebo import SOURCE_SHUFFLED, shuffle_alignment
 from ..collate.consensus import SOURCE_CONSENSUS, agreement, consensus
 from ..collate.perturb import Rate
+from ..collate.prompt import version as prompt_version
 from ..core.io import git_commit, read_jsonl, write_jsonl
 from ..core.types import REASON_UNASSESSED, REASON_VERIFICATION_FAILED, Alignment, Cell, OutcomeClass, Status, Verdict
 from ..evaluation import gate as gates
@@ -18,7 +19,7 @@ from ..evaluation import gold as gold_sets
 from ..evaluation import sentinels as sentinel_checks
 from ..matrix.build import build_cells
 from ..matrix.export import write_matrix
-from ..matrix.status import cell_outcome
+from ..matrix.status import PRIMARY_OUTCOMES, cell_outcome
 from ..review import sampling
 from ..review.verdicts import is_orphan
 from ..stats import twophase
@@ -26,7 +27,7 @@ from ..topics import human_agreement
 from . import human_data as ann
 from .context import AUDIT_LOG, RunContext, StageError, Texts, all_segments, load_texts, record_stage, require
 from .e3 import e3_reason
-from .instrument import CONSENSUS_FILE, collate_digest, read_replicates
+from .instrument import CONSENSUS_FILE, check_prompt, collate_digest, read_replicates
 from .store import (
     diagnostic_from_dict,
     estimate_to_dict,
@@ -68,7 +69,7 @@ def build(ctx: RunContext) -> dict[str, int]:
                  "quote_failure_rate": quote_failures / (n_units * len(replicates)) if n_units else None,
                  "missing_units": sum(1 for r in cons.reasons.values() if r == REASON_UNASSESSED),
                  "fleiss_kappa": agree.fleiss_kappa, "mean_link_jaccard": agree.mean_link_jaccard,
-                 "class_jaccard": dict(agree.class_jaccard)}
+                 "class_jaccard": dict(agree.class_jaccard), "convention_kappa": agree.convention_kappa}
     integrity["missing_rate"] = integrity["missing_units"] / n_units if n_units else None
     _write_json(ctx.path("collation", "consensus.json"),
                 {"grades": {k: str(v) for k, v in cons.grades.items()}, "reasons": dict(cons.reasons)})
@@ -136,10 +137,16 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
     Only that evaluation gates: it alone writes ``gate.json`` and ``scores.json`` once it
     exists. Dev-gold and baselines-only evaluations get G1 failed and level 0 (dev gold never
     gates), write ``scores.<set>[_baselines].json``, and never replace a gating gate.
+
+    The consensus is scored as the prompt version it was collated with: a configured
+    ``tasks.collate.prompt`` that differs is refused (``check_prompt``; G2 would compare the
+    digest of another instrument), and only a version with conventions (collate.v2) gets
+    convention precision and recall; every other source reports them as n/a.
     """
     if gold_set not in gold_sets.SETS[:2]:
         raise StageError(f"--gold must be dev or test, not {gold_set!r}")
     texts = load_texts(ctx)
+    prompt = None if baselines_only else check_prompt(ctx)
     aligners = control_alignments(ctx)
     consensus_path = ctx.path("alignments", CONSENSUS_FILE)
     claude = None if baselines_only or not consensus_path.is_file() else read_alignment(consensus_path)
@@ -152,7 +159,8 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
     if gold_set == "test" and claude is not None and test_scoring_refused(ctx, texts):
         raise StageError("test gold is scored against Claude only after `hevajra-matrix prereg freeze`; "
                          "use --gold dev or --baselines-only until then")
-    scores, human_kappa = _scores(ctx, texts, aligners, gold_set, topics.groups())
+    conventions = claude is not None and prompt is not None and prompt_version(prompt).conventions
+    scores, human_kappa = _scores(ctx, texts, aligners, gold_set, topics.groups(), conventions)
     integrity = _integrity(ctx, texts, claude, cells)
     digest = collate_digest(ctx, texts)
     prereg_sha = ctx.settings.shas.get("preregistration.yaml", "")
@@ -198,7 +206,9 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
     for src, s in scores.items():
         m = s.metrics()
         print(f"evaluate {gold_set} {src}: {s.counts()['units']} units, link F1 {_fmt(m['link_f1'])}, "
-              f"status kappa {_fmt(m['status_kappa'])}")
+              f"status kappa {_fmt(m['status_kappa'])}"
+              + (f", convention precision {_fmt(m['convention_precision'])} recall "
+                 f"{_fmt(m['convention_recall'])}" if s.conventions else ""))
     print(f"gates: {dict(report.passed)} -> report level {report.level}"
           f"{'' if report.confirmatory else ' (' + report.scope_note + ')'}")
     return report
@@ -218,16 +228,22 @@ def already_ledgered(ledger: Path, record: Mapping[str, Any]) -> bool:
     G2/G3 after review) reveals nothing new about the test set and is not a new scoring.
     Breakdowns by topic group are left out of the comparison: they change when topic labels
     are added after the test scoring (the campaign order), not when the instrument or the
-    gold does."""
-    def key(r: Mapping[str, Any]) -> tuple[Any, ...]:
-        metrics = {src: {k: v for k, v in (m or {}).items() if not k.startswith(TOPIC_BREAKDOWN)}
-                   for src, m in (r.get("metrics") or {}).items()}
-        return (r.get("instrument_digest"), r.get("prereg_sha256"), r.get("gate"),
-                json.dumps(json.loads(json.dumps(metrics)), sort_keys=True))
+    gold does. Only the metrics both records carry are compared: a metric added by a later
+    code version (e.g. the collate.v2 convention metrics) does not turn a re-gating of the
+    same output into a second scoring of the test set."""
+    def metrics(r: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+        return {src: {k: v for k, v in (m or {}).items() if not k.startswith(TOPIC_BREAKDOWN)}
+                for src, m in json.loads(json.dumps(r.get("metrics") or {})).items()}
+
+    def same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+        if any(a.get(k) != b.get(k) for k in ("instrument_digest", "prereg_sha256", "gate")):
+            return False
+        ma, mb = metrics(a), metrics(b)
+        return set(ma) == set(mb) and all(ma[src][k] == mb[src][k] for src in ma for k in ma[src].keys() & mb[src])
 
     if not ledger.is_file():
         return False
-    return any(key(r) == key(record) for r in read_jsonl(ledger))
+    return any(same(r, record) for r in read_jsonl(ledger))
 
 
 def not_gating(report: gates.GateReport, gold_set: str, baselines_only: bool) -> gates.GateReport:
@@ -250,7 +266,10 @@ def _fmt(x: float | None) -> str:
 
 
 def _scores(ctx: RunContext, texts: Texts, aligners: Mapping[str, Alignment], gold_set: str,
-            topic_groups: Mapping[str, str]) -> tuple[dict[str, gold_sets.AlignmentScores], float | None]:
+            topic_groups: Mapping[str, str],
+            conventions: bool = False) -> tuple[dict[str, gold_sets.AlignmentScores], float | None]:
+    """Every aligner on ``gold_set``; ``conventions``: the consensus produces conventions
+    (the controls, the placebo and external alignments never do)."""
     gold = ann.load_gold(ctx, texts, gold_set)
     if gold is None:
         return {}, None
@@ -263,7 +282,8 @@ def _scores(ctx: RunContext, texts: Texts, aligners: Mapping[str, Alignment], go
         is_claude = source == SOURCE_CONSENSUS
         scores[source] = gold_sets.score(alignment, gold, ref_kinds=texts.ref_kinds,
                                          unresolved=consensus_meta.get("reasons") if is_claude else None,
-                                         diagnostics=diagnostics if is_claude else (), topic_groups=topic_groups)
+                                         diagnostics=diagnostics if is_claude else (), topic_groups=topic_groups,
+                                         conventions=is_claude and conventions)
     second = ann.load_gold(ctx, texts, "test_second") if gold_set == "test" else None
     human = gold_sets.human_kappa(gold, second, texts.ref_kinds) if second is not None else None
     return scores, human
@@ -304,6 +324,16 @@ def _perturbations(ctx: RunContext) -> gates.Perturbations:
     return gates.Perturbations(wrong_window=rate("wrong_window"), deletion=rate("deletion"), negation=rate("negation"))
 
 
+def primary_outcome(ctx: RunContext) -> str:
+    """``preregistration.yaml: primary_outcome``, refused unless it is one of ``PRIMARY_OUTCOMES``:
+    ``any_conv`` (conventions counted) is a sensitivity variant of E1, never the primary that
+    G3, E3, E4 and the prior sensitivity use."""
+    primary = str(ctx.settings.prereg.get("primary_outcome", "any"))
+    if primary not in PRIMARY_OUTCOMES:
+        raise StageError(f"preregistration.yaml: primary_outcome {primary!r} is not one of {PRIMARY_OUTCOMES}")
+    return primary
+
+
 def _calibration(ctx: RunContext, texts: Texts, cells: list[Cell] | None, topics: ann.Topics) -> gates.Calibration:
     """Two-phase facts for G3 and estimand facts for G4 (see ``evaluation.gate.Calibration``)."""
     verdicts = ann.current_verdicts(ann.review_verdicts(ctx, texts), texts)
@@ -325,7 +355,7 @@ def _calibration(ctx: RunContext, texts: Texts, cells: list[Cell] | None, topics
     uncalibrated: dict[str, int] = {}
     null_recall = None
     if units:
-        lo, hi = twophase.manski(units, ctx.settings.prereg.get("primary_outcome", "any"), texts.ref_kinds)
+        lo, hi = twophase.manski(units, primary_outcome(ctx), texts.ref_kinds)     # G3: primary only
         width = hi - lo
         machine_path = ctx.path("matrix", "machine_cells.jsonl")
         if machine_path.is_file():

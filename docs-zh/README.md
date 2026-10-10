@@ -7,12 +7,12 @@
 | [`00-overview.md`](00-overview.md) | **从这里开始**：新分支的完整总览，可单独阅读——与 v0.2 的差异、全部功能、命令、验证、统计、复核、实验、梵文层、测试结果、待办 |
 | [`01-method.md`](01-method.md) | 新方法设计：为什么换方法、核心原则、Claude Opus 5.5 的角色、状态与证据等级、验证与门控、统计、人工复核、过度归因实验、新核实的原文事实、文献更正 |
 | [`02-plan.md`](02-plan.md) | 实施规划：仓库布局、代码工作流与验收、本次提交范围、研究推进顺序、工时与费用、待决问题 |
-| [`03-review-guide.md`](03-review-guide.md) | 人工复核指南：各类表格逐列说明 |
+| [`03-review-guide.md`](03-review-guide.md) | 人工复核指南：各类表格逐列说明，关系码与惯例的填法 |
 | [`04-claude-usage.md`](04-claude-usage.md) | Claude 使用说明：密钥、`claude-check`、费用、缓存与离线重放、拒绝处理 |
 | [`05-overattribution-experiment.md`](05-overattribution-experiment.md) | 过度归因实验操作说明 |
 | [`06-outputs-glossary.md`](06-outputs-glossary.md) | 输出文件与术语中英对照 |
 | [`07-server-runbook.md`](07-server-runbook.md) | 服务器运行说明：用包月订阅或 API 跑连通检查与费用估算，打包回传结果 |
 | [`08-pilot-I1.md`](08-pilot-I1.md) | 第一次真实试跑（I.1 品，订阅后端）：用量、输出概况、暴露的方法问题 |
-| [`09-collate-v2-draft.md`](09-collate-v2-draft.md) | 码本与提示词修订草案（collate.v2，未启用）："惯例"维度、译名表、列表规则，待决问题与验证计划 |
+| [`09-collate-v2-draft.md`](09-collate-v2-draft.md) | 码本与提示词修订（collate.v2，已实现、可选用，默认仍是 v1）："惯例"维度、译名表、列表规则，研究者的决定、实施情况、切换与核实译名表的方法、验证计划 |
 | [`reference/2026-09-30-code-review.md`](reference/2026-09-30-code-review.md) | 本次改版所依据的代码审查与研究价值评估 |
 | `archive/` | v0.2 的研究设计文档（已被 01、02 取代，保留作记录） |

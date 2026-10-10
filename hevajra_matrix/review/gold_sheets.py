@@ -1,8 +1,8 @@
 """Blind gold annotation sheets (synthesis 5.1, 7.3 A).
 
     <batch>.ref.csv   one row per reference unit of the window: its text and empty answer
-                      columns (``links`` = witness handles, ``relation``, ``polarity_flip``,
-                      ``flags``, ``note``)
+                      columns (``links`` = witness handles, ``relation``, ``convention``,
+                      ``polarity_flip``, ``flags``, ``note``)
     <batch>.wit.csv   every witness segment of the given witness chapters (the core window)
                       under a short handle (z0001, ...), with a ``witness_only`` answer column
 
@@ -11,6 +11,11 @@ Gold is blind by construction: nothing on either sheet comes from a machine. The
 columns only (gold's blind decision is its final one), plus one verdict per segment marked
 witness-only, keyed by its orphan row id. Written and read through ``review.sheets.export``
 and ``review.sheets.import_`` with task "gold".
+
+``convention`` (collate.v2) is recorded apart from the relation, so that both the v1 and
+the v2 caliber can be computed from one gold: a blank cell imports as ``none``; a ref sheet
+exported before the column existed imports with "" (not annotated). Witness-only rows carry
+no convention.
 """
 
 from __future__ import annotations
@@ -24,11 +29,13 @@ from ..core.textnorm import fingerprint
 from ..core.types import Relation, Segment, WitnessOnlyKind
 from ..matrix.build import segment_fingerprint
 from .sampling import ReviewItem, ReviewParams
-from .sheets import batch_of, check_decision, expect_columns, one_line, parse_flip, read_sheet, truncate_quote
-from .verdicts import VerdictRecord, parse_flags, parse_ids
+from .sheets import (GlossaryCheck, batch_of, check_decision, expect_columns, one_line, parse_flip, read_sheet,
+                     truncate_quote)
+from .verdicts import VerdictRecord, normalise_convention, parse_flags, parse_ids
 
-GOLD_REF_COLUMNS = ("row", "unit_id", "fingerprint", "locus", "kind", "text", "links", "relation",
+GOLD_REF_COLUMNS = ("row", "unit_id", "fingerprint", "locus", "kind", "text", "links", "relation", "convention",
                     "polarity_flip", "flags", "note")
+GOLD_CONVENTION_COLUMN = "convention"          # absent from ref sheets exported before collate.v2
 GOLD_WIT_COLUMNS = ("handle", "seg_id", "locus", "kind", "text", "witness_only")
 WITNESS_ONLY_KINDS = tuple(k.value for k in WitnessOnlyKind)
 
@@ -55,13 +62,13 @@ def export_gold(items: Sequence[ReviewItem], out: Path, batch: str, index: Mappi
 
 def import_gold(path: Path, rows: Sequence[Mapping[str, str]], header: Sequence[str], params: ReviewParams,
                 annotator: str, date: str, ref_lang: str, wit_lang: str, minutes: float | None,
-                errors: list[str]) -> list[VerdictRecord]:
+                errors: list[str], check: GlossaryCheck | None = None) -> list[VerdictRecord]:
     """Gold verdicts from a filled ``.ref.csv`` (``rows``) and the ``.wit.csv`` beside it.
 
     Every reference row must carry a relation (gold windows are complete); problems are
-    appended to ``errors``.
+    appended to ``errors``. ``check`` confirms a ``standing_rendering`` (see ``sheets``).
     """
-    expect_columns(header, GOLD_REF_COLUMNS, path)
+    expect_columns(header, GOLD_REF_COLUMNS, path, {GOLD_CONVENTION_COLUMN})
     batch = batch_of(path, ".ref.csv")
     wit_path = path.with_name(f"{batch}.wit.csv")
     wit_rows, wit_header = read_sheet(wit_path)
@@ -84,11 +91,12 @@ def import_gold(path: Path, rows: Sequence[Mapping[str, str]], header: Sequence[
         ids = tuple(r["seg_id"].strip() for r in known)
         linked.update(ids)
         flags = parse_flags(row["flags"])
-        check_decision(unit_id, value, ids, flags, where, errors)
+        conv = normalise_convention(row[GOLD_CONVENTION_COLUMN]) if GOLD_CONVENTION_COLUMN in row else ""
+        check_decision(unit_id, value, ids, flags, where, errors, conv, check)
         flip = parse_flip(row["polarity_flip"], where, errors) or value == Relation.REVERSAL.value
         out.append(VerdictRecord(
             item_id=f"gold:{unit_id}", unit_id=unit_id, fingerprint=row["fingerprint"].strip(),
-            blind_relation=value, blind_wit_ids=ids, polarity_flip=flip, flags=flags,
+            blind_relation=value, blind_wit_ids=ids, blind_convention=conv, polarity_flip=flip, flags=flags,
             note=row.get("note", "").strip(), quote_ref=truncate_quote(row["text"], ref_lang, params),
             quote_zh=truncate_quote(" ".join(r["text"] for r in known), wit_lang, params),
             **common))  # type: ignore[arg-type]

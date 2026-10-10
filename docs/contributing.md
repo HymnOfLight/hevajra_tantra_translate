@@ -95,7 +95,7 @@ transport and skips when `anthropic` (or its HTTP mock) is not installed.
   `@pytest.mark.realdata` and the `raw_dir` fixture.
 - Multilingual inputs go in `data/fixtures/`, never in the test file.
 - Test behaviour through public functions; hand-computed expected values for statistics; one
-  test per rule for verification code (V1-V11, C1-C5, gate conditions).
+  test per rule for verification code (V1-V12, C1-C5, gate conditions).
 - Every refusal path, truncation, invalid answer and substituted model needs a test where a
   task handles LLM output.
 - Randomised code takes an explicit seed and is tested for reproducibility.

@@ -21,8 +21,12 @@ fallback_pricing_usd_per_mtok: {input: 5.0, output: 25.0, cache_read: 0.50, cach
 # fallback: server-side fallback to another model on a refusal. Researcher decision:
 # on for pipeline proposal tasks, off for the experiment. Substituted output is always
 # marked and never enters a measurement (see docs/llm-tasks.md).
+# collate.prompt: the collator's prompt version, collate.v1 or collate.v2 (conventions and
+# standing renderings, data/codebook/collate.v2/). v1 stays active until the dev-gold
+# comparison of v1 and v2 (docs-zh/09-collate-v2-draft.md, section 7) supports the switch;
+# switching changes the collate instrument digest (prereg freeze --amend after the freeze).
 tasks:
-  collate:    {effort: high,   max_tokens: 128000, replicates: 3, fallback: true}
+  collate:    {effort: high,   max_tokens: 128000, replicates: 3, fallback: true, prompt: collate.v1}
   components: {effort: high,   max_tokens: 32000, replicates: 1, fallback: true, pairs_per_call: 12}
   topics:     {effort: medium, max_tokens: 16000, replicates: 1, fallback: true, units_per_call: 40}
   subject:    {effort: medium, max_tokens: 16000, replicates: 3, fallback: false}

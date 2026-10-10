@@ -9,7 +9,8 @@
     merge_text        the chapters as one text-level ``Collation``: witness-only records
                       reconciled across chapters, and V9 for segments only ever declared
                       ``belongs_elsewhere``
-    verify_all        one replicate end to end (verify, merge chapters, merge text)
+    verify_all        one replicate end to end (verify V1-V8, V11, V12; merge chapters;
+                      merge text)
 
 A chunk's model sees the chapter's whole core window but only part of the chapter's
 reference units, so it declares the witness segments that render the other chunks'
@@ -47,7 +48,10 @@ class OverlapReport:
 
 
 def compare_overlaps(windows: Sequence[Window], results: Sequence[Collation]) -> OverlapReport:
-    """Two readings agree when they give the same outcome class and the same segments."""
+    """Two readings agree when they give the same outcome class and the same segments.
+
+    Conventions (collate.v2) are not compared: a convention never lowers a grade, so it
+    may not do so indirectly through ``overlap_disagreement`` either."""
     _check_chapter(windows, results)
     report = OverlapReport()
     for i, window in enumerate(windows[:-1]):

@@ -1,6 +1,8 @@
 """E3: where do the Chinese deviations come from? (synthesis 6.4, critique A2 and A3)
 
-Every deviating unit (D = 1) gets exactly one class, the first that applies:
+Every deviating unit (D = 1, the primary outcome; never the sensitivity variant D_any_conv,
+since a convention needs no Vorlage or shared explanation) gets exactly one class, the first
+that applies:
 
     attested_vorlage   a translator note on the host segment states what the Sanskrit
                        manuscript had (note class ``vorlage_statement``)

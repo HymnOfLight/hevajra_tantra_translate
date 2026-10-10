@@ -7,6 +7,10 @@
     wide_status.csv     one row per matrix row, one status column per witness
     stale_verdicts.csv  gold rows and verdicts not applied because the text changed
 
+The ``flags`` column joins a cell's flags with ";", sorted; a collate.v2 convention travels
+there (``standing_rendering`` or ``transcribed_name``, plus ``convention_unsupported`` when the
+code checks did not support it), so the headers are the same for v1 and v2 runs.
+
 Headers are English and ASCII. Files hold ids, statuses and numbers only (no text), so a
 run's matrix can be shared without licence concerns. Floats are rounded to 4 decimals.
 """
