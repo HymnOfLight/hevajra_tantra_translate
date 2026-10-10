@@ -255,8 +255,10 @@ def _standing_entry(rec: Any, where: str, ref_lang: str, wit_lang: str,
     status, by = rec.get("status"), rec.get("verified_by")
     if status not in STANDING_STATUSES:
         raise LexiconError(f"{where}: entry {ident}: status must be one of {sorted(STANDING_STATUSES)}")
-    if (status == "verified") != bool(by):
-        raise LexiconError(f"{where}: entry {ident}: verified_by is required for, and only for, status verified")
+    named = isinstance(by, str) and bool(by.strip())
+    if (status == "verified" and not named) or (status != "verified" and by is not None):
+        raise LexiconError(f"{where}: entry {ident}: verified_by (the verifier's name, a non-blank string) "
+                           "is required for status verified and must be null otherwise")
     refs = _strings(rec.get("reference_forms"), f"{where}: entry {ident} reference_forms", ref_lang)
     wits = _strings(rec.get("witness_renderings"), f"{where}: entry {ident} witness_renderings", wit_lang)
     _check_tokens(refs, ref_lang, f"{where}: entry {ident} reference_forms")

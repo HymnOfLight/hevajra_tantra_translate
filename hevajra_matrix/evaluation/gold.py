@@ -44,12 +44,12 @@ from ..matrix.status import RELATION_STATUS, deviates, has_convention, outcome_c
 from ..review.verdicts import (CONVENTIONS, UNIT_VALUES, convention_problem, decision, decision_convention,
                                flag_problems, format_flags, is_orphan, parse_bool, parse_flags, parse_ids)
 from .resample import Interval, McNemar, mcnemar, paired_difference, window_bootstrap
-from .scores import (METRICS, UNALIGNED, AlignmentScores, UnitScore, WitnessOnlyScore, confidence_reliability,
-                     convention_f1, convention_precision, convention_recall, convention_unsupported_rate,
-                     dany_conv_kappa, dany_kappa, interval_estimates, invalid_handle_rate, link_f1, link_precision,
-                     link_recall, null_precision, null_recall, quote_failure_rate, refusal_by_group, refusal_rate,
-                     relation_kappa, relation_recall, status_correct, status_kappa, witness_only_kind_agreement,
-                     witness_only_recall)
+from .scores import (COLLATE_V2_FAMILIES, METRICS, UNALIGNED, AlignmentScores, UnitScore, WitnessOnlyScore,
+                     confidence_reliability, convention_f1, convention_precision, convention_recall,
+                     convention_unsupported_rate, dany_conv_kappa, dany_kappa, interval_estimates, invalid_handle_rate,
+                     link_f1, link_precision, link_recall, null_precision, null_recall, quote_failure_rate,
+                     refusal_by_group, refusal_rate, relation_kappa, relation_kappa_shared, relation_recall,
+                     status_correct, status_kappa, witness_only_kind_agreement, witness_only_recall)
 from .windows import (WINDOWS_COLUMNS, TestWindow, dev_region_units, draw_test_windows, region_window,
                       window_units)
 
@@ -57,11 +57,12 @@ from .windows import (WINDOWS_COLUMNS, TestWindow, dev_region_units, draw_test_w
 __all__ = [
     "GOLD_COLUMNS", "SETS", "GoldError", "GoldRow", "GoldSet", "load", "save", "read_windows", "write_windows",
     "from_verdicts", "to_verdicts", "score", "human_kappa",
-    "UnitScore", "WitnessOnlyScore", "AlignmentScores", "METRICS", "interval_estimates", "status_correct",
-    "confidence_reliability",
+    "UnitScore", "WitnessOnlyScore", "AlignmentScores", "METRICS", "COLLATE_V2_FAMILIES", "interval_estimates",
+    "status_correct", "confidence_reliability",
     "link_precision", "link_recall", "link_f1", "null_precision", "null_recall", "witness_only_recall",
     "witness_only_kind_agreement", "status_kappa", "dany_kappa", "dany_conv_kappa", "relation_kappa",
-    "relation_recall", "convention_precision", "convention_recall", "convention_f1", "convention_unsupported_rate",
+    "relation_kappa_shared", "relation_recall", "convention_precision", "convention_recall", "convention_f1",
+    "convention_unsupported_rate",
     "quote_failure_rate", "invalid_handle_rate", "refusal_rate", "refusal_by_group",
     "TestWindow", "dev_region_units", "draw_test_windows", "region_window", "window_units",
     "window_bootstrap", "paired_difference", "mcnemar", "McNemar", "Interval", "UNALIGNED",

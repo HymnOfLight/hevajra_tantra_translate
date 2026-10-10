@@ -150,20 +150,32 @@
    - 提示词版本由配置选择：`tasks.collate.prompt`，取值 `collate.v1`（默认）或 `collate.v2`；其他取值报错；
    - v2 的模板是 `hevajra_matrix/prompts/collate.v2.md`，示例和译名表在 `data/codebook/collate.v2/`；只有已核实的条目进入提示词，放在示例之后的 STANDING RENDERINGS 块里，没有条目时写 `(none)`；
    - v2 的输出 schema 在每个单元的 `relation` 之前增加 `convention`；
+   - Q3 的决定写进了 v2 提示词：`transliterated` 条目把"表示一类或一种存在者的词（如 dakini、yogini）"列为按音译出的内容，`transcribed_name` 条目写明这类词不是专名，即使指神祇也一样，按音译出时记关系 `transliterated`、惯例 `none`；示例 3 也有一个类名音写的合成单元（与 [`03-review-guide.md`](03-review-guide.md) §1a 一致）；
    - 链接的来源写作 `<模型>:collate.v2:<重复>`，`collation/replicates.json` 记下 `prompt`（旧文件没有这个键，视为 v1）。
 2. **核验**（`collate/verify.py`）：新增 V12。
    - `standing_rendering`：同一个已核实条目的原词出现在藏文引文里、译名出现在汉文引文里（做异体折叠；藏文从音节开头匹配，末音节可带黏着助词）；
    - `transcribed_name`：汉文引文的音写字比例达到 V11 的阈值；
    - 不符合时保留惯例标记，另加 `convention_unsupported`，证据等级降为 C，从不致命。
 3. **共识**（`collate/consensus.py`）：惯例按三分之二多数决定，达不到就是 `none`；`collation/integrity.json` 记下重复之间惯例的 Fleiss κ（`convention_kappa`，只描述，不进门控）。
-4. **矩阵与统计**：关系→状态的映射不变，惯例不改变 D_any；新增结果变体 `any_conv`，只用于 E1 的 final 列（`E1_any_conv`），以及 Manski 区间；主结果只能是 `any` 或 `cov`，`prereg freeze` 和 `stats` 都会拒绝 `any_conv`。
+   - 共识链接取自 medoid：在关系为投票关系的多数读法中选，优先选持有投票惯例的读法。
+   - `convention_unsupported` 只在持有投票惯例的读法报过时保留（被投票否决的惯例声明不留下）；另外，如果投票惯例不是 `none`，而持有投票关系的多数读法中没有一个持有该惯例，共识这一步自己加上 `convention_unsupported`（medoid 的引文从未被声明为这个惯例），证据等级为 C，留待复核。所以共识链接上的 `convention_unsupported` 不一定来自某个重复的 V12，`convention_unsupported_rate` 也会计入这种情况。
+4. **矩阵与统计**：关系→状态的映射不变，惯例不改变 D_any；新增结果变体 `any_conv`，只用于 E1 的 final 列（`E1_any_conv`），以及 collate.v2 运行的 Manski 区间；主结果只能是 `any` 或 `cov`，`prereg freeze` 和 `stats` 都会拒绝 `any_conv`。
+   - `E1_any_conv` 的惯例与类别**联合插补**（`stats/anyconv.py`）：已核实单元用人工的类别和惯例；未核实单元不用机器惯例（与不用机器类别一样），在所在分层中按 phase-2 样本裁决里"无偏移且记有惯例"的比例插补。类别的抽样与 `E1_any` 完全相同，惯例另用独立的随机流。
+   - 因此 v1 运行的 `E1_any_conv` 同样有效（惯例只经人工裁决进入）；v2 运行中机器惯例的错误也由样本校准。
+   - 样本裁决的惯例栏为空（未标注）时按"无惯例"计，`stats/details.json: any_conv` 写明插补依据的 phase-2 裁决数、其中未标注惯例的个数、记有惯例的个数，以及记有人工惯例的已核实单元数；报告在 E1_any_conv 下打印这些数。
+   - 没有任何无偏移的已核实单元、也没有任何无偏移的 phase-2 样本裁决记有惯例时，`E1_any_conv` 与 `E1_any` 逐次相等；否则更大。
+   - Manski 的 `any_conv` 读的是建好的单元格，只在 collate.v2 运行中计算；v1 运行的 `details.json: manski` 只有 `any` 和 `cov`。`details.json: conventions` 是矩阵中惯例的描述性计数。
 5. **复核表格**：金标准表、盲表、揭示表增加惯例列，裁决文件增加 `machine_convention`、`blind_convention`、`final_convention`（27 列），金标准文件增加 `convention`（14 列）；旧文件仍可读取，缺的列读作"未标注"。人工填的 `standing_rendering` 用与 V12 相同的规则核对。
-6. **评估**：关系一致性照旧计算，另报告 `relation_kappa`、`dany_conv_kappa`、惯例的精确率、召回率、F1 和 `convention_unsupported_rate`；不产出惯例的来源（基线、v1 共识等）这些指标为 n/a。门控 G1–G4 不变，不加惯例门控。
+6. **评估**：关系一致性照旧计算，另报告 `relation_kappa`、`relation_kappa_shared`、`dany_conv_kappa`、惯例的精确率、召回率、F1 和 `convention_unsupported_rate`。门控 G1–G4 不变，不加惯例门控。
+   - `relation_kappa`、`relation_kappa_shared` 和 `dany_conv_kappa` 对所有来源都计算：不产出惯例的来源以它自己的 D_any 读作 D_any_conv。所以 §7 的 v1/v2 对照可以直接用 `evaluate` 的输出。
+   - 只有惯例的精确率、召回率、F1（总体与分项）和 `convention_unsupported_rate`，对不产出惯例的来源（基线、v1 共识等）为 n/a（null）。
+   - `relation_kappa_shared` 只在 v1、v2 两个码本编码一致的单元上计算关系 κ：金标准有链接（关系不是 `no_counterpart`）、金标准惯例标注为 `none`（未标注的不算）、金标准关系不是 `generalised` 或 `category_name_omitted`；金标准没有惯例标注时为 null。总体的 `relation_kappa` 只作描述：v1 来源在 v2 金标准上结构性偏低。
+   - 测试集评估账本的去重（`pipeline/measure.py: already_ledgered`）：工具指纹、预注册 sha256、门控结果和来源集合都相同，且已入账记录里的每个指标在新记录中都在、取值相等（按主题组的拒绝率分项不比），才算重复、不再追加。新记录多出的键只允许属于 collate.v2 新增的指标族（`relation_kappa`、`relation_kappa_shared`、`dany_conv_kappa`、`dany_conv_agreement`、惯例精确率/召回率/F1、`convention_unsupported_rate`），这样 v2 之前写的账本行仍能匹配同一输出的重新门控；其他任何键集差异（丢了一个键，或金标准重编码后 `relation_recall:generalised` 之类的分项出现或消失）都算新的计分。
 7. **防止混用**：`evaluate`、`perturb` 和揭示表导入会核对配置的版本与该运行实际对勘所用的版本，不一致就报错。
 
 ### 6.2 v1 保持不变
 
-默认配置下，v1 的提示词 sha256（`3ab88636…`）、schema sha256（`ed99b249…`）、collate 工具指纹（`d0233b34…`）和 I.1 试跑的两个请求键都与改动前相同；把试跑目录复制一份离线重放，`alignments/claude.r1.jsonl` 和 `collation/r1.json` 逐字相同，`replicates.json` 只多了 `"prompt": "collate.v1"`。v1 的链接和单元格不带惯例标记，所以 v1 运行的 E1_any_conv 等于 E1_any。
+默认配置下，v1 的提示词 sha256（`3ab88636…`）、schema sha256（`ed99b249…`）、collate 工具指纹（`d0233b34…`）和 I.1 试跑的两个请求键都与改动前相同；把试跑目录复制一份离线重放，`alignments/claude.r1.jsonl` 和 `collation/r1.json` 逐字相同，`replicates.json` 只多了 `"prompt": "collate.v1"`。v1 的链接和单元格不带惯例标记，但 E1_any_conv 的惯例来自人工裁决（见 §6.1 第 4 条），所以 v1 运行的 E1_any_conv 同样有效；人工没有记下任何无偏移单元的惯例时，它等于 E1_any。
 
 ### 6.3 怎样切换到 v2
 
@@ -176,10 +188,11 @@
 ### 6.4 怎样核实译名表的条目
 
 1. 专家核对 `data/codebook/collate.v2/standing_renderings.yaml` 中条目的计数和原文段落。
-2. 同意的，把 `status: proposed` 改为 `status: verified`，在 `verified_by` 写真名（`verified_by` 只能、也必须随 `verified` 一起填）；不同意的，改为 `status: retired`，或移到 `considered_not_listed` 并写明理由。
-3. 新增条目要写 `id`、`reference_forms`（藏文）、`witness_renderings`（汉文），加载时会校验整个文件，格式错误就报错。
-4. 核实、增删条目都会改变 v2 的提示词，相当于换了测量工具：工具指纹改变，缓存键全部改变，开发集对照要重做；冻结之后要 `prereg freeze --amend`。
-5. 从此以后，复核表格旁的 `standing_renderings.csv` 也会列出该条目，人工填的 `standing_rendering` 按它核对。
+2. 同意的，把 `status: proposed` 改为 `status: verified`，在 `verified_by` 写真名；不同意的，改为 `status: retired`，或移到 `considered_not_listed` 并写明理由。`verified_by` 只能、也必须随 `verified` 一起填：`verified` 时必须是去掉空白后非空的名字字符串；其他状态必须是 `null`（空字符串也不接受）。
+3. 新增条目必须写 `id`、`reference_forms`（藏文）、`witness_renderings`（汉文）和 `status`（`proposed` / `verified` / `retired`，缺了就报错，所有 v2 环节都会停下）；`verified_by` 按第 2 步填；`sanskrit`、`counts`、`note` 可选，其他键一律拒绝。新条目一般先写 `status: proposed`、`verified_by: null`。加载时会校验整个文件，格式错误就报错。
+4. 只有**已核实条目**进入提示词。核实条目，或修改、退役、删除已核实条目，会改变 v2 的提示词，相当于换了测量工具：工具指纹改变，缓存键全部改变，开发集对照要重做；冻结之后要 `prereg freeze --amend`。增改、退役或删除 `proposed` 条目不改变模型看到的任何内容，不必重做对照，也不必修订预注册；唯一的影响是：如果任何条目（包括 proposed）的形式与示例自带的固定译名重叠，`load_examples` 会报错。
+5. 核实条目会让测试 `tests/unit/test_collate_v2.py::test_the_shipped_glossary_has_no_verified_entry_so_the_block_reads_none` 失败。这是有意保留的绊线：它钉住已发布的（空）译名表，必须在**同一次提交**中改为新的已核实条目 id 和新的 STANDING RENDERINGS 块文本。其他测试不依赖已发布文件的状态。
+6. 从此以后，复核表格旁的 `standing_renderings.csv` 也会列出该条目，人工填的 `standing_rendering` 按它核对。
 
 计数、说明和核实人姓名不会出现在提示词里。
 
@@ -199,11 +212,11 @@
 
 - 开发集约 450 个单元，约 6 个窗口；每个版本跑 1 次重复，共约 12 次调用，按 API 价格折算约 $6。
 - 比较以下三项：
-  - 关系一致性（κ）；
-  - 两种 D_any 口径与金标准的符合程度；
+  - 关系一致性：`relation_kappa_shared`，即只在两个码本编码一致的单元上算的关系 κ（金标准有链接、惯例标注为 `none`、关系不是 `generalised` 或 `category_name_omitted`；见 §6.1 第 6 条）。总体的 `relation_kappa` 只作描述，因为 v1 在 v2 金标准上结构性偏低；
+  - 两种 D_any 口径与金标准的符合程度（`dany_kappa`、`dany_conv_kappa`，两个版本都计算）；
   - v2 惯例标记的精确率与召回率。
 - 另外检查 I.1：上文 §3 预期转为惯例的 14 个单元，是否真的被标出。
-- **采用条件**：v2 在关系一致性上不比 v1 差，且惯例标记的精确率 ≥ 0.8。
+- **采用条件**：v2 的 `relation_kappa_shared` 不比 v1 差，且惯例标记的精确率 ≥ 0.8。
 
 满足条件后，再冻结预注册（`prereg freeze`）。
 
@@ -214,9 +227,10 @@
 | 文件 | 内容 |
 |---|---|
 | `hevajra_matrix/prompts/collate.v2.md` | v2 提示词全文（英文，与 v1 并列可比） |
-| `data/codebook/collate.v2/examples.yaml` | 三个合成示例：序数 vs 总称；固定译名＋反转＋无对应；专名与种子字音写 vs 内容词音写＋真言＋仅见于汉文 |
-| `data/codebook/collate.v2/standing_renderings.yaml` | 译名表，含计数，以及考察过但未列入的条目；目前没有已核实条目 |
+| `data/codebook/collate.v2/examples.yaml` | 三个合成示例：序数 vs 总称；固定译名＋反转＋无对应；专名与种子字音写 vs 内容词音写、类名音写（`transliterated`/`none`）＋真言＋仅见于汉文 |
+| `data/codebook/collate.v2/standing_renderings.yaml` | 译名表，含计数，以及考察过但未列入的条目；目前没有已核实条目；文件头注释写明条目的必填键 |
 | `data/codebook/collate.v2/README.md` | 英文说明 |
 | `hevajra_matrix/collate/prompt.py` | 版本注册表：两个版本的模板、示例、schema 和译名表 |
-| `tests/unit/test_collate_v2.py`、`test_collate_conventions.py`、`test_pipeline_collate_v2.py` | v1 的 sha 钉死；v2 的示例、译名表、V12、共识和流程 |
-| `tests/unit/test_review_conventions.py`、`test_evaluation_conventions.py`、`test_stats_conventions.py` 等 | 复核表格、金标准、评估指标和 E1_any_conv |
+| `hevajra_matrix/stats/anyconv.py` | E1_any_conv 的惯例联合插补 |
+| `tests/unit/test_collate_v2.py`、`test_collate_v2_class_nouns.py`、`test_collate_conventions.py`、`test_pipeline_collate_v2.py` | v1 的 sha 钉死；v2 的示例、类名规则、译名表（含核实时的绊线测试）、V12、共识和流程 |
+| `tests/unit/test_review_conventions.py`、`test_evaluation_conventions.py`、`test_evaluation_relation_shared.py`、`test_stats_conventions.py`、`test_pipeline_evaluate_conventions.py`、`test_verified_by_signature.py` 等 | 复核表格、金标准、评估指标（含 `relation_kappa_shared`）、账本去重、E1_any_conv 和 `verified_by` 的校验 |

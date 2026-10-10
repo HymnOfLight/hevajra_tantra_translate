@@ -15,8 +15,11 @@
 
 E1_any_conv is the sensitivity variant with conventions counted (collate.v2): D_any plus every
 counted unit carrying a standing rendering or a transcribed name, comparable with a caliber that
-counts transcription as deviation. It is printed beside E1_any with the conventions it counted,
-and is never the primary outcome; for a collate.v1 run it equals E1_any.
+counts transcription as deviation; never the primary outcome. Its conventions are imputed with
+the class from the phase-2 verdicts (``stats.anyconv``; machine conventions never enter), so a
+collate.v1 run has it too; it equals E1_any when no non-deviating verified unit or phase-2
+verdict records a convention. It is printed beside E1_any with what the imputation rests on
+(``report.sections.conventions``); its Manski bounds exist only for a collate.v2 run.
 
 At every level: human-verified (grade A) counts, printed as instrument-independent lower
 bounds; the confirmatory/exploratory line; and for every estimand that cannot be printed
@@ -67,15 +70,24 @@ SCORE_COLUMNS = (("link_f1", "link F1"), ("status_kappa", "status kappa"), ("nul
                  ("null_recall", "NULL recall"), ("witness_only_recall", "witness-only recall"))
 BREAKDOWN_LABELS = {"relation_recall": "recall of relation", "status_agreement": "status agreement",
                     "dany_agreement": "D_any agreement", "refusal_rate": "refusal rate, topic",
-                    # collate.v2 (n/a for a source without conventions); a bare key is the all-units value
-                    "dany_conv_agreement": "D_any_conv agreement", "relation_kappa": "relation kappa",
-                    "dany_conv_kappa": "D_any_conv kappa", "convention_precision": "convention precision",
+                    # collate.v2 (n/a for a source without conventions)
+                    "dany_conv_agreement": "D_any_conv agreement", "convention_precision": "convention precision",
                     "convention_recall": "convention recall"}
+# Bare (scalar) keys printed in the breakdown table, in this order; each covers the units its
+# metric is defined on (evaluation.scores), hence "overall" rather than "all units".
+SCALAR_LABELS = {"relation_kappa": "relation kappa, overall",
+                 "relation_kappa_shared": "relation kappa, units the v1 and v2 codebooks code alike",
+                 "dany_kappa": "D_any kappa (primary caliber), overall",
+                 "dany_conv_kappa": "D_any_conv kappa (sensitivity caliber), overall",
+                 "convention_precision": "convention precision, overall",
+                 "convention_recall": "convention recall, overall", "convention_f1": "convention F1, overall",
+                 "convention_unsupported_rate": "convention unsupported rate, overall",
+                 "refusal_rate": "refusal rate, overall"}
 _DECIMAL = re.compile(r"(?<![\w.:])-?\d+\.\d+(?![\w.])")
 _INTERVAL = re.compile(r"\[[^\]]*\d[^\]]*\]")
 WITHHELD = "<withheld>"
 _SENTINEL_REASON = ": verified sentinel "
-CONVENTION_KEYS = (Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value)
+CONVENTION_KEYS = sections.CONVENTION_KEYS
 MANSKI_LABELS = {"any_conv": "any_conv (conventions counted, sensitivity)"}
 
 
@@ -99,6 +111,7 @@ class ReportInputs:
     ``estimates``          estimand name -> ``Estimate`` (from the stats stage)
     ``manski``             outcome -> (lo, hi) share bounds over unresolved units
     ``conventions``        ``convention_counts`` of the matrix the estimates used
+    ``any_conv``           what the E1_any_conv imputation rests on (``stats.anyconv.summary``)
     ``notes``              translator notes relevant to the decomposition (id, class, host)
     """
 
@@ -123,6 +136,7 @@ class ReportInputs:
     e3_details: Mapping[str, Any] = field(default_factory=dict)              # stats/details.json "e3"
     negation: Mapping[str, int] | None = None                                # perturbations.json "negation"
     conventions: Mapping[str, int] = field(default_factory=dict)             # stats/details.json "conventions"
+    any_conv: Mapping[str, int] = field(default_factory=dict)                # stats/details.json "any_conv"
 
 
 # --------------------------------------------------------------------------- counting (pure)
@@ -298,7 +312,9 @@ def _scores(inputs: ReportInputs) -> list[str]:
 def _score_breakdowns(inputs: ReportInputs) -> list[str]:
     """Per-relation recall, per-class agreement, refusal by topic group (synthesis 5.2) and the
     collate.v2 convention scores."""
-    keys = sorted({k for m in inputs.scores.values() for k in m if k.split(":", 1)[0] in BREAKDOWN_LABELS})
+    present = {k for m in inputs.scores.values() for k in m}
+    keys = [k for k in SCALAR_LABELS if k in present] + sorted(
+        k for k in present if ":" in k and k.split(":", 1)[0] in BREAKDOWN_LABELS)
     if not keys:
         return []
     sources = list(inputs.scores)
@@ -306,7 +322,7 @@ def _score_breakdowns(inputs: ReportInputs) -> list[str]:
            "| metric | " + " | ".join(_label(src) for src in sources) + " |", "|---|" + "---|" * len(sources)]
     for key in keys:
         kind, _, which = key.partition(":")
-        label = f"{BREAKDOWN_LABELS[kind]} {which}" if which else f"{kind.replace('_', ' ')}, all units"
+        label = f"{BREAKDOWN_LABELS[kind]} {which}" if which else SCALAR_LABELS[kind]
         out.append(f"| {label} | "
                    + " | ".join(_interval(inputs.scores[src].get(key)) for src in sources) + " |")
     return out + [""]
@@ -366,7 +382,7 @@ def _estimates(inputs: ReportInputs, gate: GateReport) -> list[str]:
             if name == "E4":
                 out += _e4_diagnostics(inputs.e4_details)
             if name == "E1_any_conv":
-                out += _conventions(inputs.conventions)
+                out += sections.conventions(inputs.conventions, inputs.any_conv)
             prior = inputs.estimates.get(f"{name}_prior")
             if prior is not None and prior.point is not None:
                 out.append(f"  - prior sensitivity (Dirichlet symmetric in D, not Jeffreys): {_interval(prior)}")
@@ -376,20 +392,6 @@ def _estimates(inputs: ReportInputs, gate: GateReport) -> list[str]:
             wide = " (wider than the gate allows)" if hi - lo > inputs.max_manski_width else ""
             out.append(f"- {MANSKI_LABELS.get(outcome, outcome)}: [{_num(lo)}, {_num(hi)}]{wide}")
     return out + [""]
-
-
-def _conventions(counts: Mapping[str, int]) -> list[str]:
-    """What E1_any_conv adds to E1_any: the caliber and the conventions it counted."""
-    out = ["  - caliber: a unit also counts when it carries a convention (standing rendering or transcribed "
-           "name), read from the matrix (human on grade A, consensus majority otherwise), not imputed"]
-    if not counts:
-        return out
-    total = sum(counts.get(k, 0) for k in CONVENTION_KEYS)
-    if not total:
-        return out + ["  - no counted unit carries a convention (e.g. a collate.v1 run): equals E1_any"]
-    per = ", ".join(f"{k} {counts.get(k, 0)}" for k in CONVENTION_KEYS)
-    return out + [f"  - conventions counted: {total} units ({per}); {counts.get('unsupported', 0)} without code "
-                  f"support (convention_unsupported), {counts.get('human', 0)} human-decided"]
 
 
 def _revision(inputs: ReportInputs) -> list[str]:

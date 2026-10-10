@@ -230,8 +230,11 @@ more than one instrument version and the report reads "exploratory".
   `prereg freeze --amend`; commit the frozen file together with the code version whose digests it
   holds.
 - **One concern per commit.** Keep frozen-contract changes, data changes (lexicon, registry,
-  sentinels) and code changes in separate commits where possible; a sentinel moves from `proposed`
-  to `verified` only with `verified_by` naming the researcher.
+  sentinels) and code changes in separate commits where possible; a sentinel, a topics codebook
+  or a collate.v2 glossary entry becomes `verified` only with `verified_by` naming the researcher
+  (a non-blank name; null for every other status, which the loaders enforce). Verifying a glossary
+  entry is an instrument change and updates the tripwire test named in
+  `data/codebook/collate.v2/README.md` in the same commit.
 - **Before committing:** `pytest` (unit tier) green, the language-policy test green, and the
   realdata tier when ingest, alignment, sentinels or the concordance changed.
 - **Messages** in English, imperative mood, saying what changed and why. Cite the review defect

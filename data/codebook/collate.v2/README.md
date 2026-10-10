@@ -23,10 +23,14 @@ separating `category_name_omitted` from `generalised`. The answer schema adds a
 Only entries with `status: verified` (and a `verified_by`) are shown to the collator,
 after the examples, under STANDING RENDERINGS; while none is verified the block reads
 `(none)`, and every `standing_rendering` claim is then flagged `convention_unsupported` by
-V12. The code check V12 reads exactly the entries shown in the prompt. Verifying,
-adding or retiring an entry changes the prompt, so it is an instrument change: a new
-digest and a new cache (and `prereg freeze --amend` after the freeze). Counts, notes and
-the verifier's name are never shown to the model.
+V12. The code check V12 reads exactly the entries shown in the prompt. Only a change to
+the set of verified entries changes the prompt: verifying an entry, or editing, retiring or
+removing a verified one, is an instrument change (a new digest and a new cache, a repeated
+dev-gold comparison, and `prereg freeze --amend` after the freeze). Adding, editing,
+retiring or removing a `proposed` entry changes nothing the model sees; the only effect is
+that `load_examples` refuses to load when a form of any entry (proposed ones included)
+collides with an example's own standing renderings. Counts, notes and the verifier's name
+are never shown to the model.
 
 The file names its reference and witness text ids. The glossary belongs to that witness:
 a run whose texts differ from them stops with an error rather than using another
@@ -38,13 +42,32 @@ is empty until an expert signs it.
 ## Verifying an entry
 
 1. Check the entry's counts and passages against the texts.
-2. Set `status: verified` and `verified_by: <real name>` (`verified_by` is required for, and
-   only for, `verified`). To reject an entry, set `status: retired` or move it to
+2. Set `status: verified` and `verified_by: <real name>`. `verified_by` must be a non-blank
+   name string for `verified` and `null` for every other status (an empty string is refused
+   too). To reject an entry, set `status: retired` (with `verified_by: null`) or move it to
    `considered_not_listed` with a `reason`.
 3. The whole file is validated on load (`core/lexicon.py: load_standing_renderings`); run
-   `python -m pytest -q tests/unit/test_collate_v2.py`.
+   `python -m pytest -q tests/unit/test_collate_v2.py`. One test there is a deliberate
+   tripwire for this instrument change and fails as soon as an entry is verified:
+   `tests/unit/test_collate_v2.py::test_the_shipped_glossary_has_no_verified_entry_so_the_block_reads_none`
+   pins the shipped (empty) glossary. Update it in the same commit to the newly verified
+   entry ids and the new STANDING RENDERINGS block text; no other test depends on the
+   committed status.
 4. The new prompt is a new instrument: collate a new run, repeat the dev-gold comparison, and
    after `prereg freeze` record the change with `prereg freeze --amend "<reason>"`.
+
+A new entry needs the keys `id`, `reference_forms`, `witness_renderings` and `status`
+(`proposed`, `verified` or `retired`; a missing status is refused on load and stops every
+v2 stage), with `verified_by` as in step 2; `sanskrit`, `counts` and `note` are optional and
+any other key is refused. A new entry normally starts as a candidate:
+
+```yaml
+  - id: <entry id>
+    reference_forms: ["<reference form>"]
+    witness_renderings: ["<witness rendering>"]
+    status: proposed
+    verified_by: null
+```
 
 The review sheets list the same verified entries (`standing_renderings.csv` beside every gold,
 blind and reveal sheet), and a human `standing_rendering` decision is checked by the same rule

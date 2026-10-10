@@ -228,18 +228,30 @@ def already_ledgered(ledger: Path, record: Mapping[str, Any]) -> bool:
     G2/G3 after review) reveals nothing new about the test set and is not a new scoring.
     Breakdowns by topic group are left out of the comparison: they change when topic labels
     are added after the test scoring (the campaign order), not when the instrument or the
-    gold does. Only the metrics both records carry are compared: a metric added by a later
-    code version (e.g. the collate.v2 convention metrics) does not turn a re-gating of the
-    same output into a second scoring of the test set."""
+    gold does. The metric keys must match, with one tolerance: the new record may carry keys
+    the ledgered one lacks when they belong to a metric family collate.v2 added
+    (``evaluation.scores.COLLATE_V2_FAMILIES``), so that a record written before those
+    metrics existed still matches a re-gating of the same output. Any other key-set
+    difference (a key lost, a keyed breakdown such as ``relation_recall:generalised``
+    appearing or disappearing) means the gold or the scoring changed and is a new scoring."""
     def metrics(r: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         return {src: {k: v for k, v in (m or {}).items() if not k.startswith(TOPIC_BREAKDOWN)}
                 for src, m in json.loads(json.dumps(r.get("metrics") or {})).items()}
 
-    def same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
-        if any(a.get(k) != b.get(k) for k in ("instrument_digest", "prereg_sha256", "gate")):
+    def same(old: Mapping[str, Any], new: Mapping[str, Any]) -> bool:
+        if any(old.get(k) != new.get(k) for k in ("instrument_digest", "prereg_sha256", "gate")):
             return False
-        ma, mb = metrics(a), metrics(b)
-        return set(ma) == set(mb) and all(ma[src][k] == mb[src][k] for src in ma for k in ma[src].keys() & mb[src])
+        mo, mn = metrics(old), metrics(new)
+        if set(mo) != set(mn):
+            return False
+        for src in mo:
+            if mo[src].keys() - mn[src].keys():
+                return False                    # the new record lost a metric
+            if any(k.split(":", 1)[0] not in gold_sets.COLLATE_V2_FAMILIES for k in mn[src].keys() - mo[src].keys()):
+                return False                    # a key the older record should have had
+            if any(mo[src][k] != mn[src][k] for k in mo[src]):
+                return False
+        return True
 
     if not ledger.is_file():
         return False

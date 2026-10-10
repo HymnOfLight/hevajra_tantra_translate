@@ -57,7 +57,7 @@ hevajra-matrix prereg freeze --backend subscription   # 用订阅后端做研究
 hevajra-matrix prereg freeze --amend "修改原因"   # 冻结后的任何改动都必须追加修订记录
 ```
 
-测试集每被评估一次，都会追加到 `data/ledger/test_evaluations.jsonl`；报告会写明"测试集已被 K 个工具版本评过 N 次"。对同一工具指纹、同一预注册、同一得分与门控结果的**重复评分不会追加**（例如复核之后为刷新 G2/G3 再跑 `evaluate`，并没有重新评估测试集），程序会打印"already recorded; not appended again"。按主题组拆分的拒绝率不参与这一比较，因为主题标签通常在测试评分之后才导入。
+测试集每被评估一次，都会追加到 `data/ledger/test_evaluations.jsonl`；报告会写明"测试集已被 K 个工具版本评过 N 次"。对同一工具指纹、同一预注册、同一得分与门控结果的**重复评分不会追加**（例如复核之后为刷新 G2/G3 再跑 `evaluate`，并没有重新评估测试集），程序会打印"already recorded; not appended again"。按主题组拆分的拒绝率不参与这一比较，因为主题标签通常在测试评分之后才导入。"得分相同"指已入账记录里的每个指标在新记录中都在、取值相等；新记录多出的键只允许属于 collate.v2 新增的指标族（关系 κ、`relation_kappa_shared`、D_any_conv 的 κ 与分项、惯例精确率/召回率/F1、`convention_unsupported_rate`），这样 v2 之前写的账本行仍能匹配；丢了一个键，或金标准重编码后出现、消失某个分项（如 `relation_recall:generalised`），都算新的评分，照常追加。
 
 ## 6 Claude 在这里不做什么
 

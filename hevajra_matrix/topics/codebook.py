@@ -109,10 +109,13 @@ def load_codebook(path: Path) -> TopicCodebook:
     errors += [f"missing key {k!r}" for k in sorted(_CODEBOOK_KEYS - set(doc))]
     if doc.get("schema_version") != 1:
         errors.append("schema_version must be 1")
+    by = doc.get("verified_by")
     if doc.get("status") not in ("draft", "verified"):
         errors.append("status must be draft or verified")
-    elif doc["status"] == "verified" and not doc.get("verified_by"):
-        errors.append("a verified codebook needs verified_by")
+    elif doc["status"] == "verified" and not (isinstance(by, str) and by.strip()):
+        errors.append("a verified codebook needs verified_by (the verifier's name, a non-blank string)")
+    elif doc["status"] != "verified" and by is not None:
+        errors.append("verified_by must be null unless the codebook is verified")
     if tuple(doc.get("group_precedence") or ()) != GROUP_PRECEDENCE:
         errors.append(f"group_precedence must be {list(GROUP_PRECEDENCE)} (fixed in hevajra_matrix.topics)")
     if not _texts(doc.get("rules")):

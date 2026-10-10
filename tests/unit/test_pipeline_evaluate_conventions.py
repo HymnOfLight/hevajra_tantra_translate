@@ -151,8 +151,8 @@ def test_a_run_from_before_the_prompt_key_counts_as_v1(tmp_path: Path) -> None:
 
 
 def test_metrics_added_later_do_not_make_a_new_test_scoring(tmp_path: Path) -> None:
-    """The ledger compares the metrics both records carry: a record written before the
-    convention metrics existed still matches a re-gating of the same output."""
+    """A record written before the collate.v2 metrics existed still matches a re-gating of
+    the same output: the new record may add keys of the v2 metric families."""
     old = {"instrument_digest": "d", "prereg_sha256": "p", "gate": True,
            "metrics": {"claude:consensus": {"link_f1": 0.8, "refusal_rate:sensitive": 0.1}}}
     ledger = tmp_path / "ledger.jsonl"
@@ -163,6 +163,58 @@ def test_metrics_added_later_do_not_make_a_new_test_scoring(tmp_path: Path) -> N
     assert not already_ledgered(ledger, {**new, "metrics": {"claude:consensus": {"link_f1": 0.7}}})
     assert not already_ledgered(ledger, {**new, "instrument_digest": "other"})
     assert not already_ledgered(ledger, {**new, "metrics": {**new["metrics"], "dp:zero": {"link_f1": 0.5}}})
+
+
+def ledgered(tmp_path: Path, metrics: dict) -> tuple[Path, dict]:
+    old = {"instrument_digest": "d", "prereg_sha256": "p", "gate": True, "metrics": {"claude:consensus": metrics}}
+    ledger = tmp_path / "ledger.jsonl"
+    ledger.write_text(json.dumps(old) + "\n", encoding="utf-8")
+    return ledger, old
+
+
+def test_only_collate_v2_metric_families_may_be_missing_from_the_older_record(tmp_path: Path) -> None:
+    """Every family collate.v2 added (scalar or keyed) may be new; any other new key may not."""
+    ledger, old = ledgered(tmp_path, {"link_f1": 0.8, "relation_recall:equivalent": 1.0})
+    for key in ("relation_kappa", "relation_kappa_shared", "dany_conv_kappa", "dany_conv_agreement:dev",
+                "convention_precision", "convention_precision:transcribed_name", "convention_recall:standing_rendering",
+                "convention_f1", "convention_unsupported_rate"):
+        new = {**old, "metrics": {"claude:consensus": {**old["metrics"]["claude:consensus"], key: 0.5}}}
+        assert already_ledgered(ledger, new), key
+    for key in ("relation_recall:generalised", "status_agreement:PRESENT", "dany_agreement:dev", "link_precision",
+                "relation_kappa_v3", "convention"):
+        new = {**old, "metrics": {"claude:consensus": {**old["metrics"]["claude:consensus"], key: 0.5}}}
+        assert not already_ledgered(ledger, new), key
+
+
+def test_a_metric_the_new_record_lacks_is_a_new_scoring(tmp_path: Path) -> None:
+    """The tolerance runs one way: the ledgered record may lack v2 keys, never the new one."""
+    ledger, old = ledgered(tmp_path, {"link_f1": 0.8, "relation_kappa": 0.7, "convention_f1": None})
+    assert already_ledgered(ledger, old)
+    for key in ("relation_kappa", "convention_f1", "link_f1"):
+        lost = {k: v for k, v in old["metrics"]["claude:consensus"].items() if k != key}
+        assert not already_ledgered(ledger, {**old, "metrics": {"claude:consensus": lost}}), key
+
+
+def test_recoding_the_test_gold_is_a_new_scoring(tmp_path: Path) -> None:
+    """Merged lists recoded from category_name_omitted to generalised (as the v2 codebook asks):
+    the keyed relation recall moves from one relation to the other while every scalar and
+    every common key stays the same. That is a different gold, so a new scoring."""
+    from hevajra_matrix.evaluation.scores import AlignmentScores, UnitScore
+
+    def scores(list_relation: str) -> dict:
+        def unit(n: int, gold: str, pred: str) -> UnitScore:
+            return UnitScore(f"D:1a.{n}.1", "w01", gold, "PARTIAL", True, frozenset({f"T:{n}.1"}), pred, "PARTIAL",
+                             True, frozenset({f"T:{n}.1"}))
+        units = (unit(1, "abridged", "abridged"), unit(2, list_relation, "substitution"),
+                 unit(3, list_relation, "substitution"), unit(4, "substitution", "substitution"))
+        return AlignmentScores("claude:consensus", "test", units).metrics()
+
+    before, after = scores("category_name_omitted"), scores("generalised")
+    differ = {k for k in before.keys() | after.keys() if before.get(k) != after.get(k)}
+    assert differ == {"relation_recall:category_name_omitted", "relation_recall:generalised"}
+    ledger, old = ledgered(tmp_path, before)
+    assert already_ledgered(ledger, old)
+    assert not already_ledgered(ledger, {**old, "metrics": {"claude:consensus": after}})
 
 
 def test_integrity_records_the_replicate_agreement_on_conventions(v2_run: tuple[Path, Path]) -> None:

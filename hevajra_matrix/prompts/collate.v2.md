@@ -55,10 +55,10 @@ tells you to set aside; then judge what remains.
   carries a number instead of the name. If several members share one collective
   expression instead, use `generalised`.
 - `transliterated`: the witness renders content by sound (a phonetic transcription)
-  instead of by meaning: mantras, and ordinary words or instructions. Test: the
-  witness characters imitate the pronunciation of reference words that are not names.
-  Names and syllables rendered by sound are a convention, not this relation (see
-  below).
+  instead of by meaning: mantras, ordinary words, words for a class or kind of being
+  (such as dakini or yogini), and instructions. Test: the witness characters imitate the
+  pronunciation of reference words that are not proper names. Proper names and
+  syllables rendered by sound are a convention, not this relation (see below).
 - `no_counterpart`: nothing in the witness renders the unit. Test: you searched the
   whole witness, not only the core window, and found no line that renders any content
   element of it. Then `wit` is empty.
@@ -83,7 +83,10 @@ content. Record them in `convention` and set them aside when you choose the rela
   place, channel or ritual object) or a syllable or letter that the text treats as a
   sound (a seed syllable, a letter of the alphabet), while it renders everything else
   in the unit by meaning. Judge the relation as if the name had been translated.
-  Quote the name on both sides.
+  Quote the name on both sides. A word for a class or kind of being (for example a
+  class of goddesses, spirits or practitioners, such as dakini or yogini) is not a
+  proper name, even when it refers to deities: rendered by sound it is the relation
+  `transliterated` with convention `none`.
 - `none`: neither applies. This is the usual value.
 
 When a convention applies and something else in the unit also differs, the convention

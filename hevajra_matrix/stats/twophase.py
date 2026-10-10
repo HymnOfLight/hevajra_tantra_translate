@@ -34,12 +34,10 @@ pre-registered automation-bias sensitivity. ``revision_rate`` reports blind -> f
 A verify or audit verdict whose reveal is not imported yet has no final decision: it is
 absent from the final column (as it is from the matrix), never read as a final one.
 
-D_any_conv (``any_conv``, collate.v2) is a sensitivity outcome of E1 on the final column only:
-a unit counts if its drawn class deviates OR it carries a convention. The convention is
-plugged in from the built matrix (``unit_conventions``: the human convention on grade A cells,
-"" read as none; the consensus-majority convention otherwise), not imputed; its error is
-reported by evaluation (convention precision/recall), not propagated into the interval. Strata
-and E2 stay on D_any, the blind column on D_any/D_cov, and E3, E4, the prior and G3 on the primary.
+D_any_conv (``any_conv``, collate.v2): E1 sensitivity outcome, final column only; its convention
+is imputed jointly with the class from the same strata and sample verdicts (``stats.anyconv``;
+machine conventions never enter). Strata and E2 stay on D_any, the blind column on D_any/D_cov,
+and E3, E4, the prior and G3 on the primary.
 """
 
 from __future__ import annotations
@@ -163,7 +161,7 @@ def verdict_outcome(verdict: Verdict, column: Column, ref_kind: str = "") -> Out
     return outcome_class(relation, verdict_flip(verdict, column), ref_kind)
 
 
-def _latest(verdicts: Iterable[Verdict], column: Column) -> dict[str, Verdict]:
+def latest_verdicts(verdicts: Iterable[Verdict], column: Column) -> dict[str, Verdict]:
     """Per unit, the verdict that decides it: gold first, then the latest date, then list order."""
     best: dict[str, Verdict] = {}
     for v in verdicts:
@@ -199,10 +197,30 @@ def known_outcomes(
             outcome = cell_outcome(cell, kinds.get(cell.unit_id, ""))
             if outcome is not None:
                 out[cell.unit_id] = outcome
-    for unit, v in _latest(verdicts, column).items():
+    for unit, v in latest_verdicts(verdicts, column).items():
         outcome = verdict_outcome(v, column, kinds.get(unit, ""))
         if outcome is not None and unit in units:
             out[unit] = outcome
+    return out
+
+
+def sample_verdicts(
+    verdicts: Iterable[Verdict], strata: Mapping[str, str], column: Column = "final",
+    ref_kinds: Mapping[str, str] | None = None,
+) -> list[tuple[str, Verdict, OutcomeClass]]:
+    """(stratum, verdict, outcome) of every phase-2 *sample* verdict that calibrates a stratum.
+
+    Gold and resolve verdicts fix their units but are not a probability sample of any stratum,
+    so they never calibrate one. The stratum recorded on the verdict (fixed at sampling time)
+    wins over the current ``strata`` mapping.
+    """
+    kinds = ref_kinds or {}
+    out = []
+    for unit, v in latest_verdicts([v for v in verdicts if v.task in SAMPLE_TASKS], column).items():
+        outcome = verdict_outcome(v, column, kinds.get(unit, ""))
+        stratum = v.stratum or strata.get(unit)
+        if outcome is not None and stratum is not None:
+            out.append((stratum, v, outcome))
     return out
 
 
@@ -210,22 +228,10 @@ def sample_counts(
     verdicts: Iterable[Verdict], strata: Mapping[str, str], column: Column = "final",
     ref_kinds: Mapping[str, str] | None = None,
 ) -> dict[str, dict[OutcomeClass, int]]:
-    """x_h: outcome counts per stratum among the phase-2 *sample* verdicts.
-
-    Gold and resolve verdicts fix their units but are not a probability sample of any stratum,
-    so they never calibrate one. The stratum recorded on the verdict (fixed at sampling time)
-    wins over the current ``strata`` mapping.
-    """
-    kinds = ref_kinds or {}
-    sample = [v for v in verdicts if v.task in SAMPLE_TASKS]
+    """x_h: outcome counts per stratum among the phase-2 sample verdicts (``sample_verdicts``)."""
     counts: dict[str, dict[OutcomeClass, int]] = {}
-    for unit, v in _latest(sample, column).items():
-        outcome = verdict_outcome(v, column, kinds.get(unit, ""))
-        stratum = v.stratum or strata.get(unit)
-        if outcome is None or stratum is None:
-            continue
-        row = counts.setdefault(stratum, {o: 0 for o in OUTCOMES})
-        row[outcome] += 1
+    for stratum, _, outcome in sample_verdicts(verdicts, strata, column, ref_kinds):
+        counts.setdefault(stratum, {o: 0 for o in OUTCOMES})[outcome] += 1
     return counts
 
 
@@ -328,11 +334,6 @@ def require_primary(outcome: str, what: str) -> str:
     return outcome
 
 
-def unit_conventions(cells: Iterable[Cell]) -> dict[str, bool]:
-    """Unit -> carries a convention, read from the built matrix (plugged in, never imputed)."""
-    return {cell.unit_id: has_convention(cell.flags) for cell in cells}
-
-
 def percentile(values: Sequence[float], q: float) -> float:
     """Linear-interpolation percentile, ``q`` in [0, 100]."""
     xs = sorted(values)
@@ -355,22 +356,24 @@ def summarise(values: Sequence[float], name: str, n: int, scope: str, sources: t
 def prevalence(
     draw_list: Sequence[Mapping[str, OutcomeClass]], outcome: str = "any",
     weights: Mapping[str, float] | None = None, name: str = "E1", scope: str = "",
-    conventions: Mapping[str, bool] | None = None,
+    conventions: Sequence[Mapping[str, bool]] | None = None,
 ) -> Estimate:
     """Finite-population share of units with the outcome (E1), or length-weighted (E2).
 
     With ``weights`` (e.g. syllables per unit) this is sum(l_u D_u) / sum(l_u). No chapter
-    bootstrap: the text is a census (synthesis 6.1). ``conventions`` (``unit_conventions``)
-    is required for "any_conv" and must cover every drawn unit.
+    bootstrap: the text is a census (synthesis 6.1). "any_conv" requires ``conventions``: one
+    map per draw (``anyconv.convention_draws``) covering every unit of that draw.
     """
     conv = conventions if outcome == "any_conv" else None
+    if conv is not None and (isinstance(conv, Mapping) or len(conv) != len(draw_list)):
+        raise ValueError("conventions must hold one map per draw (anyconv.convention_draws)")
     values: list[float] = []
-    for vector in draw_list:
+    for i, vector in enumerate(draw_list):
         num = den = 0.0
         for unit, cls in vector.items():
             w = 1.0 if weights is None else float(weights[unit])
             den += w
-            num += w * indicator(cls, outcome, None if conv is None else conv[unit])
+            num += w * indicator(cls, outcome, None if conv is None else conv[i][unit])
         if den > 0:
             values.append(num / den)
     if not values:
@@ -394,8 +397,8 @@ def manski(
 ) -> tuple[float, float]:
     """Bounds on the share when every still-UNALIGNED unit deviates (hi) or none does (lo).
 
-    ``cells`` is the built matrix (human resolutions applied; "any_conv" reads each cell's
-    convention flag). LACUNA and NA stay excluded.
+    ``cells`` is the built matrix (human resolutions applied); "any_conv" reads each cell's
+    convention flag, so it is meaningful only for a collate.v2 run. LACUNA and NA stay excluded.
     Report the bounds as flagged when ``hi - lo`` exceeds ``gates.g3.max_manski_width``.
     """
     kinds = ref_kinds or {}

@@ -15,10 +15,13 @@ Per reference unit (synthesis 4.2, 4.3)
                flags for the unit, so no finding is lost, except for conventions
     convention (collate.v2) voted, not united: a convention needs two thirds of the k
                replicates among the resolved readings, else the link has none. The
-               medoid is taken among the majority readings with the voted convention
-               when there is one. ``convention_unsupported`` (V12) is kept only when a
-               reading holding the voted convention raised it: an outvoted claim changes
-               neither D_any nor D_any_conv (the replicate files keep it)
+               medoid is taken among the majority readings with the voted relation,
+               preferring those that hold the voted convention. ``convention_unsupported``
+               (V12) is kept only when a reading holding the voted convention raised it:
+               an outvoted claim changes neither D_any nor D_any_conv (the replicate files
+               keep it). It is also set when no majority reading with the voted relation
+               holds the voted convention: the medoid's own quotes were then never claimed
+               for that convention, so the link is a finding for review (C)
     UNALIGNED  a majority of unresolved replicates gives their most frequent reason (a
                unit refused by all replicates stays "refused:<category>"); no majority at
                all gives "no_majority"
@@ -144,14 +147,14 @@ def _majority_link(readings: Sequence[Link | None], classes: Sequence[OutcomeCla
         return sum(jaccard(own, o) for o in others) / len(others) if others else 1.0
 
     convention = convention_vote(readings, k)
-    candidates = [link for link in members if link.relation == relation]
-    candidates = [link for link in candidates if convention_of(link.flags) is convention] or candidates
-    medoid = max(candidates, key=centrality)          # max keeps the earliest on a tie
+    by_relation = [link for link in members if link.relation == relation]
+    holding = [link for link in by_relation if convention_of(link.flags) is convention]
+    medoid = max(holding or by_relation, key=centrality)   # max keeps the earliest on a tie
     resolved_links = [link for link in readings if link is not None]
     flags = frozenset().union(*(link.flags for link in resolved_links)) - {FLAG_CONVENTION_UNSUPPORTED}
-    if convention is not Convention.NONE and any(
+    if convention is not Convention.NONE and (not holding or any(
             FLAG_CONVENTION_UNSUPPORTED in link.flags and convention_of(link.flags) is convention
-            for link in resolved_links):
+            for link in resolved_links)):
         flags |= {FLAG_CONVENTION_UNSUPPORTED}
     return replace(medoid, flags=with_convention(flags, convention), source=source)
 

@@ -83,7 +83,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `pipeline/store.py` | - | JSON forms of segments, alignments, collations, cells, estimates, gate reports, sentinel results (pure `*_to_dict` / `*_from_dict` pairs) |
 | `pipeline/texts.py` | `fetch`, `ingest`, `baselines`, `baselines_import` | Claude-free; G0 and ingest-stage sentinels; ingest loads the Sanskrit reference when its TSV exists |
 | `pipeline/instrument.py` | `collate` (incl. `--dry-run`), `perturb` (incl. `--negation`), `components_stage`, `claude_check` | every stage that calls Claude except topics and the experiment; `collate_digest` of the run's language pair and configured prompt version; `collated_prompt`, `check_prompt` (one run, one collate version) |
-| `pipeline/measure.py` | `build`, `evaluate` | Claude-free; G2-G4 facts (`_integrity`, `_calibration`, `design_mde`), ledger deduplication (`already_ledgered`, on the metrics both records carry), `primary_outcome` (refuses `any_conv`) |
+| `pipeline/measure.py` | `build`, `evaluate` | Claude-free; G2-G4 facts (`_integrity`, `_calibration`, `design_mde`), ledger deduplication (`already_ledgered`: every metric of the ledgered line equal, extra keys only from `scores.COLLATE_V2_FAMILIES`), `primary_outcome` (refuses `any_conv`) |
 | `pipeline/results.py` | `stats`, `report` | Claude-free; `witness_tree` (distances and UPGMA once three texts share the reference) |
 | `pipeline/e3.py` | - | E3 for `stats` and G4: readings, manuscript columns (editions set aside), co-witness, A2 bound (`e3_inputs`, `e3_stats`, `e3_reason`) |
 | `pipeline/e4.py` | - | E4 for `stats`: Delta with its diagnostics (`contrast_with_diagnostics`) and the MDE simulated on the real topic labels (`mde_on_labels`) |
@@ -145,7 +145,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `collate/collator.py` | T1 requests, parsing, thread pool (re-exports `prompt`) | `build_request`, `build_requests`, `collate`, `parse`, `SCHEMA`, `TaskSettings` (incl. `prompt`), `source_name` |
 | `collate/verify.py` | V1-V8, V11, V12 on one window | `verify`, `Collation`, `CheckLexicon.load`, `quote_match`, `convention_flags`, `standing_supported` |
 | `collate/merge.py` | V9, V10, chapter and text merge | `verify_all`, `merge_chapter`, `merge_text`, `compare_overlaps` |
-| `collate/consensus.py` | replicate vote, grades, Fleiss kappa; the convention by its own two-thirds vote | `consensus`, `agreement`, `convention_vote`, `BENIGN_FLAGS` |
+| `collate/consensus.py` | replicate vote, grades, Fleiss kappa; the convention by its own two-thirds vote (`convention_unsupported` also when no majority reading with the voted relation holds the voted convention) | `consensus`, `agreement`, `convention_vote`, `BENIGN_FLAGS` |
 | `collate/perturb.py` | perturbation placebos and their scores | `wrong_window`, `delete_segments`, `negated_pairs`, `remove_negators`, `false_link_rate`, `deletion_recall`, `negation_recall` |
 | `collate/components.py` | T2 component coder (descriptive only): pair selection, run loop, outputs; re-exports the two modules below | `select_pairs`, `code_components`, `verify`, `rendering_profile`, `invention_rate` |
 | `collate/components_request.py` | T2 settings, schema, batches with full segment texts, prompts, few-shot examples | `ComponentTaskSettings`, `plan_batches`, `build_requests`, `load_system`, `load_examples` |
@@ -165,19 +165,20 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `review/topic_sheets.py` | topic sheets (second coder without prelabels) | `export_topics`, `import_topics`, `merge_topic_labels` |
 | `review/verdicts.py` | committed verdict CSVs (27 columns, three for conventions) | `load`, `save`, `validate`, `decision`, `decision_convention`, `convention_problem`, `COLUMNS` |
 | `evaluation/gold.py` | gold format and scoring of any `Alignment` | `load`, `save`, `score`, `human_kappa`, `from_verdicts`, `to_verdicts` |
-| `evaluation/scores.py` | per-unit scores and metrics (incl. `relation_kappa`, `dany_conv_kappa`, convention precision and recall, null for a source without conventions); confidence reliability | `AlignmentScores`, `METRICS`, `BREAKDOWNS`, `interval_estimates`, `confidence_reliability`, `CONFIDENCE_PROBABILITY` |
+| `evaluation/scores.py` | per-unit scores and metrics (incl. `relation_kappa`, `relation_kappa_shared` (the units both codebooks code alike; compared by the v1-vs-v2 adoption rule), `dany_conv_kappa`, all three for every source; convention precision, recall, F1 and unsupported rate, null for a source without conventions); confidence reliability | `AlignmentScores`, `METRICS`, `BREAKDOWNS`, `COLLATE_V2_FAMILIES`, `interval_estimates`, `confidence_reliability`, `CONFIDENCE_PROBABILITY` |
 | `evaluation/resample.py` | kappa, window-cluster and paired bootstrap, McNemar | `cohen_kappa`, `window_bootstrap`, `paired_difference`, `mcnemar` |
 | `evaluation/windows.py` | dev regions and test-window draw | `dev_region_units`, `draw_test_windows` |
 | `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages (`relation_in` may restrict conventions) | `load`, `check`, `applicable` (alignment checks only on their own text pair), `text_prefixes` |
 | `evaluation/gate.py` | G0-G4, report level, confirmatory flag, ledger | `evaluate`, `check_g1`, `GateSpecs.from_prereg`, `ledger_append`, `ledger_summary` |
-| `stats/twophase.py` | strata, posterior-predictive draws, E1/E2 (and the sensitivity `E1_any_conv`), Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata`, `unit_conventions`, `require_primary` |
+| `stats/twophase.py` | strata, posterior-predictive draws, E1/E2 (and the sensitivity `E1_any_conv` with per-draw conventions), Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata`, `latest_verdicts`, `sample_verdicts`, `require_primary` |
+| `stats/anyconv.py` | D_any_conv for `E1_any_conv`: conventions imputed jointly with the class from the phase-2 verdicts, human conventions only (valid for a collate.v1 run) | `known_conventions`, `convention_counts`, `convention_draws`, `summary` |
 | `stats/contrast.py` | Delta (E4), permutation test, TOST, matching, diagnostics; length strata are mid-rank tertiles | `delta`, `tertile_strata`, `permutation_p`, `tost`, `matched_rd`, `overlap_diagnostics`, `misclassification_table` |
 | `stats/decompose.py` | E3 classes, O / E / O-E, excess fractions, NOT_ESTIMABLE gate | `decompose`, `excess`, `e3`, `not_estimable_reason` |
 | `stats/power.py` | planning simulations | `simulate_delta`, `simulate_experiment` |
 | `stats/distance.py` | witness distance and UPGMA (>= 3 witnesses; `stats` writes it under the Sanskrit reference) | `witness_distance`, `distance_matrix`, `average_linkage_newick` |
 | `topics/` | codebook, human labels and agreement, T3 pre-labeller | `load_codebook`, `topic_group`, `load_labels`, `human_agreement`, `prelabel_agreement`, `build_request`, `parse_prelabels` |
 | `report/markdown.py` | level-gated `summary.md` | `render(inputs, gate)`, `ReportInputs`, `convention_counts` |
-| `report/sections.py` | E3 section; confidence reliability and P-negation section | `e3`, `reliability` |
+| `report/sections.py` | E3 section; what E1_any_conv rests on; confidence reliability and P-negation section | `e3`, `conventions`, `reliability` |
 | `report/svg.py` | status strip and chapter heatmap | `status_strip`, `chapter_heatmap` |
 
 ### Experiment (`experiments/overattribution/`)
@@ -324,8 +325,9 @@ passes too. A report is *confirmatory* only when the preregistration is frozen, 
 digest is the preregistered one, the ledger lines for that digest carry the current prereg
 sha256, and the test set was scored exactly once for that digest. Re-running `evaluate` on the
 same output and gold (e.g. to refresh G2/G3 after review) appends nothing: a ledger line with
-the same digest, preregistration, gate outcome and metrics (topic-group breakdowns aside) is
-already there (`pipeline/measure.py: already_ledgered`). `report/markdown.py` enforces
+the same digest, preregistration, gate outcome and metrics (topic-group breakdowns aside; the
+new record may add only keys of the metric families collate.v2 introduced) is already there
+(`pipeline/measure.py: already_ledgered`). `report/markdown.py` enforces
 what each level may print; human-verified (grade A) counts are printed at every level.
 
 ## 7. Review defects of 2026-09-30 and their resolution

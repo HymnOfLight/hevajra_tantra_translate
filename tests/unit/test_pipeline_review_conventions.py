@@ -65,6 +65,17 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(fh))
 
 
+def _unverified_glossary(root: Path) -> None:
+    """Rewrite the run root's copy of the glossary with no verified entry, so the test does
+    not depend on the status of the shipped file (verifying an entry there is an instrument
+    change, pinned by test_collate_v2.test_the_shipped_glossary_has_no_verified_entry_...)."""
+    path = root / "data" / "codebook" / "collate.v2" / "standing_renderings.yaml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for entry in doc.get("entries") or ():
+        entry.update(status="proposed", verified_by=None)
+    path.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
 def _verify_glossary(root: Path, run: Path) -> tuple[str, str]:
     """Rewrite the run root's glossary with one verified entry built from the fixture text
     of the first planned unit and the first witness segment of its context; returns them."""
@@ -88,6 +99,7 @@ def _verify_glossary(root: Path, run: Path) -> tuple[str, str]:
 
 def test_glossary_beside_the_sheets_and_the_checked_import(finished, capsys) -> None:  # noqa: F811
     root, run = finished
+    _unverified_glossary(root)
     assert cli(root, run, "sample", "verification") == 0
     assert cli(root, run, "review", "export", "--task", "verify") == 0
     blind = run / "review" / "verify.blind.csv"

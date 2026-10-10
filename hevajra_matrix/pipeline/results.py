@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..collate.consensus import SOURCE_CONSENSUS
+from ..collate.prompt import version as prompt_version
 from ..core.io import read_jsonl
 from ..core.textnorm import length
 from ..core.types import Cell, Estimate, Grade, Relation, Status
@@ -15,18 +16,18 @@ from ..evaluation.gate import GateReport, GateSpecs
 from ..report import markdown, svg
 from ..review import sampling
 from ..review.verdicts import is_orphan
-from ..stats import decompose, distance, twophase
+from ..stats import anyconv, decompose, distance, twophase
 from . import e3 as e3_stage
 from . import e4 as e4_stage
 from . import human_data as ann
 from .context import RunContext, Texts, load_texts, record_stage, scope_lines
-from .instrument import read_consensus
+from .instrument import collated_prompt, read_consensus
 from .measure import control_alignments, primary_outcome, read_built_cells, read_gate
 from .store import estimate_from_dict, estimate_to_dict, read_cells, sentinel_result_from_dict
 
 OUTCOMES = ("any", "cov", "any_conv", "absent", "partial")     # E1, final column
 BLIND_OUTCOMES = ("any", "cov")                                # E1, blind column
-MANSKI_OUTCOMES = ("any", "cov", "any_conv")
+MANSKI_OUTCOMES = ("any", "cov", "any_conv")                  # any_conv: collate.v2 runs only
 NO_PHASE2 = "G3: no phase-2 verification or audit verdict yet"
 PRIOR_SUFFIX = "_prior"    # E1_<primary>_prior: the primary E1 with a prior symmetric in D
 TRANSLATOR_NOTE_CLASSES = (decompose.VORLAGE_NOTE, decompose.TRANSLATOR_NOTE)
@@ -40,9 +41,14 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     E3 comes from ``pipeline.e3`` (manuscript readings, co-witness, A2 bound).
 
     ``E1_any_conv`` (final column only) is the sensitivity variant with conventions counted:
-    the same draws as ``E1_any``, plus every unit whose built cell carries a convention
-    (``twophase.unit_conventions``; plugged in, not imputed). Without convention flags (a
-    collate.v1 run) it equals ``E1_any``. ``details.json: conventions`` counts them.
+    the class draws of ``E1_any`` completed with conventions imputed jointly from the same
+    strata and phase-2 verdicts (``stats.anyconv``). Verified units keep their human
+    convention; machine conventions never enter, so it is valid for a collate.v1 run too. It
+    equals ``E1_any`` when no non-deviating verified unit or phase-2 sample verdict records a
+    convention. ``details.json: any_conv`` says what the imputation rests on (including the
+    sample verdicts without an annotated convention); ``conventions`` counts the conventions of
+    the built matrix (descriptive). Manski ``any_conv`` reads the built cells and is computed
+    only when the run was collated with a prompt that records conventions (collate.v2).
 
     ``E1_<primary>_prior`` repeats E1 of the primary outcome with ``twophase.PRIOR_SYMMETRIC_D``
     (the spec's Jeffreys prior leans 3/4 toward deviation in sparse strata). A column whose
@@ -65,7 +71,9 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     n_draws, seed = int(params.get("n_draws", 500)), int(params.get("seed", 0))
     scope = "; ".join(scope_lines(ctx))
     primary = primary_outcome(ctx)             # any_conv is never primary (StageError)
-    conventions = twophase.unit_conventions(cells)
+    recorded = collated_prompt(ctx)
+    manski_outcomes = [o for o in MANSKI_OUTCOMES if o != "any_conv"
+                       or (recorded is not None and prompt_version(recorded).conventions)]
     est: dict[str, Estimate] = {}
     extra: dict[str, Any] = {}
     draws: dict[str, list] = {}
@@ -82,6 +90,10 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
                 extra.setdefault("uncalibrated", {})[column] = err.strata
                 est.update({name: Estimate.missing(name, str(err), scope) for name in names})
                 continue
+            conventions = None
+            if column == "final":
+                conventions = anyconv.convention_draws(cells, verdicts, strata, draws[column], seed, texts.ref_kinds)
+                extra["any_conv"] = anyconv.summary(cells, verdicts, strata, texts.ref_kinds)
             for outcome in outcomes:
                 est[f"E1_{outcome}{suffix}"] = twophase.prevalence(draws[column], outcome, name=f"E1_{outcome}{suffix}",
                                                                    scope=scope, conventions=conventions)
@@ -95,7 +107,7 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
         for name in [f"E1_{o}" for o in OUTCOMES] + ["E2_any"]:
             est[name] = Estimate.missing(name, NO_PHASE2, scope)
     if cells:
-        extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in MANSKI_OUTCOMES}
+        extra["manski"] = {o: list(twophase.manski(cells, o, texts.ref_kinds)) for o in manski_outcomes}
     extra["conventions"] = markdown.convention_counts(cells)
     e3, extra["e3"] = e3_stage.e3_stats(ctx, texts, cells, primary, scope)
     est.update(e3)
@@ -221,6 +233,7 @@ def report_inputs(ctx: RunContext) -> markdown.ReportInputs:
         reliability={src: s["reliability"] for src, s in (scores_doc.get("sources") or {}).items()
                      if s.get("reliability")},
         e3_details=details.get("e3") or {}, conventions=details.get("conventions") or {},
+        any_conv=details.get("any_conv") or {},
         negation=_read_json(ctx.path("evaluation", "perturbations.json")).get("negation"))
 
 

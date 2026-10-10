@@ -30,9 +30,17 @@ agreement.
 Two calibers come from one gold (draft Q6): ``dany_kappa`` on D_any (the primary outcome,
 conventions not counted) and ``dany_conv_kappa`` on D_any_conv (``matrix.status`` outcome
 ``any_conv``: a convention also counts as a deviation; for a source without conventions its
-own D_any). ``relation_kappa`` is the overall relation agreement the adoption rule compares;
-a collate.v1 source scored on v2 gold loses agreement by construction where v2 changed the
+own D_any). ``relation_kappa`` is the overall relation agreement, descriptive only: a
+collate.v1 source scored on v2 gold loses agreement by construction where v2 changed the
 codebook (``generalised`` for merged lists; names and seed syllables judged as translated).
+``relation_kappa_shared`` is the relation agreement on the units the two codebooks code
+alike: linked gold units (relation not ``no_counterpart``) whose gold convention is annotated
+as ``none`` and whose gold relation is neither ``generalised`` nor ``category_name_omitted``.
+The section-7 adoption rule ("v2 not worse than v1 on relation agreement") compares
+``relation_kappa_shared``, never ``relation_kappa``.
+
+``COLLATE_V2_FAMILIES`` names the metric families collate.v2 added; a ledger record written
+before them lacks these keys and nothing else (``pipeline.measure.already_ledgered``).
 """
 
 from __future__ import annotations
@@ -227,6 +235,25 @@ def relation_kappa(s: AlignmentScores) -> float | None:
     return cohen_kappa([(u.gold_relation, u.pred_relation or UNALIGNED) for u in s.units])
 
 
+# Gold relations the collate.v2 codebook changed (merged lists): left out of the shared caliber.
+_RECODED_RELATIONS = frozenset({Relation.GENERALISED.value, Relation.CATEGORY_NAME_OMITTED.value})
+
+
+def _codebooks_agree(u: UnitScore) -> bool:
+    """A unit the v1 and v2 codebooks code alike: linked in gold, gold convention annotated as
+    ``none`` (not a convention, not un-annotated) and a gold relation v2 did not recode."""
+    return (u.gold_convention == _NONE and u.gold_relation != _NULL
+            and u.gold_relation not in _RECODED_RELATIONS)
+
+
+def relation_kappa_shared(s: AlignmentScores) -> float | None:
+    """Cohen's kappa on the relation over the units the v1 and v2 codebooks code alike
+    (``_codebooks_agree``; unresolved units predicted "UNALIGNED"). The relation agreement the
+    section-7 adoption rule compares, for every source alike; None when no such unit exists
+    (e.g. gold without annotated conventions)."""
+    return cohen_kappa([(u.gold_relation, u.pred_relation or UNALIGNED) for u in s.units if _codebooks_agree(u)])
+
+
 def relation_recall(s: AlignmentScores) -> dict[str, float | None]:
     """Per gold relation, the share of its units given exactly that relation."""
     out: dict[str, float | None] = {}
@@ -265,8 +292,10 @@ def convention_f1(s: AlignmentScores) -> float | None:
 
 
 def convention_unsupported_rate(s: AlignmentScores) -> float | None:
-    """Among scored units the source gave a convention, the share V12 could not confirm
-    (``convention_unsupported``; gold annotation not needed). None without conventions."""
+    """Among scored units the source gave a convention, the share flagged
+    ``convention_unsupported`` (by V12, or on a consensus link by ``collate.consensus`` when no
+    majority reading with the voted relation holds the voted convention; gold annotation not
+    needed). None without conventions."""
     if not s.conventions:
         return None
     given = [u for u in s.units if _marked(u.pred_convention)]
@@ -304,7 +333,7 @@ METRICS: Mapping[str, Callable[[AlignmentScores], float | None]] = {
     "null_precision": null_precision, "null_recall": null_recall,
     "witness_only_recall": witness_only_recall, "witness_only_kind_agreement": witness_only_kind_agreement,
     "status_kappa": status_kappa, "dany_kappa": dany_kappa, "dany_conv_kappa": dany_conv_kappa,
-    "relation_kappa": relation_kappa,
+    "relation_kappa": relation_kappa, "relation_kappa_shared": relation_kappa_shared,
     "convention_precision": convention_precision, "convention_recall": convention_recall,
     "convention_f1": convention_f1, "convention_unsupported_rate": convention_unsupported_rate,
     "quote_failure_rate": quote_failure_rate, "invalid_handle_rate": invalid_handle_rate,
@@ -315,6 +344,11 @@ METRICS: Mapping[str, Callable[[AlignmentScores], float | None]] = {
 BREAKDOWNS = ("status_agreement", "dany_agreement", "dany_conv_agreement", "relation_recall",
               "convention_precision", "convention_recall", "refusal_rate")
 # keyed metrics of ``AlignmentScores.metrics``: "<breakdown>:<class, relation, convention or group>"
+
+# Metric families added by collate.v2: scalar names and keyed-breakdown prefixes ("<family>:...").
+COLLATE_V2_FAMILIES = frozenset({"relation_kappa", "relation_kappa_shared", "dany_conv_kappa", "dany_conv_agreement",
+                                 "convention_precision", "convention_recall", "convention_f1",
+                                 "convention_unsupported_rate"})
 
 
 def interval_estimates(s: AlignmentScores, n_boot: int, seed: int,

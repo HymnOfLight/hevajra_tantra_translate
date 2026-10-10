@@ -11,8 +11,15 @@
 #
 # Only entries with status: verified are shown to the collator (and accepted by V12); while
 # none is verified the prompt shows "(none)". An entry is verified by a researcher who has
-# checked the counts and the passages (verified_by: real name). Verifying an entry changes
-# the prompt, hence the collate instrument digest and every cache key.
+# checked the counts and the passages (verified_by: real name). Verifying an entry, or
+# editing, retiring or removing a verified one, changes the prompt, hence the collate
+# instrument digest and every cache key (an instrument change; see README.md). Adding,
+# editing, retiring or removing a proposed entry changes nothing the model sees.
+#
+# Every entry needs id, reference_forms, witness_renderings and status (proposed |
+# verified | retired; a missing status is refused on load). verified_by is a non-blank
+# real name for verified and null otherwise. sanskrit, counts and note are optional; any
+# other key is refused. A new entry starts with status: proposed and verified_by: null.
 #
 # Counts are plain substring counts over the ingested texts (Derge D417-418 including
 # every kind; T0892 excluding note lines), made on 2026-10-10 from run

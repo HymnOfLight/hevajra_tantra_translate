@@ -92,8 +92,11 @@ def load(path: Path) -> list[Sentinel]:
             raise SentinelError(f"{where}: fields must be exactly {sorted(_FIELDS)}")
         if rec["status"] not in STATUSES or rec["stage"] not in STAGES or rec["check"] not in CHECKS:
             raise SentinelError(f"{where}: bad status, stage or check ({rec['status']}, {rec['stage']}, {rec['check']})")
-        if rec["status"] == "verified" and not rec["verified_by"]:
-            raise SentinelError(f"{where}: a verified sentinel names who verified it")
+        by = rec["verified_by"]
+        if rec["status"] == "verified" and not (isinstance(by, str) and by.strip()):
+            raise SentinelError(f"{where}: a verified sentinel names who verified it (a non-blank string)")
+        if rec["status"] != "verified" and by is not None:
+            raise SentinelError(f"{where}: verified_by must be null unless the sentinel is verified")
         conventions = (rec["expect"] or {}).get("conventions")
         if conventions is not None and (rec["check"] != "relation_in" or not conventions
                                         or not set(conventions) <= set(CONVENTIONS)):

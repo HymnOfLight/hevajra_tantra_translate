@@ -259,8 +259,7 @@ def test_a_v1_examples_file_is_not_a_v2_one(tmp_path: Path) -> None:
 
 def test_examples_may_not_show_a_form_of_the_real_glossary(tmp_path: Path) -> None:
     root = v2_root(tmp_path)
-    real = glossary_doc()["entries"][0]          # still proposed: the rule holds whatever the status
-    assert real["status"] == "proposed"
+    real = glossary_doc()["entries"][0]          # the rule holds whatever the entry's status
     doc = v2_doc()
     own = doc["examples"][1]["standing_renderings"]
     own.append({"reference": own[0]["reference"], "witness": real["witness_renderings"][-1]})
@@ -316,7 +315,12 @@ def test_render_glossary_lines() -> None:
 @pytest.mark.parametrize("mutate, error, message", [
     (lambda d: d.update(schema_version=2), LexiconError, "schema_version"),
     (lambda d: d.pop("reference"), ValueError, "reference and witness"),
-    (lambda d: d["entries"][0].update(status="verified"), LexiconError, "verified_by"),
+    (lambda d: d["entries"][0].update(status="verified", verified_by=None), LexiconError, "verified_by"),
+    (lambda d: d["entries"][0].update(status="verified", verified_by=" "), LexiconError, "verified_by"),
+    (lambda d: d["entries"][0].update(status="verified", verified_by=True), LexiconError, "verified_by"),
+    (lambda d: d["entries"][0].update(status="verified", verified_by=1), LexiconError, "verified_by"),
+    (lambda d: d["entries"][0].update(status="proposed", verified_by="A. Researcher"), LexiconError, "verified_by"),
+    (lambda d: d["entries"][0].update(status="proposed", verified_by=""), LexiconError, "verified_by"),
     (lambda d: d["entries"][0].update(colour="red"), LexiconError, "unknown key"),
 ])
 def test_a_malformed_glossary_is_refused(tmp_path: Path, mutate, error, message: str) -> None:

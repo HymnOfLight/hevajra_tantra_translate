@@ -1,11 +1,16 @@
 """Report sections built from the JSON the stages write (pure; used by ``report.markdown``):
-the E3 decomposition (``stats/details.json: e3``) and the confidence reliability of the
+the E3 decomposition (``stats/details.json: e3``), what E1_any_conv rests on
+(``stats/details.json: any_conv`` and ``conventions``) and the confidence reliability of the
 instrument (``evaluation/scores.json: sources.<source>.reliability``) with the P-negation
 polarity recall (``evaluation/perturbations.json: negation``)."""
 
 from __future__ import annotations
 
 from typing import Any, Mapping
+
+from ..core.types import Convention
+
+CONVENTION_KEYS = (Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value)
 
 
 def _num(x: float | None) -> str:
@@ -33,6 +38,28 @@ def e3(d: Mapping[str, Any]) -> list[str]:
             excess("Vorlage (a manuscript lacks or varies the unit)", d["vorlage"]),
             excess("shared (the co-witness deviates too)", d["shared"]),
             excess("shared, A2 bound", bound["shared"])]
+
+
+def conventions(counts: Mapping[str, int], any_conv: Mapping[str, int]) -> list[str]:
+    """Beside E1_any_conv: its caliber, the phase-2 verdicts its imputation rests on (with the
+    number lacking an annotated convention) and, descriptively, the built matrix's conventions."""
+    out = ["  - caliber: a unit also counts when it carries a convention (standing rendering or transcribed "
+           "name); verified units keep their human convention, the others have it imputed with their class "
+           "from the phase-2 verdicts of their stratum (machine conventions are never used)"]
+    if any_conv:
+        out.append(f"  - phase-2 verdicts behind the imputation: {any_conv.get('verdicts', 0)}; "
+                   f"{any_conv.get('unannotated', 0)} without an annotated convention (counted as none), "
+                   f"{any_conv.get('with_convention', 0)} recording one; "
+                   f"{any_conv.get('verified_with_convention', 0)} verified units carry a human convention")
+        if not any_conv.get("nondev_with_convention") and not any_conv.get("verified_with_convention"):
+            out.append("  - no verified unit and no non-deviating phase-2 verdict records a convention: equals E1_any")
+    total = sum(counts.get(k, 0) for k in CONVENTION_KEYS)
+    if total:
+        per = ", ".join(f"{k} {counts.get(k, 0)}" for k in CONVENTION_KEYS)
+        out.append(f"  - conventions in the built matrix (descriptive; unverified machine ones are not used): "
+                   f"{total} units ({per}); {counts.get('unsupported', 0)} without code support "
+                   f"(convention_unsupported), {counts.get('human', 0)} human-decided")
+    return out
 
 
 def reliability(by_source: Mapping[str, Mapping[str, Any] | None], negation: Mapping[str, int] | None) -> list[str]:

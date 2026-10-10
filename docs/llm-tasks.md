@@ -246,8 +246,9 @@ are conventions of the translation rather than changes of content:
 A convention only sets aside the name or rendering itself: any other loss, reversal or
 replacement in the unit is still recorded, and a convention never turns one into `equivalent`.
 The v2 examples illustrate ordinals vs a collective expression; a standing rendering with a
-reversal and a no-counterpart unit; transcribed names vs transliterated content, a mantra and a
-witness-only line. Each v2 example lists its own synthetic standing renderings, which never
+reversal and a no-counterpart unit; transcribed names vs transliterated content (a content
+word, and a class noun rendered by sound as `transliterated` with convention `none`), a mantra
+and a witness-only line. Each v2 example lists its own synthetic standing renderings, which never
 overlap the real glossary.
 
 **Glossary.** Only entries with `status: verified` (and `verified_by`) are shown, after the
@@ -255,8 +256,16 @@ examples, under `## Standing renderings of this witness` as one `STANDING RENDER
 line `form / form = rendering / rendering` per entry; `(none)` without an entry). Counts, notes
 and names never reach the model. V12 reads exactly the object shown in the prompt
 (`Examples.glossary`), and the review sheets list the same entries. The file names its
-reference and witness text ids; a run on other texts stops with an error. Verifying, adding or
-retiring an entry changes the prompt, hence the digest and every cache key. The committed file
+reference and witness text ids; a run on other texts stops with an error. Only a change to the
+set of verified entries changes the prompt, hence the digest and every cache key: verifying an
+entry, or editing, retiring or removing a verified one (an instrument change: redo the dev-gold
+comparison, `prereg freeze --amend` after the freeze). Adding, editing, retiring or removing a
+`proposed` entry changes nothing the model sees (`load_examples` still refuses a form of any
+entry that collides with an example's own standing renderings). Every entry needs `status`;
+`verified_by` is a non-blank name for `verified` and null otherwise. Verifying an entry trips
+`tests/unit/test_collate_v2.py::test_the_shipped_glossary_has_no_verified_entry_so_the_block_reads_none`,
+which pins the shipped empty glossary and is updated in the same commit
+(`data/codebook/collate.v2/README.md`). The committed file
 lists only `hevajra`, still `proposed`, so the active glossary is empty and every
 `standing_rendering` claim is flagged `convention_unsupported` until an expert signs it.
 
@@ -332,9 +341,13 @@ the k replicates; the relation is the most frequent among the majority (ties bro
 union. No majority gives UNALIGNED(`no_majority`). Grade B = all replicates agree and no flag
 other than `corroborated` and the convention flags; C otherwise; X for UNALIGNED. The convention
 is voted separately, not taken from the flag union: a convention needs two thirds of the k
-replicates among the resolved readings, else `none`; the medoid is taken from the readings
-holding the elected convention, and `convention_unsupported` is kept only when one of those
-readings carried it. Convention flags never lower a grade; `convention_unsupported` gives C.
+replicates among the resolved readings, else `none`; the medoid is taken among the majority
+readings with the voted relation, preferring those holding the elected convention.
+`convention_unsupported` is kept only when a reading holding the elected convention carried it
+(an outvoted claim is dropped), and it is also set by the consensus itself when no majority
+reading with the voted relation holds the elected convention: the medoid's own quotes were then
+never claimed for that convention. Convention flags never lower a grade; `convention_unsupported`
+gives C.
 `collation/integrity.json: convention_kappa` (Fleiss kappa of the replicates' conventions) is
 descriptive, never gated. A v1 consensus (every reading `none`) is byte-identical to the one
 made before collate.v2.
@@ -342,13 +355,33 @@ made before collate.v2.
 **Conventions in the measurement.** The relation-to-status mapping is unchanged and a convention
 never changes a status, D_any or D_cov; the primary outcome stays `any` or `cov`. The outcome
 `any_conv` (D_any_conv: deviating, or carrying a convention) is computed only as the E1
-sensitivity estimate `E1_any_conv` and its Manski bounds, for comparison with published counts that
-include transcriptions (omission + rewriting + transliteration). Human gold and verdicts record the relation
-and the convention separately, so both calibers come from one gold. On gold, `evaluate` adds
-`relation_kappa`, `dany_conv_kappa`, convention precision, recall and F1 (overall and per
-convention) and `convention_unsupported_rate`; they are null for sources that produce no
-conventions (the controls, the placebo, external alignments, a v1 consensus). No gate uses a
-convention metric. Sentinels of kind `relation_in` may restrict conventions with
+sensitivity estimate `E1_any_conv` (final column) and, for a collate.v2 run, its Manski bounds,
+for comparison with published counts that include transcriptions (omission + rewriting +
+transliteration). `E1_any_conv` imputes the convention jointly with the outcome class
+(`stats/anyconv.py`): verified units keep their human class and human convention, and every
+unverified unit drawn non-deviating carries a convention with the share its stratum's phase-2
+sample verdicts record. Machine conventions never enter (as machine classes do not), so the
+estimate is valid for a collate.v1 run too, where conventions come in through the human
+verdicts only, and on a v2 run the machine's convention errors are calibrated by the sample. A
+sample verdict without an annotated convention counts as none; `stats/details.json: any_conv`
+reports how many there are. It equals `E1_any` when no non-deviating verified unit and no
+non-deviating phase-2 sample verdict records a convention. The Manski bounds of `any_conv` read
+the built cells and are computed only for a run collated with collate.v2. Human gold and
+verdicts record the relation and the convention separately, so both calibers come from one gold.
+On gold, `evaluate` adds `relation_kappa`, `relation_kappa_shared`, `dany_conv_kappa`, convention
+precision, recall and F1 (overall and per convention) and `convention_unsupported_rate`.
+`relation_kappa`, `relation_kappa_shared` and `dany_conv_kappa` are computed for every source (a
+source without conventions is read by its own D_any for D_any_conv), which is what makes the
+v1-vs-v2 comparison possible; only the convention precision, recall, F1 and
+`convention_unsupported_rate` are null for sources that produce no conventions (the controls,
+the placebo, external alignments, a v1 consensus). `relation_kappa_shared` is the relation kappa
+on the units the v1 and v2 codebooks code alike (linked gold units whose gold convention is
+annotated `none` and whose gold relation is neither `generalised` nor `category_name_omitted`);
+the adoption rule of docs-zh/09 section 7 ("v2 not worse than v1 on relation agreement")
+compares it, while the overall `relation_kappa` is descriptive (a v1 source scored on v2 gold is
+structurally lower on it). A `convention_unsupported` on a consensus link may come from the
+consensus rule above rather than from a replicate's V12, and then counts in
+`convention_unsupported_rate` too. No gate uses a convention metric. Sentinels of kind `relation_in` may restrict conventions with
 `expect.conventions`.
 
 **Perturbations** (`collate/perturb.py`, stage `perturb`, gate G2), run on the windows of the

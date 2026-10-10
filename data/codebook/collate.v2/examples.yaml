@@ -11,10 +11,11 @@
 # Example 1 contrasts category_name_omitted (one ordinal slot per member) with
 # generalised (members merged into one collective expression). Example 2 shows a standing
 # rendering next to a reversal and a unit without counterpart. Example 3 contrasts names
-# and syllables rendered by sound (transcribed_name) with a content word rendered by sound
-# (transliterated), and keeps a mantra and witness-only material. Every answer passes the
-# code checks V1-V12 with the example's own standing renderings and, as transcription
-# characters, those of the example's own mantra line (a unit test).
+# and syllables rendered by sound (transcribed_name) with a content word and a word for a
+# class of beings rendered by sound (transliterated, decision Q3), and keeps a mantra and
+# witness-only material. Every answer passes the code checks V1-V12 with the example's own
+# standing renderings and, as transcription characters, those of the example's own mantra
+# line (a unit test).
 
 schema_version: 1
 reference_lang: bo
@@ -162,9 +163,10 @@ examples:
       ref_quote: དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ
       wit_quote: ''
     witness_only: []
-- title: names and syllables by sound, a content word by sound, a mantra and witness-only material
+- title: names and syllables by sound, a content word and a class of beings by sound, a mantra and witness-only material
   comment: 'The city''s name and the seed syllable are rendered by sound while the rest is translated: convention transcribed_name, relation judged on the rest (equivalent, and expanded where the witness
-    adds a word). The word for blood is rendered by sound although it is not a name: transliterated, convention none. The mantra is transliterated as before. The heading is paratext, the note a translator_note
+    adds a word). The word for blood is rendered by sound although it is not a name: transliterated, convention none. The word for rakshasas, a class of beings, is rendered by sound too: a class
+    is not a proper name, so it is transliterated with convention none. The mantra is transliterated as before. The heading is paratext, the note a translator_note
     and the last sentence an addition.'
   witness:
   - kind: head
@@ -180,6 +182,8 @@ examples:
   - kind: note
     text: 二合
   - kind: prose
+    text: 調伏諸囉剎。
+  - kind: prose
     text: 如是作者，速得成就。
   reference:
   - kind: prose
@@ -190,6 +194,8 @@ examples:
     text: ཁྲག་གིས་སྐུ་གཟུགས་བྱུགས།
   - kind: mantra
     text: ཨོཾ་པདྨ་རུ་དྷི་ར་ཧཱུྃ།
+  - kind: prose
+    text: སྲིན་པོ་རྣམས་བཏུལ།
   answer:
     units:
     - ref: r001
@@ -228,6 +234,15 @@ examples:
       convention: none
       ref_quote: ཨོཾ་པདྨ་རུ་དྷི་ར་ཧཱུྃ
       wit_quote: 唵鉢訥摩嚕地囉吽
+    - ref: r005
+      wit:
+      - z0007
+      relation: transliterated
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: སྲིན་པོ
+      wit_quote: 囉剎
     witness_only:
     - wit:
       - z0001
@@ -238,6 +253,6 @@ examples:
       kind: translator_note
       wit_quote: 二合
     - wit:
-      - z0007
+      - z0008
       kind: addition
       wit_quote: 如是作者，速得成就

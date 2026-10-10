@@ -218,6 +218,25 @@ def test_the_medoid_carries_the_voted_convention() -> None:
     assert link.wit_ids == ("z1",) and link.flags == frozenset(), "NONE voted: the medoid among the NONE readings"
 
 
+def test_a_medoid_that_never_claimed_the_voted_convention_is_unsupported() -> None:
+    """r1 paraphrase without convention, r2 equivalent and r3 substitution with a standing
+    rendering: the class (PRESENT, r1 and r2) and the relation (paraphrase, by priority)
+    come from r1, the convention (r2 and r3) does not, so r1's quotes never claimed it."""
+    PARA = Relation.PARAPHRASE
+    link, grade = run(L(("z1",), relation=PARA), L(("z2",), flags={SR}), L(("z3",), relation=SUB, flags={SR}))
+    assert link.relation is PARA and link.wit_ids == ("z1",)
+    assert link.flags == {SR, FLAG_CONVENTION_UNSUPPORTED} and grade is Grade.C
+    # all three in one class: still a finding, so the grade drops from B to C
+    link, grade = run(L(relation=PARA), L(flags={SR}), L(relation=Relation.EXPANDED, flags={SR}))
+    assert link.relation is PARA and link.flags == {SR, FLAG_CONVENTION_UNSUPPORTED} and grade is Grade.C
+    # a majority reading with the voted relation holds the convention: no finding
+    link, grade = run(L(relation=PARA), L(relation=PARA, flags={SR}), L(relation=Relation.EXPANDED, flags={SR}))
+    assert link.relation is PARA and link.flags == {SR} and grade is Grade.B
+    # NONE voted: nothing to support
+    link, grade = run(L(relation=PARA), L(relation=PARA), L(flags={SR}))
+    assert link.flags == frozenset() and grade is Grade.B
+
+
 def test_the_class_vote_ignores_conventions() -> None:
     link, grade = run(L(flags={SR}), L(relation=SUB), L(relation=SUB, flags={SR}))
     assert link.relation is SUB and grade is Grade.C

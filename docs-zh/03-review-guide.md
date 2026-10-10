@@ -52,7 +52,7 @@
 - 填了惯例的单元，关系码按"名字已被翻译"来填：只差译名或音写的单元，通常是 `equivalent` 或 `paraphrase`。
 - 惯例只免除名字或译名这一处差异。单元里其他内容的缺失、反转或替换照常记录：名字是音写的、同时少了一个短语，就填 `transcribed_name` 加 `abridged`。惯例**永远不会**把缺失、反转或替换变成"等价"。
 - 惯例只能用在有链接的关系上：`no_counterpart`、`lacuna`、`unresolved` 以及仅见于汉文的行不能填惯例。
-- 内容词、说明文字和真言的音写仍是关系码 `transliterated`，不填惯例。类名（ḍākinī "拏吉尼"、yoginī "瑜儗尼" 等）被音写，目前按内容音写处理，即 `transliterated`。
+- 内容词、说明文字和真言的音写仍是关系码 `transliterated`，不填惯例。类名（ḍākinī "拏吉尼"、yoginī "瑜儗尼" 等）被音写，目前按内容音写处理，即 `transliterated`，惯例栏留空：类名不是专名，即使指神祇也一样。collate.v2 提示词对 Claude 写的是同一条规则。
 - 惯例不要写进 `flags` 栏；`convention_unsupported` 是程序的标记，人工不填。
 
 **译名表。** 每张金标准表、盲表和揭示表旁边都有 `standing_renderings.csv`，列出已核实的条目（`entry`、`reference_forms`、`witness_renderings`，多个形式用 ` | ` 分隔）。这份表与提示词里给 Claude 的是同一份；没有已核实条目时只有表头，这时不能填 `standing_rendering`。导入时程序会核对：所链接的汉文段里须有该条目的译名，参照单元里须有同一条目的原词（藏文从音节开头匹配，末音节可带黏着助词）。核对不通过的行会按行号报错，整张表不导入。
@@ -142,7 +142,7 @@ hevajra-matrix review import --task topics --file <表> --annotator 姓名
 
 `data/sentinels/sentinels.yaml` 里状态为 `proposed` 的条目（S1b 十二类名、S2 重排、S7、S8、S9、S10）是设计阶段的新读法。请专家核对原文后，把 `status` 改为 `verified` 并在 `verified_by` 写上真名；只有 `verified` 的哨兵会阻断门控。不同意的改为 `retired` 并在 `source` 里注明理由。
 
-译名表 `data/codebook/collate.v2/standing_renderings.yaml` 的条目也要这样签署：核对计数和原文段落后，把 `status: proposed` 改为 `verified`，在 `verified_by` 写真名。只有 `verified` 的条目才会给 Claude 看、出现在表格旁的 `standing_renderings.csv` 里、被导入时的核对接受。改动译名表就改变了 collate.v2 的提示词，相当于换了测量工具，详见 [`09-collate-v2-draft.md`](09-collate-v2-draft.md) §6。
+译名表 `data/codebook/collate.v2/standing_renderings.yaml` 的条目也要这样签署：核对计数和原文段落后，把 `status: proposed` 改为 `verified`，在 `verified_by` 写真名（非空白的名字；其他状态必须是 `null`）。只有 `verified` 的条目才会给 Claude 看、出现在表格旁的 `standing_renderings.csv` 里、被导入时的核对接受。核实条目，或修改、退役、删除已核实条目，就改变了 collate.v2 的提示词，相当于换了测量工具；改动 `proposed` 条目不改变提示词。详见 [`09-collate-v2-draft.md`](09-collate-v2-draft.md) §6。
 
 ---
 

@@ -94,7 +94,10 @@ is refused.
 
 Status is never stored: it is derived from the relation (`hevajra_matrix.matrix.status`). A
 decided convention (final columns; gold: blind) reaches the matrix as the cell flag of the same
-name, on a grade-A cell; an empty convention adds none.
+name, on a grade-A cell; an empty convention adds none. The sensitivity estimate E1_any_conv
+takes its conventions from the human decisions only (`stats/anyconv.py`): the final convention
+of a phase-2 verify or audit verdict calibrates its stratum, an empty one counting as none and
+reported in `stats/details.json: any_conv`, so record the convention on every such decision.
 
 ## How verdicts are used
 

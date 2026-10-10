@@ -125,7 +125,8 @@ def test_overall_refusal_rate_is_not_labelled_as_a_topic_group() -> None:
                                    "refusal_rate:sensitive": Estimate("refusal_rate:sensitive", 0.02, 0.0, 0.05, 90,
                                                                       "gold:test")}}
     text = render(inputs(scores=scores), gate(1))
-    assert "| refusal rate, all units | 0.010 [0.000, 0.020] |" in text
+    assert "| refusal rate, overall | 0.010 [0.000, 0.020] |" in text
+    assert "all units" not in text
     assert "| refusal rate, topic sensitive | 0.020 [0.000, 0.050] |" in text
     assert "refusal rate, topic  |" not in text
 
