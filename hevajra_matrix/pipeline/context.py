@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ from ..ingest import CONTENT_KINDS
 from ..llm.anthropic_client import AnthropicClient
 from ..llm.audit import AuditedClient
 from ..llm.cache import CachedClient
+from ..llm.claude_code_client import BACKEND as SUBSCRIPTION, ClaudeCodeClient, CliSettings
 from ..llm.client import CacheMiss, LLMClient, LLMRequest, LLMResponse
 from ..registry import Concordance, load_concordance
 from .store import read_segments
@@ -156,6 +158,18 @@ class _NoNetwork:
         raise CacheMiss(f"offline: no network client for task {request.task!r}")
 
 
+API = "api"
+BACKENDS = (API, SUBSCRIPTION)
+
+
+def backend(settings: Settings) -> str:
+    """``config/llm.yaml: backend`` (``api`` unless set; ``--backend`` overrides it)."""
+    name = str(settings.llm.get("backend") or API)
+    if name not in BACKENDS:
+        raise StageError(f"llm.yaml: backend {name!r} is not one of {', '.join(BACKENDS)}")
+    return name
+
+
 def anthropic_client(settings: Settings) -> AnthropicClient:
     """The SDK-backed client configured by ``config/llm.yaml`` (the SDK itself loads lazily)."""
     llm = settings.llm
@@ -163,29 +177,51 @@ def anthropic_client(settings: Settings) -> AnthropicClient:
                            timeout_s=float(llm.get("timeout_s", 900)))
 
 
+def live_client(settings: Settings) -> LLMClient:
+    """The network client of the configured backend: the API SDK, or ``claude -p`` on a
+    Claude subscription (``llm.claude_code_client``)."""
+    if backend(settings) == SUBSCRIPTION:
+        return ClaudeCodeClient(CliSettings.from_config(settings.llm))
+    return anthropic_client(settings)
+
+
+def cache_root(settings: Settings) -> Path:
+    """The response cache of the configured backend. The backends are different instruments,
+    so the subscription backend keeps its answers apart (``<cache>/subscription/``)."""
+    root = settings.path("cache")
+    return root / SUBSCRIPTION if backend(settings) == SUBSCRIPTION else root
+
+
 def audited(ctx: RunContext, inner: LLMClient) -> AuditedClient:
     """``inner`` wrapped in the run's audit log and the configured spending cap.
 
     The cap is checked against the spend ledger ``<paths.cache>/llm_spend.jsonl``, which
-    every run appends to, so starting a new run directory does not reset it.
+    every run appends to, so starting a new run directory does not reset it. On the
+    subscription backend nothing is billed: the audit log still records the API-equivalent
+    cost, in a ledger of its own (``llm_spend.subscription.jsonl``), and the cap is
+    ``subscription.budget_usd_equivalent`` (none when unset).
     """
     llm = ctx.settings.llm
     fallback = llm.get("fallback_pricing_usd_per_mtok")
+    ledger, budget = SPEND_LEDGER, float(llm.get("budget_usd", 0))
+    if backend(ctx.settings) == SUBSCRIPTION:
+        cap = (llm.get("subscription") or {}).get("budget_usd_equivalent")
+        ledger, budget = f"llm_spend.{SUBSCRIPTION}.jsonl", float(cap) if cap is not None else float("inf")
     return AuditedClient(inner, ctx.path(AUDIT_LOG), pricing=dict(llm.get("pricing_usd_per_mtok") or {}),
-                         budget_usd=float(llm.get("budget_usd", 0)), run_id=ctx.run_dir.name,
-                         ledger_path=ctx.settings.path("cache") / SPEND_LEDGER,
+                         budget_usd=budget, run_id=ctx.run_dir.name,
+                         ledger_path=ctx.settings.path("cache") / ledger,
                          fallback_pricing=dict(fallback) if fallback else None)
 
 
 def make_client(ctx: RunContext) -> AuditedClient:
-    """``AuditedClient(CachedClient(AnthropicClient(...)))`` from ``config/llm.yaml``.
+    """``AuditedClient(CachedClient(<backend client>))`` from ``config/llm.yaml``.
 
-    The cache lives at ``run.yaml: paths.cache`` and is shared by all runs; the audit log
-    is ``<run_dir>/llm_audit.jsonl``. Offline, the cache raises ``CacheMiss`` for anything
-    not stored and no Anthropic client is constructed at all.
+    The cache lives at ``run.yaml: paths.cache`` (``cache_root``) and is shared by all
+    runs; the audit log is ``<run_dir>/llm_audit.jsonl``. Offline, the cache raises
+    ``CacheMiss`` for anything not stored and no network client is constructed at all.
     """
-    inner: LLMClient = _NoNetwork() if ctx.offline else anthropic_client(ctx.settings)
-    return audited(ctx, CachedClient(inner, ctx.settings.path("cache"), offline=ctx.offline))
+    inner: LLMClient = _NoNetwork() if ctx.offline else live_client(ctx.settings)
+    return audited(ctx, CachedClient(inner, cache_root(ctx.settings), offline=ctx.offline))
 
 
 CREDENTIAL_VARIABLES = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")   # what the SDK reads from the environment
@@ -195,6 +231,22 @@ def has_api_key() -> bool:
     """Whether live calls have credentials: an API key or a bearer auth token (the SDK takes
     either). Other SDK sources (profiles, workload identity) are not detected here."""
     return any(os.environ.get(name) for name in CREDENTIAL_VARIABLES)
+
+
+def has_credentials(settings: Settings) -> bool:
+    """Whether live calls can be attempted on the configured backend: an API key, or, on
+    the subscription backend, the ``claude`` command on PATH (its login is only proven by
+    ``claude-check``)."""
+    if backend(settings) == SUBSCRIPTION:
+        return shutil.which(CliSettings.from_config(settings.llm).command) is not None
+    return has_api_key()
+
+
+def credentials_hint(settings: Settings) -> str:
+    """What to set up for live calls on the configured backend (for error messages)."""
+    if backend(settings) == SUBSCRIPTION:
+        return "the `claude` command (Claude Code, logged in with the subscription)"
+    return "ANTHROPIC_API_KEY"
 
 
 def audit_summary(log_path: Path) -> dict[str, Any]:
@@ -229,7 +281,8 @@ def record_stage(ctx: RunContext, stage: str, inputs: Mapping[str, Path] | None 
     present = {label: p for label, p in known.items() if p.is_file()}
     stages = [*[s for s in old.get("stages") or [] if s != stage], stage]
     extra = {"run_id": ctx.run_dir.name, "offline": ctx.offline, "stages": stages,
-             "instrument_digests": instrument_digests(ctx.settings), "llm": audit_summary(ctx.path(AUDIT_LOG))}
+             "instrument_digests": instrument_digests(ctx.settings), "llm_backend": backend(ctx.settings),
+             "llm": audit_summary(ctx.path(AUDIT_LOG))}
     return write_manifest(ctx.run_dir, ctx.settings, present, extra)
 
 

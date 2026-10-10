@@ -21,7 +21,7 @@ from typing import Any
 
 from ..core.io import read_csv, read_jsonl, write_jsonl
 from ..experiments.overattribution import analysis, design, lexical, run, score
-from .context import RunContext, StageError, has_api_key, load_texts, make_client, record_stage, require
+from .context import RunContext, StageError, credentials_hint, has_credentials, load_texts, make_client, record_stage, require
 
 EXPERIMENT = ("experiments", "overattribution")
 
@@ -61,8 +61,8 @@ def experiment_plan(ctx: RunContext, phase: str = "main") -> int:
 
 def experiment_run(ctx: RunContext, phase: str = "main") -> int:
     """Run every trial of the schedule (subject, then scorer; a seeded 20% scored twice)."""
-    if not ctx.offline and not has_api_key():
-        raise StageError("experiment run needs ANTHROPIC_API_KEY, or --offline with a filled cache")
+    if not ctx.offline and not has_credentials(ctx.settings):
+        raise StageError(f"experiment run needs {credentials_hint(ctx.settings)}, or --offline with a filled cache")
     texts = load_texts(ctx)
     schedule = _schedule(ctx, phase)
     llm = ctx.settings.llm

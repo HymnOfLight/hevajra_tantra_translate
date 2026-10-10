@@ -28,7 +28,7 @@ from ..topics import (
     write_labels,
 )
 from . import human_data as ann
-from .context import RunContext, StageError, Texts, has_api_key, load_texts, make_client, record_stage, require
+from .context import RunContext, StageError, Texts, credentials_hint, has_credentials, load_texts, make_client, record_stage, require
 from .instrument import collate_digest, read_consensus, read_replicates
 from .measure import read_built_cells
 
@@ -43,8 +43,8 @@ RESOLVE_SUFFIX = "_resolve"
 def topics_prelabel(ctx: RunContext) -> dict[str, int]:
     """T3 pre-labels of every reference unit (reference text only), as reviewer hints."""
     texts = load_texts(ctx)
-    if not ctx.offline and not has_api_key():
-        raise StageError("topics prelabel needs ANTHROPIC_API_KEY, or --offline with a filled cache")
+    if not ctx.offline and not has_credentials(ctx.settings):
+        raise StageError(f"topics prelabel needs {credentials_hint(ctx.settings)}, or --offline with a filled cache")
     settings = TopicTaskSettings.from_config(ctx.settings.llm)
     batches = plan_batches(list(texts.units), settings.units_per_call)
     codebook = ann.codebook(ctx)

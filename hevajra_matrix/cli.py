@@ -2,14 +2,16 @@
 
 Every command takes ``--root`` (default: the directory above the current one that holds
 ``config/run.yaml``), ``--run-dir`` (default: a new run directory for ``ingest``, ``run``
-and ``claude-check``, otherwise the latest one under ``runs/``) and ``--offline`` (answer
-LLM calls from the response cache only). Exit status: 0 success, 1 a check failed,
+and ``claude-check``, otherwise the latest one under ``runs/``), ``--offline`` (answer
+LLM calls from the response cache only) and ``--backend`` (``api`` or ``subscription``;
+overrides ``config/llm.yaml: backend``). Exit status: 0 success, 1 a check failed,
 2 a stage could not run (the message says why and what to run first).
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 from pathlib import Path
 from typing import Callable, Sequence
@@ -46,6 +48,9 @@ def _common() -> argparse.ArgumentParser:
                    help="run directory to use (default: new for ingest/run, else the latest)")
     p.add_argument("--offline", action="store_true", default=argparse.SUPPRESS,
                    help="answer LLM calls from the response cache only; never call the API")
+    p.add_argument("--backend", choices=("api", "subscription"), default=argparse.SUPPRESS,
+                   help="LLM backend: the API with ANTHROPIC_API_KEY, or `claude -p` on a Claude subscription "
+                        "(default: config/llm.yaml backend)")
     p.add_argument("--witness", default=argparse.SUPPRESS,
                    help="aligned witness to work on (default: every aligned witness for baselines, collate, "
                         "build, perturb, evaluate, stats and report; the target for the other commands)")
@@ -245,6 +250,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         root = getattr(args, "root", None)
         settings = load_settings(Path(root).resolve() if root else find_root())
+        if getattr(args, "backend", None):
+            settings = dataclasses.replace(settings, llm={**settings.llm, "backend": args.backend})
         return _dispatch(args, settings)
     except USER_ERRORS as exc:
         print(f"hevajra-matrix {args.command}: {type(exc).__name__}: {exc}", file=sys.stderr)

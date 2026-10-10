@@ -49,7 +49,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterator
 
-from .context import RunContext, StageError, has_api_key, latest_run_dir, make_client, new_run_dir
+from .context import RunContext, StageError, credentials_hint, has_credentials, latest_run_dir, make_client, new_run_dir
 from .experiment import experiment_plan, experiment_run, experiment_score
 from .instrument import CONSENSUS_FILE, claude_check, collate, components_stage, perturb, plan_collation
 from .measure import build, evaluate, test_scoring_refused
@@ -82,7 +82,7 @@ def run(ctx: RunContext, raw_dir: Path | None = None, gold_set: str = "test") ->
     Sanskrit reference is present), stage by stage, so that ``stats`` of one witness finds
     the matrix of the other (its co-witness in E3).
 
-    Collate is skipped (with a message) when there is no API key and the run is not
+    Collate is skipped (with a message) when the backend has no credentials and the run is not
     offline; build and stats need a collation and are skipped without one. Evaluate and
     report always run, so a run without Claude still yields the baseline scores and a
     level-0 report. Before ``prereg freeze`` the consensus is never scored on test gold:
@@ -91,11 +91,12 @@ def run(ctx: RunContext, raw_dir: Path | None = None, gold_set: str = "test") ->
     ingest(ctx, raw_dir)
     for one in witness_contexts(ctx):
         baselines(one)
-    if ctx.offline or has_api_key():
+    if ctx.offline or has_credentials(ctx.settings):
         for one in witness_contexts(ctx):
             collate(one)
     else:
-        print("collate: skipped (no ANTHROPIC_API_KEY and not --offline); the report shows the controls only")
+        print(f"collate: skipped (no {credentials_hint(ctx.settings)} and not --offline); "
+              "the report shows the controls only")
     for one in witness_contexts(ctx):
         if one.path("collation", "replicates.json").is_file():
             build(one)

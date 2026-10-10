@@ -30,15 +30,22 @@ from ..core.io import write_csv, write_jsonl
 from ..core.types import Alignment, Relation
 from ..llm.cache import CachedClient
 from ..llm.check import build_check_request, run_check
+from ..llm.claude_code_client import ClaudeCodeClient
 from ..llm.client import CacheMiss, LLMError, LLMRequest
 from ..ingest import CONTENT_KINDS
 from .context import (
     RunContext,
     StageError,
+    API,
     Texts,
     anthropic_client,
     audited,
+    backend,
+    cache_root,
+    credentials_hint,
     has_api_key,
+    has_credentials,
+    live_client,
     load_texts,
     make_client,
     parse_chapters,
@@ -134,8 +141,8 @@ def collate(ctx: RunContext, chapters: str | None = None, replicates: int | None
         raise StageError("no window to collate")
     if dry_run:
         return dry_run_cost(ctx, cplan)
-    if not ctx.offline and not has_api_key():
-        raise StageError("collate needs ANTHROPIC_API_KEY, or --offline to replay the response cache "
+    if not ctx.offline and not has_credentials(ctx.settings):
+        raise StageError(f"collate needs {credentials_hint(ctx.settings)}, or --offline to replay the response cache "
                          f"({ctx.settings.path('cache')})")
     client = make_client(ctx)
     workers = int(ctx.settings.llm.get("workers", 1))
@@ -212,12 +219,13 @@ def project_cost(requests: Sequence[LLMRequest], pricing: Mapping[str, float], c
 
 def dry_run_cost(ctx: RunContext, cplan: CollationPlan) -> dict[str, Any]:
     """Project the cost of ``cplan``; nothing is sent. Token counts come from the API's
-    free ``count_tokens`` when a key is present (and not offline), else ``estimate_tokens``."""
+    free ``count_tokens`` on the API backend when a key is present (and not offline), else
+    ``estimate_tokens``. On the subscription backend the figure is the API-equivalent."""
     requests = [r for _, _, r in cplan.requests()]
     llm = ctx.settings.llm
-    cache = CachedClient(None, ctx.settings.path("cache"), offline=True)   # type: ignore[arg-type]  # lookups only
+    cache = CachedClient(None, cache_root(ctx.settings), offline=True)   # type: ignore[arg-type]  # lookups only
     method, count = "heuristic", lambda r: estimate_tokens((r.system or "") + (r.context or "") + r.body)
-    if has_api_key() and not ctx.offline:
+    if backend(ctx.settings) == API and has_api_key() and not ctx.offline:
         client = anthropic_client(ctx.settings)
         try:
             client.count_tokens(requests[0])
@@ -225,15 +233,18 @@ def dry_run_cost(ctx: RunContext, cplan: CollationPlan) -> dict[str, Any]:
         except LLMError as exc:
             print(f"collate --dry-run: count_tokens failed ({exc}); using the character heuristic")
     result = project_cost(requests, dict(llm.get("pricing_usd_per_mtok") or {}), count, cache.is_cached)
+    subscription = backend(ctx.settings) != API
     result.update({"token_count_method": method, "windows": len(cplan.windows), "replicates": len(cplan.tags),
-                   "budget_usd": llm.get("budget_usd")})
+                   "budget_usd": None if subscription else llm.get("budget_usd"), "backend": backend(ctx.settings)})
     path = ctx.path("collation", "dry_run.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(f"collate --dry-run: {result['calls']} calls ({result['cached_calls']} cached), "
           f"{result['input_tokens']} input tokens ({method}), assumed {result['assumed_output_tokens_per_call']} "
-          f"output tokens per call -> projected ${result['projected_usd']} (budget ${llm.get('budget_usd')}); "
-          "nothing was sent")
+          f"output tokens per call -> projected ${result['projected_usd']} "
+          + ("(API-equivalent; the subscription bills nothing but uses its allowance); " if subscription
+             else f"(budget ${llm.get('budget_usd')}); ")
+          + "nothing was sent")
     return result
 
 
@@ -273,8 +284,8 @@ def perturb(ctx: RunContext, fraction: float = 0.05, seed: int | None = None,
     lexicon = CheckLexicon.load(ctx.data_dir, texts.witness)
     negated = negation_windows(ctx, texts, base.windows, lexicon) if negation else []
     windows = [w for w, _ in wrong] + [w for w, _ in deleted] + [w for w, _ in negated]
-    if not ctx.offline and not has_api_key():
-        raise StageError("perturb needs ANTHROPIC_API_KEY, or --offline with a filled cache")
+    if not ctx.offline and not has_credentials(ctx.settings):
+        raise StageError(f"perturb needs {credentials_hint(ctx.settings)}, or --offline with a filled cache")
     parsed = collator.collate(windows, make_client(ctx), base.settings, ("r1",), base.examples, base.template,
                               workers=int(ctx.settings.llm.get("workers", 1)))["r1"]
     results = [verify(p, w, lexicon, collator.source_name(base.settings.model, "perturb"))
@@ -338,8 +349,8 @@ def components_stage(ctx: RunContext, sample_fraction: float = components.DEFAUL
     seed = int((ctx.settings.prereg.get("stats") or {}).get("seed", 0))
     pairs = components.select_pairs(consensus, topics, random.Random(seed), ref_kinds=texts.ref_kinds,
                                     sample_fraction=sample_fraction)
-    if not ctx.offline and not has_api_key():
-        raise StageError("components needs ANTHROPIC_API_KEY, or --offline with a filled cache")
+    if not ctx.offline and not has_credentials(ctx.settings):
+        raise StageError(f"components needs {credentials_hint(ctx.settings)}, or --offline with a filled cache")
     settings = components.ComponentTaskSettings.from_config(ctx.settings.llm)
     segments = {s.id: s for s in (*texts.reference, *texts.witness)}
     codes, diagnostics = components.code_components(
@@ -362,13 +373,16 @@ def claude_check(ctx: RunContext) -> dict[str, Any]:
     """One tiny live call (never cached): key, model and response path work."""
     if ctx.offline:
         raise StageError("claude-check is a live check; it cannot run --offline")
-    if not has_api_key():
-        raise StageError("claude-check needs ANTHROPIC_API_KEY")
+    if not has_credentials(ctx.settings):
+        raise StageError(f"claude-check needs {credentials_hint(ctx.settings)}")
     llm = ctx.settings.llm
     task = (llm.get("tasks") or {}).get("check") or {}
     request = build_check_request(model=str(llm.get("model")), effort=task.get("effort", "low"),
                                   max_tokens=int(task.get("max_tokens", 1024)))
-    summary = run_check(audited(ctx, anthropic_client(ctx.settings)), request)
+    client = live_client(ctx.settings)
+    summary = {**run_check(audited(ctx, client), request), "backend": backend(ctx.settings)}
+    if isinstance(client, ClaudeCodeClient):
+        summary["claude_code_version"] = client.version()
     ctx.path("claude_check.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=1, sort_keys=True))
     return summary

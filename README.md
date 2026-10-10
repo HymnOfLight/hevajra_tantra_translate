@@ -42,7 +42,10 @@ HEVAJRA_RAW_DIR=data/raw pytest    # plus real-data checks
 ```
 
 With an API key (`ANTHROPIC_API_KEY`), start with `hevajra-matrix claude-check`, then
-`hevajra-matrix collate --dry-run` to project the cost before any real collation.
+`hevajra-matrix collate --dry-run` to project the cost before any real collation. With a
+Claude Max/Pro plan instead, add `--backend subscription` (Claude Code's `claude -p`, see
+`docs/llm-tasks.md`). `tools/server_check.sh` runs both checks on a server and packs the
+text-free results.
 
 ## Licence boundary
 

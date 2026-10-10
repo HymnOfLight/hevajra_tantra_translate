@@ -68,7 +68,7 @@
 |---|---|
 | 相对 `main` | 282 个文件变动，+39,590 / −5,606 行 |
 | 软件包 | `hevajra_matrix` 约 18,000 行，95 个模块，全英文 |
-| 单元测试 | 2,097 个通过，37 个跳过 |
+| 单元测试 | 2,121 个通过 |
 | 真实数据集成测试 | 36 个通过 |
 
 **分支状态**：
@@ -149,7 +149,7 @@ v0.2 的思路是"见证矩阵"：
 | 文档 | 中文，混在 `docs/` 中 | 英文开发文档在 `docs/`，中文用户文档**只**放在 `docs-zh/`；由测试强制 |
 | 数据目录 | 散放 | `data/` 下分 registry / lexicon / codebook / sentinels / annotations / ledger / experiments / fixtures / raw / reference |
 | 配置 | 散在代码中 | `config/run.yaml`、`llm.yaml`、`preregistration.yaml` |
-| 测试 | 43 个 | 2,097 个单元测试＋36 个真实数据集成测试＋实时 API 测试（需密钥） |
+| 测试 | 43 个 | 2,121 个单元测试＋36 个真实数据集成测试＋实时 API 测试（需密钥） |
 
 ### 2.1 删除了什么
 
@@ -276,6 +276,13 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 - 代码通过响应中的 `model` 字段与 `usage.iterations` 检测是否发生了替换。
 - 被替换的响应标记为 `substituted_model`，单元记为 `UNALIGNED(substituted_model)`。替代模型的草案只作为复核表中的提示（明确标明"FROM ANOTHER MODEL"），**永不进入测量统计**。
 - G2 门控要求构成共识的对勘请求 100% 由所请求的模型产出。
+
+**两种后端**：
+
+- `api`（默认）：官方 SDK＋API 密钥，按上述方式调用。
+- `subscription`：通过 Claude Code 的 `claude -p` 调用，用 Claude Max/Pro 包月额度，不另外计费。代码会替换 Claude Code 的系统提示、关闭工具与本地设置，并用 JSON schema 约束输出；实际服务的模型从返回的用量中读取。
+- 两者是不同的测量工具：后端写进工具指纹，缓存分开存放，一项研究应当只用一种。
+- 用法：命令后加 `--backend subscription`，或修改 `config/llm.yaml: backend`。服务器上的操作步骤见 [`07-server-runbook.md`](07-server-runbook.md)。
 
 **费用控制**：
 
@@ -744,6 +751,7 @@ hevajra-matrix experiment overattribution score
 | `components` | T2 组件编码 | 是 |
 | `experiment overattribution plan / run / score [--phase]` | 过度归因实验 | run、score 调用 |
 | `claude-check` | 一次极小的调用，打印实际服务的模型与用量 | 是 |
+| 全局选项 `--backend api\|subscription` | 选择调用方式：API 密钥，或 Claude 包月订阅（`claude -p`） | — |
 | `prereg freeze [--amend]` | 冻结或修订预注册 | 否 |
 | `run` | 依次跑 ingest → baselines → collate → build → evaluate → stats → report，能跑多远跑多远；没有密钥且不是 `--offline` 时跳过 collate，build 与 stats 随之跳过 | 有密钥时调用 |
 
@@ -772,6 +780,7 @@ data/                     全部数据（可多语种）
   fixtures/               测试用的小样本
   raw/                    原文（不入库）
   reference/              梵文参照与写本异读（不入库，只有 README）
+tools/server_check.sh     在服务器上跑连通检查与费用估算并打包结果
 docs/                     英文开发文档：architecture、data-formats、llm-tasks、contributing
 docs-zh/                  中文用户文档（本目录，仓库里唯一的中文文档区）
   reference/              代码审查原文
@@ -798,7 +807,7 @@ docs-zh/                  中文用户文档（本目录，仓库里唯一的中
 | `ingest/` | CBETA、德格、梵文读取器，夹注分类 |
 | `registry.py` | 见证清单与概表 |
 | `align/` | 动态规划、相似度、锚点、洗牌对照、外部导入 |
-| `llm/` | `LLMClient` 协议、schema、SDK 适配、假客户端、响应缓存、审计与预算、`claude-check` |
+| `llm/` | `LLMClient` 协议、schema、SDK 适配、订阅后端（`claude -p`）、假客户端、响应缓存、审计与预算、`claude-check` |
 | `collate/` | 窗口规划、对勘请求、V1–V11 核验、块合并、共识、扰动、组件层 |
 | `topics/` | 码本、标签、预标 |
 | `matrix/` | 关系 → 状态、单元格构建、导出 |
@@ -832,7 +841,7 @@ docs-zh/                  中文用户文档（本目录，仓库里唯一的中
 
 | 测试 | 结果 |
 |---|---|
-| 单元测试 | 2,097 个通过，37 个跳过（跳过的需要原文或密钥）；约 82 秒 |
+| 单元测试 | 2,121 个通过；约 100 秒 |
 | 真实数据集成测试 | 36 个通过；约 2 分钟 |
 | 实时 API 测试 | 未运行（容器中没有密钥） |
 
@@ -880,7 +889,7 @@ docs-zh/                  中文用户文档（本目录，仓库里唯一的中
 
 **马上可以做的**（按顺序）：
 
-1. **API 密钥**：设置 `ANTHROPIC_API_KEY`，运行 `pip install -e '.[claude]'` 后执行 `hevajra-matrix claude-check`，确认实际服务的模型。然后用 `collate --dry-run` 估算费用（3 次重复约 $65）。密钥只放在环境变量里，永不写入文件。
+1. **Claude 访问**：在服务器上运行 `bash tools/server_check.sh subscription`（用包月订阅）或 `... api`（用 API 密钥），完成连通检查与费用估算（3 次重复约 105 次调用，按 API 价格折算约 $65），把生成的结果包发回。步骤见 [`07-server-runbook.md`](07-server-runbook.md)。密钥与登录令牌只放在环境变量里，永不写入文件。
 2. **开发集盲标**（约 18 小时）：先在开发集上看基线的表现，再用 Claude 调提示词与 effort。
 3. **抽测试窗并盲标**（约 15 小时），并请第二标注者标 4 窗（约 5 小时）。
 4. **哨兵签署**：`proposed` 的条目由专家核对后改为 `verified` 并署真名。
@@ -950,6 +959,7 @@ hevajra-matrix collate --dry-run
 | [`04-claude-usage.md`](04-claude-usage.md) | 密钥、费用、缓存、离线重放、拒绝处理 |
 | [`05-overattribution-experiment.md`](05-overattribution-experiment.md) | 实验操作 |
 | [`06-outputs-glossary.md`](06-outputs-glossary.md) | 输出文件与中英术语对照 |
+| [`07-server-runbook.md`](07-server-runbook.md) | 服务器运行说明：连通检查、费用估算、回传结果 |
 | [`reference/2026-09-30-code-review.md`](reference/2026-09-30-code-review.md) | 本次改版所依据的代码审查 |
 | `archive/` | v0.2 的设计文档 |
 | `../docs/`（英文） | 架构（含 26 项缺陷对照表）、数据格式、LLM 任务、贡献指南 |

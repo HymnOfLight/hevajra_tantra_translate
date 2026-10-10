@@ -1,6 +1,13 @@
 # Claude Opus 5.5 使用说明
 
-本仓库通过 Anthropic 官方 Python SDK 调用 `claude-opus-5-5`。技术细节见英文文档 [`docs/llm-tasks.md`](../docs/llm-tasks.md)。
+本仓库调用 `claude-opus-5-5` 有两种方式（"后端"），技术细节见英文文档 [`docs/llm-tasks.md`](../docs/llm-tasks.md)：
+
+- `api`（默认）：通过 Anthropic 官方 Python SDK 调用，用 `ANTHROPIC_API_KEY` 计费（Console 预付额度）。
+- `subscription`：通过 Claude Code 的 `claude -p` 调用，用 Claude Max/Pro 包月套餐的用量额度，不另外收费。在命令后加 `--backend subscription`，或把 `config/llm.yaml` 中的 `backend` 改为 `subscription`。
+
+两种后端是不同的测量工具（工具指纹不同、缓存分开），一项研究应当自始至终只用一种。在服务器上跑连通检查与费用估算的完整步骤见 [`07-server-runbook.md`](07-server-runbook.md)。
+
+以下第 1、2 节以 `api` 后端为例；用订阅后端时，把密钥一步换成 Claude Code 登录，并在命令后加 `--backend subscription`。
 
 ---
 

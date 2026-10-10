@@ -3,6 +3,11 @@
 # temperature here; reproducibility comes from the response cache and replicates.
 
 model: claude-opus-5-5
+# backend: api           = the Anthropic API with ANTHROPIC_API_KEY (prepaid Console credits)
+#          subscription  = Claude Code in print mode (`claude -p`) on a Claude Max/Pro login;
+#                          a different instrument (own digests, own cache directory), see
+#                          docs/llm-tasks.md. The CLI option --backend overrides this.
+backend: api
 max_retries: 4                         # SDK retries on 408/409/429/5xx and connection errors
 timeout_s: 900
 workers: 4                             # thread pool size for independent requests
@@ -23,3 +28,11 @@ tasks:
   subject:    {effort: medium, max_tokens: 16000, replicates: 3, fallback: false}
   scorer:     {effort: high,   max_tokens: 8000,  replicates: 1, fallback: false, double_score_fraction: 0.2}
   check:      {effort: low,    max_tokens: 1024,  replicates: 1, fallback: false}
+
+# Settings of the subscription backend (ignored on the API backend).
+subscription:
+  command: claude                      # the Claude Code executable
+  max_turns: 3                         # the structured answer may need a turn of its own
+  max_retries: 2                       # transport failures only; a usage limit stops the stage
+  tools: ""                            # --tools value; "" = no built-in tools (part of the instrument)
+  budget_usd_equivalent: null          # optional cap on the API-equivalent cost (nothing is billed)

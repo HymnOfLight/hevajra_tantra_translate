@@ -58,16 +58,25 @@ def _params_sha(*parts: Any) -> str:
     return sha256_text(canonical_json([asdict(p) if hasattr(p, "__dataclass_fields__") else p for p in parts]))
 
 
-def _instrument(task: str, model: str, effort: str, system: str, schema: Any, params: tuple[Any, ...],
-                replicates: int) -> InstrumentId:
-    return InstrumentId(model=model, task=task, effort=effort, prompt_sha=sha256_text(system),
-                        schema_sha=sha256_text(canonical_json(schema)), code_version=__version__,
-                        params_sha=_params_sha(*params), replicates=replicates)
-
-
 def instruments(settings: Settings) -> dict[str, InstrumentId]:
-    """The current ``InstrumentId`` of every LLM task, from code, prompts, data and config."""
+    """The current ``InstrumentId`` of every LLM task, from code, prompts, data and config.
+
+    The LLM backend is part of the instrument: on the subscription backend (``claude -p``)
+    it enters every ``params_sha``, so its digests differ from the API backend's (whose
+    digests carry no backend entry and so stay as they were before backends existed).
+    """
     llm, data = settings.llm, settings.path("data")
+    name = str(llm.get("backend") or "api")
+    sub = dict(llm.get("subscription") or {})
+    backend_part: tuple[Any, ...] = () if name == "api" else (
+        {"llm_backend": name, "tools": str(sub.get("tools") or ""), "max_turns": int(sub.get("max_turns", 3))},)
+
+    def _instrument(task: str, model: str, effort: str, system: str, schema: Any, params: tuple[Any, ...],
+                    replicates: int) -> InstrumentId:
+        return InstrumentId(model=model, task=task, effort=effort, prompt_sha=sha256_text(system),
+                            schema_sha=sha256_text(canonical_json(schema)), code_version=__version__,
+                            params_sha=_params_sha(*params, *backend_part), replicates=replicates)
+
     reference = str(settings.run["witnesses"]["reference"])
     ref_lang = load_witnesses(data / "registry" / "witnesses.yaml")[reference].lang
 

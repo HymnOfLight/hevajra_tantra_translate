@@ -19,10 +19,32 @@ Claude has two different roles here and they are kept apart:
 ### Composition
 
 ```
-AuditedClient(CachedClient(AnthropicClient(...)))     production   (pipeline.context.make_client)
-AuditedClient(CachedClient(<never reached>, offline=True))   --offline: cache only, no SDK client
+AuditedClient(CachedClient(AnthropicClient(...)))     backend api (default)   (pipeline.context.make_client)
+AuditedClient(CachedClient(ClaudeCodeClient(...)))    backend subscription
+AuditedClient(CachedClient(<never reached>, offline=True))   --offline: cache only, no network client
 AuditedClient(CachedClient(FakeClient(script)))       tests
 ```
+
+### Backends (`config/llm.yaml: backend`, CLI `--backend`)
+
+| | `api` (default) | `subscription` |
+|---|---|---|
+| Client | `llm/anthropic_client.py`, official SDK | `llm/claude_code_client.py`, one `claude -p` process per request |
+| Credentials | `ANTHROPIC_API_KEY` (prepaid Console credits) | the Claude Code login of a Claude Max/Pro plan (`/login`, or `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`); API credentials are removed from the child's environment |
+| Request | system and context blocks with cache breakpoints; `output_config` with effort and a strict JSON schema (constrained decoding) | `--system-prompt-file` (instructions, then the context; Claude Code caches the system prompt), body on stdin, `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--json-schema` (validate and re-prompt), `--model`, `--effort`, `--max-turns`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`; run in an empty temporary directory |
+| Fallback | server-side fallback per task (`fallbacks="default"`) | none requested; any output from another model in `modelUsage` marks the response `fallback_used` |
+| Refusal | `stop_reason == "refusal"` with a category | `stop_reason == "refusal"` or `safety_stops > 0` (no category) |
+| Cache | `<cache>/<model>/...` | `<cache>/subscription/<model>/...` |
+| Budget | `budget_usd` against `<cache>/llm_spend.jsonl` | nothing is billed; the API-equivalent cost goes to `llm_spend.subscription.jsonl`, capped only by `subscription.budget_usd_equivalent` |
+| Run failures | SDK errors after retries | `is_error` or an error subtype raises `LLMTransportError` (retried); an exhausted allowance raises `UsageLimitReached` (not retried; rerun after the reset, finished calls come from the cache) |
+| Dry-run tokens | free `count_tokens` with a key | character heuristic |
+
+The two backends are different instruments: Claude Code wraps the request and enforces the
+schema differently. The backend (with `subscription.tools` and `max_turns`) therefore enters
+every instrument digest, so gate G2 and the preregistration tell them apart, and a study must
+keep one backend from development gold to the final report. Anthropic's terms allow the
+subscription login for the purchaser's own individual use only; a shared server should use
+the API backend, or the login of the person who runs it.
 
 Every task builds a frozen `LLMRequest` (`llm/client.py`) with pure code and receives an
 `LLMResponse`. No task module touches the SDK. `anthropic` is imported lazily inside
@@ -349,8 +371,11 @@ only. Results are specific to the requested model at the campaign date.
 ### claude-check
 
 `hevajra-matrix claude-check` sends one tiny request (one-field strict schema, effort low,
-no fallback) straight to the SDK client through the audit log but not the cache, and writes
-`claude_check.json`. It passes only for `{"ok": true}` served by the requested model. Run it
+no fallback) straight to the backend's client through the audit log but not the cache, and writes
+`claude_check.json` (with the backend and, on the subscription backend, `claude --version`).
+`tools/server_check.sh [api|subscription] [--pilot]` runs fetch, ingest, `claude-check` and
+`collate --dry-run` in one run directory on a machine with Claude access and packs the
+text-free results (check summary, projection, audit log, manifest, G0) into one archive. It passes only for `{"ok": true}` served by the requested model. Run it
 first with a new key; it is refused with `--offline`.
 
 ## 3. Cost

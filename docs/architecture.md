@@ -131,6 +131,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `llm/schema.py` | strict JSON schemas without a jsonschema dependency | `strict`, `for_api`, `validate` |
 | `llm/fake.py` | deterministic client and response builders for tests | `FakeClient`, `ok_response`, `refusal_response`, `truncated_response`, `invalid_response`, `substituted_response` |
 | `llm/check.py` | `claude-check` | `build_check_request`, `run_check` |
+| `llm/claude_code_client.py` | the subscription backend: `claude -p` per request | `ClaudeCodeClient.complete / version`, pure `build_argv`, `child_env`, `system_text`, `to_response`, `served_model` |
 
 ### Collation (`collate/`): T1 and T2
 
