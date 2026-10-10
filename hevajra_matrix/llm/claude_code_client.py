@@ -9,7 +9,7 @@ Everything except ``ClaudeCodeClient.complete`` is pure and unit-tested without 
 
     system_text(request)                       system prompt file content (system + context)
     build_argv(request, settings, path)        the ``claude`` command line
-    child_env(request, base)                   the environment of the child process
+    child_env(request, base, config_dir)       the environment of the child process
     to_response(result, request, key, now)     the CLI's JSON result -> ``LLMResponse``
 
 How the call is pinned down (so that it is a single-turn, tool-free, structured request):
@@ -29,9 +29,14 @@ How the call is pinned down (so that it is a single-turn, tool-free, structured 
     --max-turns            a small cap, because the structured answer may take a turn
     CLAUDE_CODE_MAX_OUTPUT_TOKENS   ``request.max_tokens``
 
-``ANTHROPIC_API_KEY`` and ``ANTHROPIC_AUTH_TOKEN`` are removed from the child's
-environment, so the CLI uses its subscription login (``claude`` then ``/login``, or
-``CLAUDE_CODE_OAUTH_TOKEN`` from ``claude setup-token``) and never bills an API key.
+The child gets an allowlisted environment (``PASSED_ENV``: path, locale, proxy and CA
+settings, and the subscription login), never the parent's other variables. So
+``ANTHROPIC_API_KEY`` cannot bill the call, and when this runs inside another Claude Code
+session (a cloud sandbox) the child inherits none of that session's endpoint, tokens or
+markers. The CLI uses its subscription login: ``CLAUDE_CODE_OAUTH_TOKEN`` (from
+``claude setup-token``), or the login stored under ``HOME`` (``claude`` then ``/login``).
+With the token, the child also gets a fresh ``CLAUDE_CONFIG_DIR`` in its scratch
+directory, so no configuration of the host account is read.
 
 Differences from the API backend, all recorded rather than hidden:
     * The instrument is different (Claude Code wraps the request and enforces the schema by
@@ -59,7 +64,13 @@ from . import schema as schema_mod
 from .client import ConfigurationError, LLMRequest, LLMResponse, LLMTransportError, Usage, canonical_json
 
 BACKEND = "subscription"
-STRIPPED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+OAUTH_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
+PASSED_ENV = (
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TZ", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE",
+    "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE",
+    OAUTH_TOKEN, "CLAUDE_CONFIG_DIR",
+)
 FIXED_ENV = {
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",     # no memory files read or written
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false",     # no claude.ai connectors
@@ -122,9 +133,15 @@ def build_argv(request: LLMRequest, settings: CliSettings, system_file: Path) ->
     ]
 
 
-def child_env(request: LLMRequest, base: Mapping[str, str]) -> dict[str, str]:
-    """``base`` without API credentials, plus the fixed variables and the output cap."""
-    env = {k: v for k, v in base.items() if k not in STRIPPED_ENV}
+def child_env(request: LLMRequest, base: Mapping[str, str], config_dir: Path | None = None) -> dict[str, str]:
+    """The allowlisted part of ``base``, plus the fixed variables and the output cap.
+
+    With ``CLAUDE_CODE_OAUTH_TOKEN`` and no ``CLAUDE_CONFIG_DIR`` of its own, the child's
+    configuration directory is ``config_dir`` (a fresh one per call).
+    """
+    env = {k: v for k, v in base.items() if k in PASSED_ENV}
+    if env.get(OAUTH_TOKEN) and "CLAUDE_CONFIG_DIR" not in env and config_dir is not None:
+        env["CLAUDE_CONFIG_DIR"] = str(config_dir)
     env.update(FIXED_ENV)
     env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(request.max_tokens)
     return env
@@ -228,8 +245,9 @@ class ClaudeCodeClient:
     def version(self) -> str:
         """``claude --version`` (recorded by ``claude-check``), or the error text."""
         try:
-            code, stdout, stderr = self.runner([self.settings.command, "--version"], "", dict(
-                os.environ if self.environ is None else self.environ), Path.cwd(), 60.0)
+            code, stdout, stderr = self.runner([self.settings.command, "--version"], "", {
+                k: v for k, v in (os.environ if self.environ is None else self.environ).items() if k in PASSED_ENV},
+                Path.cwd(), 60.0)
         except (ConfigurationError, LLMTransportError) as exc:
             return f"unavailable: {exc}"
         return (stdout or stderr).strip()[:200] if code == 0 else f"exit {code}: {(stderr or stdout).strip()[:200]}"
@@ -253,7 +271,7 @@ class ClaudeCodeClient:
             workdir = Path(tmp)
             system_file = workdir / SYSTEM_FILE
             system_file.write_text(system_text(request), encoding="utf-8")
-            env = child_env(request, os.environ if self.environ is None else self.environ)
+            env = child_env(request, os.environ if self.environ is None else self.environ, workdir / "config")
             code, stdout, stderr = self.runner(build_argv(request, self.settings, system_file), request.body,
                                                env, workdir, self.settings.timeout_s)
         try:

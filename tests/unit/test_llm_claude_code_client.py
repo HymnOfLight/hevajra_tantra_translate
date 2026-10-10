@@ -74,10 +74,25 @@ def test_system_file_holds_instructions_then_context() -> None:
     assert system_text(request(context_text=None)) == "SYSTEM"
 
 
-def test_child_environment_drops_api_credentials() -> None:
-    env = child_env(request(max_tokens=4096), {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_AUTH_TOKEN": "t", "PATH": "/bin"})
-    assert "ANTHROPIC_API_KEY" not in env and "ANTHROPIC_AUTH_TOKEN" not in env and env["PATH"] == "/bin"
+def test_child_environment_is_an_allowlist(tmp_path: Path) -> None:
+    host = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_AUTH_TOKEN": "t", "PATH": "/bin", "HOME": "/root",
+            "HTTPS_PROXY": "http://proxy", "ANTHROPIC_BASE_URL": "https://session-endpoint", "CLAUDECODE": "1",
+            "CLAUDE_CODE_REMOTE": "true", "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/x", "GH_TOKEN": "g",
+            "CLAUDE_EFFORT": "max"}
+    env = child_env(request(max_tokens=4096), host, tmp_path / "config")
+    assert env["PATH"] == "/bin" and env["HOME"] == "/root" and env["HTTPS_PROXY"] == "http://proxy"
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDECODE",
+                 "CLAUDE_CODE_REMOTE", "CLAUDE_SESSION_INGRESS_TOKEN_FILE", "GH_TOKEN", "CLAUDE_EFFORT"):
+        assert name not in env, name
     assert env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "4096" and env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+    assert "CLAUDE_CONFIG_DIR" not in env, "a stored login under HOME keeps the host configuration"
+
+
+def test_an_oauth_token_gets_a_fresh_config_directory(tmp_path: Path) -> None:
+    env = child_env(request(), {"CLAUDE_CODE_OAUTH_TOKEN": "tok", "HOME": "/root"}, tmp_path / "config")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok" and env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "config")
+    own = child_env(request(), {"CLAUDE_CODE_OAUTH_TOKEN": "tok", "CLAUDE_CONFIG_DIR": "/mine"}, tmp_path / "c")
+    assert own["CLAUDE_CONFIG_DIR"] == "/mine"
 
 
 # -------------------------------------------------------------------------- response
@@ -174,10 +189,11 @@ argv = sys.argv[1:]
 if argv == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
-log = os.environ["FAKE_CLAUDE_LOG"]
+log = {log!r}
 with open(log, "a") as handle:
     handle.write(json.dumps({{"argv": argv, "stdin": sys.stdin.read(),
-                             "api_key": os.environ.get("ANTHROPIC_API_KEY")}}) + "\\n")
+                             "api_key": os.environ.get("ANTHROPIC_API_KEY"),
+                             "github": os.environ.get("GH_TOKEN")}}) + "\\n")
 print(json.dumps({{"type": "result", "subtype": "success", "is_error": False, "stop_reason": "end_turn",
                   "session_id": "fake", "structured_output": {{"ok": True}},
                   "usage": {{"input_tokens": 3, "output_tokens": 2}},
@@ -190,10 +206,10 @@ def fake_claude(tmp_path: Path, monkeypatch) -> Path:
     bin_dir, log = tmp_path / "bin", tmp_path / "claude_calls.jsonl"
     bin_dir.mkdir()
     exe = bin_dir / "claude"
-    exe.write_text(FAKE_CLAUDE.format(python=sys.executable), encoding="utf-8")
+    exe.write_text(FAKE_CLAUDE.format(python=sys.executable, log=str(log)), encoding="utf-8")
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("FAKE_CLAUDE_LOG", str(log))
+    monkeypatch.setenv("GH_TOKEN", "must-not-reach-the-cli-either")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-reach-the-cli")
     return log
 
@@ -206,7 +222,7 @@ def test_claude_check_on_the_subscription_backend(tmp_path: Path, fake_claude: P
     assert summary["passed"] and summary["backend"] == "subscription" and summary["served_model"] == MODEL
     assert summary["claude_code_version"] == "9.9.9 (Claude Code)"
     call = json.loads(fake_claude.read_text(encoding="utf-8").splitlines()[0])
-    assert call["api_key"] is None and call["argv"][call["argv"].index("--effort") + 1] == "low"
+    assert call["api_key"] is None and call["github"] is None and call["argv"][call["argv"].index("--effort") + 1] == "low"
     audit = [json.loads(x) for x in (run / "llm_audit.jsonl").read_text(encoding="utf-8").splitlines()]
     assert len(audit) == 1 and audit[0]["served_model"] == MODEL
     assert (root / "runs" / "llm-cache" / "llm_spend.subscription.jsonl").is_file()
