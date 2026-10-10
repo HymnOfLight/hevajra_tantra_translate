@@ -1,0 +1,240 @@
+# DRAFT few-shot examples of the T1 collator for collate.v2 (not in use).
+#
+# Same format and rules as ../../collate_examples.yaml (all SYNTHETIC: invented sentences,
+# not taken from the Hevajratantra, its sentinel passages or the gold regions), plus:
+#   * every unit of an answer has a `convention` (none, standing_rendering,
+#     transcribed_name);
+#   * an example may list its own `standing_renderings` (reference form -> witness
+#     rendering), rendered into the example as the STANDING RENDERINGS block, so that the
+#     example never shows an entry of the real list.
+# Example 1 contrasts category_name_omitted (one ordinal slot per member) with
+# generalised (members merged into one collective expression). Example 2 shows a standing
+# rendering next to a reversal and a unit without counterpart. Example 3 contrasts names
+# and syllables rendered by sound (transcribed_name) with a content word rendered by sound
+# (transliterated), and keeps a mantra and witness-only material.
+
+schema_version: 1
+reference_lang: bo
+witness_lang: zh
+examples:
+- title: 'list members: ordinals versus one collective expression'
+  comment: The gates keep one item each but are counted instead of named, so each gate is category_name_omitted. The three offerings are merged into one collective expression, so each offering is generalised
+    and links to that line.
+  witness:
+  - kind: prose
+    text: 門有三種，
+  - kind: prose
+    text: 謂第一門、
+  - kind: prose
+    text: 第二門、
+  - kind: prose
+    text: 第三門。
+  - kind: prose
+    text: 復以三種供養而供養之。
+  reference:
+  - kind: prose
+    text: སྒོ་གསུམ་ནི་འདི་ལྟ་སྟེ།
+  - kind: prose
+    text: ཤར་གྱི་སྒོ་དང་།
+  - kind: prose
+    text: ལྷོའི་སྒོ་དང་།
+  - kind: prose
+    text: ནུབ་ཀྱི་སྒོའོ།
+  - kind: prose
+    text: མེ་ཏོག་དང་།
+  - kind: prose
+    text: བདུག་པ་དང་།
+  - kind: prose
+    text: མར་མེས་མཆོད་པར་བྱ།
+  answer:
+    units:
+    - ref: r001
+      wit:
+      - z0001
+      relation: paraphrase
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: ''
+      wit_quote: 門有三種
+    - ref: r002
+      wit:
+      - z0002
+      relation: category_name_omitted
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: ཤར་གྱི་སྒོ
+      wit_quote: 第一門
+    - ref: r003
+      wit:
+      - z0003
+      relation: category_name_omitted
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: ལྷོའི་སྒོ
+      wit_quote: 第二門
+    - ref: r004
+      wit:
+      - z0004
+      relation: category_name_omitted
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: ནུབ་ཀྱི་སྒོའོ
+      wit_quote: 第三門
+    - ref: r005
+      wit:
+      - z0005
+      relation: generalised
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: མེ་ཏོག
+      wit_quote: 三種供養
+    - ref: r006
+      wit:
+      - z0005
+      relation: generalised
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: བདུག་པ
+      wit_quote: 三種供養
+    - ref: r007
+      wit:
+      - z0005
+      relation: generalised
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: མར་མེས
+      wit_quote: 三種供養
+    witness_only: []
+- title: a standing rendering, a reversal and a unit without counterpart
+  comment: The witness renders the deity's name by its listed standing rendering and the rest word for word, so the unit is equivalent with convention standing_rendering. The lamp is prescribed in the reference
+    and forbidden in the witness (reversal). The last unit is rendered nowhere.
+  standing_renderings:
+  - reference: རྡོ་རྗེ་ཞབས
+    witness: 大力金剛
+  witness:
+  - kind: prose
+    text: 大力金剛為諸天說法。
+  - kind: prose
+    text: 於夜分中不應燃燈。
+  reference:
+  - kind: prose
+    text: རྡོ་རྗེ་ཞབས་ཀྱིས་ལྷ་རྣམས་ལ་ཆོས་བཤད།
+  - kind: prose
+    text: མཚན་མོ་མར་མེ་སྦར་བར་བྱ།
+  - kind: prose
+    text: དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ།
+  answer:
+    units:
+    - ref: r001
+      wit:
+      - z0001
+      relation: equivalent
+      polarity_flip: false
+      confidence: high
+      convention: standing_rendering
+      ref_quote: རྡོ་རྗེ་ཞབས
+      wit_quote: 大力金剛
+    - ref: r002
+      wit:
+      - z0002
+      relation: reversal
+      polarity_flip: true
+      confidence: high
+      convention: none
+      ref_quote: མར་མེ་སྦར་བར་བྱ
+      wit_quote: 不應燃燈
+    - ref: r003
+      wit: []
+      relation: no_counterpart
+      polarity_flip: false
+      confidence: medium
+      convention: none
+      ref_quote: དྲི་ཞིམ་པོ་ཡང་དབུལ་བར་བྱ
+      wit_quote: ''
+    witness_only: []
+- title: names and syllables by sound, a content word by sound, a mantra and witness-only material
+  comment: 'The city''s name and the seed syllable are rendered by sound while the rest is translated: convention transcribed_name, relation judged on the rest (equivalent, and expanded where the witness
+    adds a word). The word for blood is rendered by sound although it is not a name: transliterated, convention none. The mantra is transliterated as before. The heading is paratext, the note a translator_note
+    and the last sentence an addition.'
+  witness:
+  - kind: head
+    text: 成就品
+  - kind: prose
+    text: 往鉢訥摩嚩底城。
+  - kind: prose
+    text: 從吽字出生金剛杵。
+  - kind: prose
+    text: 以嚕地囉塗其像。
+  - kind: mantra
+    text: 唵娑攞吽娑嚩賀
+  - kind: note
+    text: 二合
+  - kind: prose
+    text: 如是作者，速得成就。
+  reference:
+  - kind: prose
+    text: གྲོང་ཁྱེར་པདྨ་ཅན་དུ་སོང་།
+  - kind: prose
+    text: ཧཱུྃ་ཡིག་ལས་རྡོ་རྗེ་བྱུང་།
+  - kind: prose
+    text: ཁྲག་གིས་སྐུ་གཟུགས་བྱུགས།
+  - kind: mantra
+    text: ཨོཾ་ས་ལ་ཧཱུྃ་སྭཱ་ཧཱ།
+  answer:
+    units:
+    - ref: r001
+      wit:
+      - z0002
+      relation: equivalent
+      polarity_flip: false
+      confidence: high
+      convention: transcribed_name
+      ref_quote: པདྨ་ཅན
+      wit_quote: 鉢訥摩嚩底
+    - ref: r002
+      wit:
+      - z0003
+      relation: expanded
+      polarity_flip: false
+      confidence: high
+      convention: transcribed_name
+      ref_quote: ཧཱུྃ
+      wit_quote: 吽字出生金剛杵
+    - ref: r003
+      wit:
+      - z0004
+      relation: transliterated
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: ཁྲག
+      wit_quote: 嚕地囉
+    - ref: r004
+      wit:
+      - z0005
+      relation: transliterated
+      polarity_flip: false
+      confidence: high
+      convention: none
+      ref_quote: ཨོཾ་ས་ལ་ཧཱུྃ
+      wit_quote: 唵娑攞吽
+    witness_only:
+    - wit:
+      - z0001
+      kind: paratext
+      wit_quote: 成就品
+    - wit:
+      - z0006
+      kind: translator_note
+      wit_quote: 二合
+    - wit:
+      - z0007
+      kind: addition
+      wit_quote: 如是作者，速得成就

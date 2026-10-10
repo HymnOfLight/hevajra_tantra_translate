@@ -1,0 +1,85 @@
+# DRAFT standing renderings of the witness zh_T0892_song (for collate.v2; not in use).
+#
+# A standing rendering is a term that the witness renders the same way throughout the
+# text, as a convention of the translation. collate.v2 shows the listed entries to the
+# collator after the examples; a unit whose only difference from its rendering is a
+# listed entry gets convention standing_rendering and is judged as if the rendering were
+# the reference term (normally equivalent or paraphrase). The proposed code check V12
+# accepts that convention only when the linked witness lines contain a listed rendering
+# and the unit contains a listed reference form; otherwise the unit is flagged
+# convention_unsupported.
+#
+# Only entries with status: verified are shown to the collator. An entry is verified
+# by a researcher who has checked the counts and the passages (verified_by: real name).
+# Counts are plain substring counts over the ingested texts (Derge D417-418 including
+# every kind; T0892 excluding note lines), made on 2026-10-10 from run
+# runs/pilot-20261010T145135Z. They are evidence for the decision, not proof: a
+# substring count does not show that every occurrence renders the listed term.
+
+schema_version: 1
+reference: bo_derge_D417_418
+witness: zh_T0892_song
+
+entries:
+  - id: hevajra
+    reference_forms: ["ཀྱེའི་རྡོ་རྗེ", "ཀྱེ་ཡི་རྡོ་རྗེ", "ཀྱེ་རྡོ་རྗེ"]
+    sanskrit: Hevajra
+    witness_renderings: ["大悲空智金剛", "空智金剛"]
+    counts:   # plain substring counts
+      - {side: reference, form: "ཀྱེའི་རྡོ་རྗེ", n: 24}
+      - {side: reference, form: "ཀྱེ་ཡི་རྡོ་རྗེ", n: 13}
+      - {side: reference, form: "ཀྱེ་རྡོ་རྗེ", n: 8}
+      - {side: witness, form: "空智金剛", n: 18}
+      - {side: witness, form: "大悲空智金剛", n: 11}
+    note: >-
+      The name of the deity and of the tantra. The witness renders it as (da bei) kong
+      zhi jin gang throughout; the reference has about 45 occurrences against 18 in the
+      witness, so many reference occurrences have no name in the witness at all, and
+      those are judged by the ordinary tests. Only the full name is listed: the witness
+      also uses kong zhi alone for the syllable he and for Heruka, which is not a
+      standing rendering (see considered_not_listed).
+    status: proposed
+    verified_by: null
+
+# Terms examined for the list and left out, with the reason. Recorded so that the
+# decision can be reviewed; an expert may move any of them into entries.
+considered_not_listed:
+  - id: heruka
+    reference_forms: ["ཧེ་རུ་ཀ"]
+    witness_renderings_seen: ["空智", "呬嚕迦"]
+    counts:   # plain substring counts
+      - {side: reference, form: "ཧེ་རུ་ཀ", n: 15}
+      - {side: witness, form: "呬嚕迦", n: 3}
+    reason: >-
+      Rendered sometimes by kong zhi and sometimes by sound (xi lu jia); not one rendering
+      throughout. Its transcriptions fall under the convention transcribed_name anyway.
+  - id: he_syllable
+    reference_forms: ["ཧེ", "ཀྱེ"]
+    witness_renderings_seen: ["空智"]
+    reason: >-
+      In the explanation of the syllables of the name (I.1), the witness puts kong zhi
+      where the reference explains the sound he. Whether that is a convention or a
+      change of content (the syllable explanation is lost) is a philological decision;
+      left to the ordinary tests until an expert decides.
+  - id: dakini
+    reference_forms: ["མཁའ་འགྲོ་མ"]
+    witness_renderings_seen: ["拏吉尼", "空行"]
+    counts:   # plain substring counts
+      - {side: reference, form: "མཁའ་འགྲོ་མ", n: 21}
+      - {side: witness, form: "拏吉尼", n: 11}
+      - {side: witness, form: "空行", n: 5}
+    reason: >-
+      Rendered by sound (na ji ni) and by meaning (kong xing). Not a single rendering; a
+      class noun rendered by sound is transliterated content under the current rules,
+      which is a decision for the codebook (see the draft notes, question Q3).
+  - id: yogini
+    reference_forms: ["རྣལ་འབྱོར་མ"]
+    witness_renderings_seen: ["瑜儗尼", "明妃"]
+    counts:   # plain substring counts
+      - {side: reference, form: "རྣལ་འབྱོར་མ", n: 49}
+      - {side: witness, form: "瑜儗尼", n: 6}
+      - {side: witness, form: "明妃", n: 105}
+    reason: >-
+      Rendered by sound only rarely. The witness uses ming fei very often (105 times),
+      apparently for several reference terms (yogini, goddess, consort); whether that is a
+      generalisation is exactly what the collation should measure, so it is not listed.
