@@ -176,13 +176,14 @@ def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
         pipeline.fetch(args.raw_dir or settings.path("raw"), force=args.force)
         return 0
     if command == "prereg":
-        doc = freeze(settings.root, amend=args.amend)
+        doc = freeze(settings, amend=args.amend)
         print(f"prereg: frozen with {len(doc['instrument_digests'])} instrument digests; "
               f"{len(doc['amendments'])} amendment(s)")
         return 0
     if command == "claude-check" and getattr(args, "offline", False):
         raise StageError("claude-check is a live check; it cannot run --offline")
-    ctx = _context(args, settings)
+    # A run directory keeps the LLM backend its outputs were produced with (see bind_backend).
+    ctx = pipeline.bind_backend(_context(args, settings), explicit=bool(getattr(args, "backend", None)))
     stages: dict[str, Callable[[RunContext], object]] = {
         "ingest": lambda c: pipeline.ingest(c, args.raw_dir),
         "collate": lambda c: pipeline.collate(c, args.chapters, args.replicates, args.dry_run),

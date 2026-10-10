@@ -41,8 +41,10 @@ def test_freeze_writes_digests_and_keeps_keys_order_and_comments(root: Path) -> 
     assert after["instrument_digests"] == instrument_digests(load_settings(root))
     assert set(after["instrument_digests"]) == TASKS
     assert list(after) == list(before), "keys and their order are kept"
-    assert {k: v for k, v in after.items() if k not in ("frozen", "instrument_digests")} == \
-           {k: v for k, v in before.items() if k not in ("frozen", "instrument_digests")}
+    assert after["llm_backend"] == "api", "the frozen backend is recorded"
+    written = ("frozen", "llm_backend", "instrument_digests")
+    assert {k: v for k, v in after.items() if k not in written} == \
+           {k: v for k, v in before.items() if k not in written}
     assert text.startswith("# Pre-registration. Freeze")
     assert "primary_outcome: any                   # any = omission" in text
     assert "# written by `prereg freeze`: task -> InstrumentId digest" in text

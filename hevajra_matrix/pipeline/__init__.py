@@ -49,7 +49,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterator
 
-from .context import RunContext, StageError, credentials_hint, has_credentials, latest_run_dir, make_client, new_run_dir
+from .context import (RunContext, StageError, bind_backend, credentials_hint, has_credentials, latest_run_dir,
+                      make_client, new_run_dir)
 from .experiment import experiment_plan, experiment_run, experiment_score
 from .instrument import CONSENSUS_FILE, claude_check, collate, components_stage, perturb, plan_collation
 from .measure import build, evaluate, test_scoring_refused
@@ -60,7 +61,7 @@ from .texts import baselines, baselines_import, fetch, ingest
 __all__ = [
     "RunContext", "StageError", "baselines", "baselines_import", "build", "claude_check", "collate",
     "components_stage", "evaluate", "experiment_plan", "experiment_run", "experiment_score", "fetch", "ingest",
-    "latest_run_dir", "make_client", "new_run_dir", "perturb", "plan_collation", "report", "review_export",
+    "bind_backend", "latest_run_dir", "make_client", "new_run_dir", "perturb", "plan_collation", "report", "review_export",
     "review_import", "review_status", "run", "sample", "stats", "topics_prelabel", "witness_contexts",
 ]
 

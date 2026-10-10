@@ -85,6 +85,7 @@ class LLMResponse:
     ``data`` is the parsed JSON object when ``status == "ok"``; otherwise None.
     ``raw_text`` is kept for the private cache only and is never written to the
     audit log or to committed files (it may contain licence-restricted text).
+    ``client_info`` holds backend-specific, text-free provenance (audited).
     """
 
     key: str
@@ -101,6 +102,9 @@ class LLMResponse:
     request_id: str | None = None
     created_at: str = ""
     from_cache: bool = False
+    # Backend-specific, text-free facts about how the answer was produced (the subscription
+    # backend records the CLI version, the number of turns and similar); empty on the API path.
+    client_info: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def substituted_model(self) -> bool:

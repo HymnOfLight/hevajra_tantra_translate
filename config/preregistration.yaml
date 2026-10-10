@@ -4,6 +4,7 @@
 
 schema_version: 1
 frozen: false
+llm_backend: null                      # written by `prereg freeze`: api or subscription (config/llm.yaml)
 instrument_digests: {}                 # written by `prereg freeze`: task -> InstrumentId digest
 
 primary_outcome: any                   # any = omission + rewriting + prose transliteration; cov = omission only

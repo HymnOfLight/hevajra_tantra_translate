@@ -343,16 +343,20 @@ def collate(windows: Sequence[Window], client: LLMClient, settings: TaskSettings
 
     Returns replicate tag -> one parse result per window, in the order of ``windows``,
     whatever order the thread pool finished in. Requests are independent, so ``workers``
-    of them run concurrently. Transport, budget and cache-miss errors propagate after
-    the requests not yet started are cancelled; answers already received stay cached.
+    of them run concurrently, except that the first request runs alone: every request
+    shares the same cacheable prefix (instructions and the full witness text), and the
+    others can only read the prompt cache once the first has written it. Transport, budget
+    and cache-miss errors propagate after the requests not yet started are cancelled;
+    answers already received stay cached.
     """
     if workers < 1:
         raise ValueError("workers must be >= 1")
     jobs = build_requests(windows, settings, replicates, examples, template)
+    responses = [client.complete(jobs[0][2])] if jobs else []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(client.complete, request) for _, _, request in jobs]
+        futures = [pool.submit(client.complete, request) for _, _, request in jobs[1:]]
         try:
-            responses = [f.result() for f in futures]
+            responses += [f.result() for f in futures]
         except BaseException:
             for f in futures:
                 f.cancel()

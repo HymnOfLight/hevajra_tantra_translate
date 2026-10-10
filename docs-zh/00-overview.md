@@ -283,6 +283,7 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 - `subscription`：通过 Claude Code 的 `claude -p` 调用，用 Claude Max/Pro 包月额度，不另外计费。代码会替换 Claude Code 的系统提示、关闭工具与本地设置，并用 JSON schema 约束输出；实际服务的模型从返回的用量中读取。
 - 两者是不同的测量工具：后端写进工具指纹，缓存分开存放，一项研究应当只用一种。
 - 用法：命令后加 `--backend subscription`，或修改 `config/llm.yaml: backend`。服务器上的操作步骤见 [`07-server-runbook.md`](07-server-runbook.md)。
+- 在 Claude Code 云端沙箱里也能用：子进程用会话所属账号的登录。运行目录会绑定后端，每个回答都记录 Claude Code 的版本；额度用完或单次调用超过 1 小时会停下，重跑同一条命令即可续跑。详见 [`04-claude-usage.md`](04-claude-usage.md) §7。
 
 **费用控制**：
 

@@ -38,8 +38,9 @@ DEFAULT_SANSKRIT_REFERENCE = "sa_snellgrove1959"
 WITNESS_DIR = "witnesses"            # <run>/witnesses/<witness>/: outputs of every witness but the target
 # Run-directory entries shared by all witnesses: the texts, the manifest and audit log, the
 # reference-only topic hints, the experiment and the connectivity check.
+BACKEND_MARKER = "llm_backend.txt"   # the LLM backend this run's calls were made with (see bind_backend)
 SHARED_ENTRIES = frozenset({"ingest", "manifest.json", AUDIT_LOG, "topics", "experiments", "claude_check.json",
-                            WITNESS_DIR})
+                            WITNESS_DIR, BACKEND_MARKER})
 
 
 class StageError(RuntimeError):
@@ -170,6 +171,38 @@ def backend(settings: Settings) -> str:
     return name
 
 
+def run_backend(run_dir: Path) -> str | None:
+    """The backend recorded for a run directory by its first LLM client, or None."""
+    path = run_dir / BACKEND_MARKER
+    return path.read_text(encoding="utf-8").strip() or None if path.is_file() else None
+
+
+def bind_backend(ctx: RunContext, explicit: bool) -> RunContext:
+    """Make every stage of a run use the backend its LLM outputs were produced with.
+
+    Without an explicit ``--backend`` the run's recorded backend is adopted (so ``build``,
+    ``evaluate`` or a review import after ``collate --backend subscription`` record and gate
+    the subscription instrument); an explicit, different ``--backend`` is refused.
+    """
+    recorded = run_backend(ctx.run_dir)
+    if recorded is None or recorded == backend(ctx.settings):
+        return ctx
+    if explicit:
+        raise StageError(f"{ctx.run_dir} was produced with the {recorded} backend; use --backend {recorded} "
+                         "or a new run directory")
+    return replace(ctx, settings=replace(ctx.settings, llm={**ctx.settings.llm, "backend": recorded}))
+
+
+def mark_backend(ctx: RunContext) -> None:
+    """Record the run's backend on its first LLM client; refuse a second, different one."""
+    name, recorded = backend(ctx.settings), run_backend(ctx.run_dir)
+    if recorded is None:
+        ctx.run_dir.mkdir(parents=True, exist_ok=True)
+        (ctx.run_dir / BACKEND_MARKER).write_text(name + "\n", encoding="utf-8")
+    elif recorded != name:
+        raise StageError(f"{ctx.run_dir} was produced with the {recorded} backend, not {name}")
+
+
 def anthropic_client(settings: Settings) -> AnthropicClient:
     """The SDK-backed client configured by ``config/llm.yaml`` (the SDK itself loads lazily)."""
     llm = settings.llm
@@ -220,6 +253,7 @@ def make_client(ctx: RunContext) -> AuditedClient:
     runs; the audit log is ``<run_dir>/llm_audit.jsonl``. Offline, the cache raises
     ``CacheMiss`` for anything not stored and no network client is constructed at all.
     """
+    mark_backend(ctx)
     inner: LLMClient = _NoNetwork() if ctx.offline else live_client(ctx.settings)
     return audited(ctx, CachedClient(inner, cache_root(ctx.settings), offline=ctx.offline))
 
@@ -283,6 +317,9 @@ def record_stage(ctx: RunContext, stage: str, inputs: Mapping[str, Path] | None 
     extra = {"run_id": ctx.run_dir.name, "offline": ctx.offline, "stages": stages,
              "instrument_digests": instrument_digests(ctx.settings), "llm_backend": backend(ctx.settings),
              "llm": audit_summary(ctx.path(AUDIT_LOG))}
+    if backend(ctx.settings) == SUBSCRIPTION and not ctx.offline:
+        cli = ClaudeCodeClient(CliSettings.from_config(ctx.settings.llm))
+        extra.update({"claude_code_version": cli.version(), "credential_source": cli.credential_source()})
     return write_manifest(ctx.run_dir, ctx.settings, present, extra)
 
 

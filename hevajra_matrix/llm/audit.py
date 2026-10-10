@@ -75,8 +75,9 @@ def call_pricing(
 def audit_record(
     request: LLMRequest, response: LLMResponse, *, run_id: str, ts: str, seconds: float, est_usd: float
 ) -> dict[str, Any]:
-    """The audit line for one call: identifiers, outcome and usage, never any text."""
-    return {
+    """The audit line for one call: identifiers, outcome and usage, never any text
+    (plus the backend's text-free ``client_info`` when it has any)."""
+    record = {
         "ts": ts,
         "run_id": run_id,
         "task": request.task,
@@ -102,6 +103,9 @@ def audit_record(
         "seconds": round(seconds, 3),
         "est_usd": round(est_usd, 6),
     }
+    if response.client_info:
+        record["client_info"] = dict(response.client_info)
+    return record
 
 
 class AuditedClient:

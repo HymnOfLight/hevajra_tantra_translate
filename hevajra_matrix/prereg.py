@@ -46,7 +46,7 @@ from .registry import load_witnesses
 from .topics import TopicTaskSettings, load_codebook, prelabel_schema, render_system
 
 PREREG_FILE = CONFIG_FILES["prereg"]
-MANAGED_KEYS = ("frozen", "instrument_digests", "amendments")
+MANAGED_KEYS = ("frozen", "llm_backend", "instrument_digests", "amendments")
 
 
 class PreregError(RuntimeError):
@@ -69,7 +69,8 @@ def instruments(settings: Settings) -> dict[str, InstrumentId]:
     name = str(llm.get("backend") or "api")
     sub = dict(llm.get("subscription") or {})
     backend_part: tuple[Any, ...] = () if name == "api" else (
-        {"llm_backend": name, "tools": str(sub.get("tools") or ""), "max_turns": int(sub.get("max_turns", 3))},)
+        {"llm_backend": name, "tools": str(sub.get("tools") or ""), "max_turns": int(sub.get("max_turns", 3)),
+         **({"cli_version": str(sub["cli_version"])} if sub.get("cli_version") else {})},)
 
     def _instrument(task: str, model: str, effort: str, system: str, schema: Any, params: tuple[Any, ...],
                     replicates: int) -> InstrumentId:
@@ -119,12 +120,14 @@ def instrument_digests(settings: Settings) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- freeze
-def freeze(root: Path, amend: str | None = None, today: Date | None = None) -> dict[str, Any]:
+def freeze(root: Path | Settings, amend: str | None = None, today: Date | None = None) -> dict[str, Any]:
     """Freeze the preregistration (or amend a frozen one); returns the new document.
 
-    Refuses a frozen file without ``amend``, and an empty amendment reason.
+    ``root`` is the repository root, or already resolved ``Settings`` (the CLI passes them,
+    so that ``--backend`` decides which instrument is frozen; the backend is written as
+    ``llm_backend``). Refuses a frozen file without ``amend``, and an empty amendment reason.
     """
-    settings = load_settings(root)
+    settings = root if isinstance(root, Settings) else load_settings(root)
     path = settings.root / "config" / PREREG_FILE
     doc = dict(settings.prereg)
     missing = [k for k in MANAGED_KEYS if k not in doc]
@@ -142,7 +145,8 @@ def freeze(root: Path, amend: str | None = None, today: Date | None = None) -> d
         changed = sorted(t for t in digests if old.get(t) != digests[t])
         amendments.append({"date": (today or Date.today()).isoformat(), "reason": " ".join(amend.split()),
                            "changed": changed, "was_frozen": frozen})
-    new = {**doc, "frozen": True, "instrument_digests": digests, "amendments": amendments}
+    new = {**doc, "frozen": True, "llm_backend": str(settings.llm.get("backend") or "api"),
+           "instrument_digests": digests, "amendments": amendments}
     _write(path, new)
     return new
 

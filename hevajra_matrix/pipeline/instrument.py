@@ -382,7 +382,7 @@ def claude_check(ctx: RunContext) -> dict[str, Any]:
     client = live_client(ctx.settings)
     summary = {**run_check(audited(ctx, client), request), "backend": backend(ctx.settings)}
     if isinstance(client, ClaudeCodeClient):
-        summary["claude_code_version"] = client.version()
+        summary.update({"claude_code_version": client.version(), "credential_source": client.credential_source()})
     ctx.path("claude_check.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=1, sort_keys=True))
     return summary

@@ -30,26 +30,27 @@ AuditedClient(CachedClient(FakeClient(script)))       tests
 | | `api` (default) | `subscription` |
 |---|---|---|
 | Client | `llm/anthropic_client.py`, official SDK | `llm/claude_code_client.py`, one `claude -p` process per request |
-| Credentials | `ANTHROPIC_API_KEY` (prepaid Console credits) | the Claude Code login of a Claude Max/Pro plan (`/login`, or `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`); API credentials are removed from the child's environment |
-| Request | system and context blocks with cache breakpoints; `output_config` with effort and a strict JSON schema (constrained decoding) | `--system-prompt-file` (instructions, then the context; Claude Code caches the system prompt), body on stdin, `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--json-schema` (validate and re-prompt), `--model`, `--effort`, `--max-turns`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`; run in an empty temporary directory |
-| Fallback | server-side fallback per task (`fallbacks="default"`) | none requested; any output from another model in `modelUsage` marks the response `fallback_used` |
+| Credentials | `ANTHROPIC_API_KEY` (prepaid Console credits) | a Claude Max/Pro login: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), a `/login` stored under `HOME`, or, inside a Claude Code cloud session, that session's OAuth token, which the CLI reads from `/home/claude/.claude/remote/` whatever the environment says. All bill the plan of the account they belong to. The child gets an allowlisted environment, so a parent `ANTHROPIC_API_KEY` cannot bill the call; if the cloud session holds an API key file the client refuses to run without `CLAUDE_CODE_OAUTH_TOKEN`. The source (a label) is recorded by `claude-check` and in the manifest. |
+| Request | system and context blocks with cache breakpoints; `output_config` with effort and a strict JSON schema (constrained decoding) | `--system-prompt-file` (instructions, then the context), body on stdin, `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence`, `--json-schema` (validate and re-prompt), `--model`, `--effort`, `--max-turns`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, `DISABLE_AUTOUPDATER=1`; run in an empty temporary directory, in its own process group. The CLI still prepends its identity line ("You are a Claude agent, built on Anthropic's Claude Agent SDK.") and an attribution header, and adds its own reminder turns for the structured answer. |
+| Concurrency | `workers` threads | the same; the first request of a pass runs alone so the others read the prompt cache it wrote (both backends) |
+| Fallback | server-side fallback per task (`fallbacks="default"`) | none requested; output from any other model in `modelUsage` marks the response `fallback_used` (only an exact id, a date suffix or a context tag counts as the requested model) |
 | Refusal | `stop_reason == "refusal"` with a category | `stop_reason == "refusal"` or `safety_stops > 0` (no category) |
+| Truncation | `stop_reason` `max_tokens` / `model_context_window_exceeded` | the same, or `api_error` `max_output_tokens` (the CLI sets `is_error` on it; still a cached `truncated` value). The CLI first asks the model to continue after a capped message, so a truncation can end as an answer: `client_info` records `num_turns` and `output_over_max_tokens`. |
+| Invalid | schema-invalid answer | the same, and `error_max_turns` / `error_max_structured_output_retries` (cached `invalid` values although the CLI sets `is_error`) |
+| Run failures | SDK errors after retries | any other `is_error` or error subtype raises `LLMTransportError`, retried `subscription.max_retries` (1) times; an exhausted allowance (`api_error` `usage_limit_reached`, "You've hit your ... limit") raises `UsageLimitReached` and a run longer than `subscription.timeout_s` (3600 s, wall clock) raises `CliTimeout`, neither retried: rerun after the reset, finished calls come from the cache. A transient 429 ("not your usage limit") is retried. |
+| Provenance | - | `client_info` on every response and audit line: CLI version, subtype, turns, terminal reason; `subscription.cli_version` pins the CLI (enforced, and part of the digest) |
 | Cache | `<cache>/<model>/...` | `<cache>/subscription/<model>/...` |
 | Budget | `budget_usd` against `<cache>/llm_spend.jsonl` | nothing is billed; the API-equivalent cost goes to `llm_spend.subscription.jsonl`, capped only by `subscription.budget_usd_equivalent` |
-| Run failures | SDK errors after retries | `is_error` or an error subtype raises `LLMTransportError` (retried); an exhausted allowance raises `UsageLimitReached` (not retried; rerun after the reset, finished calls come from the cache) |
 | Dry-run tokens | free `count_tokens` with a key | character heuristic |
 
 The two backends are different instruments: Claude Code wraps the request and enforces the
-schema differently. The backend (with `subscription.tools` and `max_turns`) therefore enters
-every instrument digest, so gate G2 and the preregistration tell them apart, and a study must
-keep one backend from development gold to the final report. Anthropic's terms allow the
-subscription login for the purchaser's own individual use only; a shared server should use
-the API backend, or the login of the person who runs it.
-
-Every task builds a frozen `LLMRequest` (`llm/client.py`) with pure code and receives an
-`LLMResponse`. No task module touches the SDK. `anthropic` is imported lazily inside
-`llm/anthropic_client.py` only, so the package, the tests and offline replays work without it
-(`pip install -e ".[claude]"` adds it).
+schema differently. The backend (with `subscription.tools`, `max_turns` and a pinned
+`cli_version`) therefore enters every instrument digest, `prereg freeze` records it as
+`llm_backend`, and a run directory is bound to the backend of its first LLM call
+(`llm_backend.txt`): later commands without `--backend` adopt it, a different explicit one is
+refused. A study must keep one backend from development gold to the final report.
+Anthropic's terms allow the subscription login for the purchaser's own individual use only;
+a shared server should use the API backend, or the login of the person who runs it.
 
 ### What is sent (`llm/anthropic_client.build_kwargs`)
 
