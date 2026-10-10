@@ -46,7 +46,7 @@ from typing import Iterable, Mapping, Sequence
 
 from ..core.lexicon import Negators, VariantForms, load_negators, load_variant_forms
 from ..core.textnorm import find_terms, fold_variants, for_quote, quote_in
-from ..core.translit import transliteration_charset, transliteration_density
+from ..core.translit import MIN_TRANSLITERATION_DENSITY, transliteration_charset, transliteration_density
 from ..core.types import (
     REASON_INVALID,
     REASON_UNASSESSED,
@@ -63,7 +63,6 @@ from .collator import Parsed, RawCollation, RawUnit, Unresolved
 from .windows import Window
 
 MAX_MISSING_FRACTION = 0.02
-MIN_TRANSLITERATION_DENSITY = 0.5
 QUOTE_OPTIONAL = frozenset({Relation.EQUIVALENT, Relation.PARAPHRASE, Relation.EXPANDED})
 
 FLAG_CORROBORATED = "corroborated"

@@ -1,10 +1,16 @@
 """Transliteration density: how much of a stretch of text is phonetic transcription.
 
-Two consumers use the same measure, so they cannot drift apart:
+Its consumers use the same measure and threshold (``looks_transcribed``), so they cannot
+drift apart:
 
     collate.verify (V11)   a ``transliterated`` link needs a witness quote that is mostly
                            transcription; otherwise it is flagged for review
+    collate.verify (V12)   a ``transcribed_name`` convention needs the same of its quote
+    components (C4)        a ``lit`` slot code needs the same of its quote
     matrix (d_lit)         the descriptive transliteration density of a cell
+
+For a witness language other than Chinese or Tibetan the density is always 0, so V11 and
+V12 always flag there.
 
 Chinese transcription has no script of its own: it reuses ordinary characters chosen for
 their sound. The character set is therefore *derived from the witness itself*: the
@@ -29,6 +35,7 @@ from .textnorm import bo_sanskrit_syllable_ratio, for_quote
 from .types import Segment
 
 MANTRA_KIND = "mantra"
+MIN_TRANSLITERATION_DENSITY = 0.5   # share of a quote that must be transcription (V11, V12, C4)
 
 
 def transliteration_charset(witness_segments: Iterable[Segment]) -> frozenset[str]:
@@ -58,3 +65,8 @@ def transliteration_density(text: str, lang: str, charset: frozenset[str] = froz
     if lang == "bo":
         return bo_sanskrit_syllable_ratio(text)
     return 0.0
+
+
+def looks_transcribed(text: str, lang: str, charset: frozenset[str] = frozenset()) -> bool:
+    """Whether ``text`` is mostly phonetic transcription (density >= the shared threshold)."""
+    return transliteration_density(text, lang, charset) >= MIN_TRANSLITERATION_DENSITY

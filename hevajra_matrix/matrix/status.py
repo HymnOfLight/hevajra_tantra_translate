@@ -13,15 +13,25 @@ machine proposal or by a human verdict:
     no_counterpart                                   ABSENT   absent        1     1
 
 UNALIGNED, LACUNA and NA cells have no outcome and are excluded from denominators.
+
+Conventions (collate.v2: a standing rendering, a name or syllable rendered by sound) never
+enter ``outcome_class``: voting, strata and grades do not see them. They only enter the
+sensitivity variant D_any_conv (``any_conv``), which also counts a counted unit that carries
+a convention as deviating; it is never a primary outcome (``PRIMARY_OUTCOMES``).
+
+    relation (any) + a convention                    status and outcome from the relation;
+                                                     D_any, D_cov unchanged; D_any_conv = 1
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
-from ..core.types import COUNTED_STATUSES, Cell, OutcomeClass, Relation, Status
+from ..core.types import COUNTED_STATUSES, Cell, Convention, OutcomeClass, Relation, Status, convention_of
 
-Outcome = Literal["any", "cov"]
+Outcome = Literal["any", "cov", "any_conv"]
+PRIMARY_OUTCOMES: tuple[str, ...] = ("any", "cov")    # what a preregistration may name as primary
+OUTCOMES: tuple[str, ...] = ("any", "cov", "any_conv")
 
 RELATION_STATUS: dict[Relation, Status] = {
     Relation.EQUIVALENT: Status.PRESENT,
@@ -76,11 +86,24 @@ def outcome_class(relation: Relation, polarity_flip: bool = False, ref_kind: str
     return OutcomeClass.NONDEV
 
 
-def deviates(outcome: OutcomeClass, which: Outcome = "any") -> bool:
-    """D_any: any deviation; D_cov: loss of coverage only (PARTIAL or ABSENT)."""
+def deviates(outcome: OutcomeClass, which: Outcome = "any", convention: bool | None = None) -> bool:
+    """D_any: any deviation; D_cov: loss of coverage only (PARTIAL or ABSENT); D_any_conv:
+    any deviation, or a convention on the unit (``convention`` must then be given, so a
+    caller that cannot know conventions fails instead of computing D_any under that name)."""
     if which == "cov":
         return outcome in (OutcomeClass.PARTIAL, OutcomeClass.ABSENT)
-    return outcome is not OutcomeClass.NONDEV
+    if which == "any":
+        return outcome is not OutcomeClass.NONDEV
+    if which == "any_conv":
+        if convention is None:
+            raise ValueError("D_any_conv needs the unit's convention")
+        return outcome is not OutcomeClass.NONDEV or convention
+    raise ValueError(f"unknown outcome {which!r}; expected one of {OUTCOMES}")
+
+
+def has_convention(flags: frozenset[str] | set[str]) -> bool:
+    """Whether a link's or cell's flags carry a convention (collate.v2)."""
+    return convention_of(flags) is not Convention.NONE
 
 
 def cell_outcome(cell: Cell, ref_kind: str = "") -> OutcomeClass | None:
@@ -92,4 +115,4 @@ def cell_outcome(cell: Cell, ref_kind: str = "") -> OutcomeClass | None:
 
 def cell_deviates(cell: Cell, which: Outcome = "any", ref_kind: str = "") -> bool | None:
     outcome = cell_outcome(cell, ref_kind)
-    return None if outcome is None else deviates(outcome, which)
+    return None if outcome is None else deviates(outcome, which, has_convention(cell.flags))

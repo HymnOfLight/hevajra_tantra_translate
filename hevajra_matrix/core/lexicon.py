@@ -6,6 +6,9 @@ central lexicon object, so a module depends only on the files it actually reads.
     numerals.yaml       -> NumeralTable   (core.textnorm.numerals)
     negators.yaml       -> Negators       (polarity checks, negation-aware baselines)
     variant_forms.yaml  -> VariantForms   (core.textnorm.fold_variants)
+    codebook/collate.v2/standing_renderings*.yaml
+                        -> StandingRenderings (load_standing_renderings; the collate.v2
+                           glossary, read from an explicit path)
     any other file      -> read_lexicon() returns it as a read-only mapping; its owner
                            module interprets it (anchors, Derge markers, note classes, ...)
 
@@ -175,6 +178,92 @@ def load_negators(data_dir: Path) -> Negators:
         for lang, items in table.items():
             _check_tokens(items, lang, f"negators.{key}.{lang}")
     return negators
+
+
+# --------------------------------------------------------------------------- standing renderings
+STANDING_STATUSES = frozenset({"proposed", "verified", "retired"})
+
+
+@dataclass(frozen=True)
+class StandingEntry:
+    """One verified standing rendering: reference forms and their witness renderings."""
+
+    id: str
+    reference_forms: tuple[str, ...]
+    witness_renderings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class StandingRenderings:
+    """The verified standing renderings of one witness against one reference (collate.v2).
+
+    The collator shows exactly these entries to the model and V12 checks claims against
+    exactly these, so both must receive the same object. Empty until a researcher verifies
+    an entry.
+    """
+
+    entries: tuple[StandingEntry, ...] = ()
+
+    @classmethod
+    def empty(cls) -> "StandingRenderings":
+        return cls()
+
+
+def load_standing_renderings(path: Path, reference: str, witness: str, reference_lang: str = "bo",
+                             witness_lang: str = "zh") -> StandingRenderings:
+    """Read a standing-renderings file and return its **verified** entries.
+
+    The file names its reference and witness; a file for another pair is an error, never
+    silently empty. Every entry (proposed, verified or retired) and every
+    ``considered_not_listed`` record is validated; only verified entries are returned. An
+    entry is verified exactly when it names who verified it.
+    """
+    where = str(path)
+    doc = _freeze(read_yaml(path))
+    if not isinstance(doc, Mapping):
+        raise LexiconError(f"{where}: expected a mapping")
+    _only(doc, {"schema_version", "reference", "witness", "entries", "considered_not_listed"}, where)
+    if doc.get("schema_version") != 1:
+        raise LexiconError(f"{where}: schema_version 1 required")
+    if (doc.get("reference"), doc.get("witness")) != (reference, witness):
+        raise LexiconError(f"{where}: lists renderings of {doc.get('witness')!r} against {doc.get('reference')!r}, "
+                           f"not of {witness!r} against {reference!r}")
+    entries, seen = [], set()
+    for rec in doc.get("entries") or ():
+        entry, status = _standing_entry(rec, where, reference_lang, witness_lang, seen)
+        if status == "verified":
+            entries.append(entry)
+    for rec in doc.get("considered_not_listed") or ():
+        if not isinstance(rec, Mapping) or not isinstance(rec.get("id"), str) or not rec.get("reason"):
+            raise LexiconError(f"{where}: considered_not_listed records need an id and a reason")
+        if rec["id"] in seen:
+            raise LexiconError(f"{where}: duplicate id {rec['id']!r}")
+        seen.add(rec["id"])
+    return StandingRenderings(tuple(entries))
+
+
+def _standing_entry(rec: Any, where: str, ref_lang: str, wit_lang: str,
+                    seen: set[str]) -> tuple[StandingEntry, str]:
+    allowed = {"id", "reference_forms", "sanskrit", "witness_renderings", "counts", "note", "status", "verified_by"}
+    if not isinstance(rec, Mapping):
+        raise LexiconError(f"{where}: an entry must be a mapping")
+    _only(rec, allowed, f"{where}: entry {rec.get('id')!r}")
+    ident = rec.get("id")
+    if not isinstance(ident, str) or not _NAME_RE.fullmatch(ident) or ident in seen:
+        raise LexiconError(f"{where}: missing, malformed or duplicate entry id {ident!r}")
+    seen.add(ident)
+    status, by = rec.get("status"), rec.get("verified_by")
+    if status not in STANDING_STATUSES:
+        raise LexiconError(f"{where}: entry {ident}: status must be one of {sorted(STANDING_STATUSES)}")
+    if (status == "verified") != bool(by):
+        raise LexiconError(f"{where}: entry {ident}: verified_by is required for, and only for, status verified")
+    refs = _strings(rec.get("reference_forms"), f"{where}: entry {ident} reference_forms", ref_lang)
+    wits = _strings(rec.get("witness_renderings"), f"{where}: entry {ident} witness_renderings", wit_lang)
+    _check_tokens(refs, ref_lang, f"{where}: entry {ident} reference_forms")
+    _check_tokens(wits, wit_lang, f"{where}: entry {ident} witness_renderings")
+    if not refs or not wits:
+        raise LexiconError(f"{where}: entry {ident} needs reference_forms and witness_renderings")
+    return StandingEntry(ident, refs, wits), status
 
 
 # --------------------------------------------------------------------------- variant forms

@@ -42,6 +42,7 @@ from .experiments.overattribution import design as exp_design
 from .experiments.overattribution import run as exp_run
 from .experiments.overattribution import score as exp_score
 from .llm.client import canonical_json, sha256_text
+from .matrix.status import PRIMARY_OUTCOMES
 from .registry import load_witnesses
 from .topics import TopicTaskSettings, load_codebook, prelabel_schema, render_system
 
@@ -133,6 +134,9 @@ def freeze(root: Path | Settings, amend: str | None = None, today: Date | None =
     missing = [k for k in MANAGED_KEYS if k not in doc]
     if missing:
         raise PreregError(f"{path}: missing top-level key(s) {missing}")
+    if doc.get("primary_outcome") not in PRIMARY_OUTCOMES:
+        raise PreregError(f"{path}: primary_outcome must be one of {list(PRIMARY_OUTCOMES)} "
+                          f"(any_conv is a sensitivity variant, never primary)")
     if amend is not None and not amend.strip():
         raise PreregError("an amendment needs a reason")
     frozen = doc.get("frozen") is True

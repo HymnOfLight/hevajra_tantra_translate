@@ -66,6 +66,45 @@ class Relation(StrEnum):
     NO_COUNTERPART = "no_counterpart"
 
 
+class Convention(StrEnum):
+    """A convention of the translation set aside before the relation is judged (collate.v2).
+
+    NONE                the usual value
+    STANDING_RENDERING  the unit contains a term of the researcher-verified glossary of the
+                        witness's standing renderings, rendered as listed
+    TRANSCRIBED_NAME    a proper name, seed syllable or letter is rendered by sound while
+                        the rest of the unit is rendered by meaning
+
+    A convention is orthogonal to the relation: status and outcome come from the relation
+    alone (``matrix.status``). On links and cells it travels as a flag whose name is the
+    value (``CONVENTION_FLAGS``); NONE is never written as a flag, so a v1 link and a v2
+    link with no convention look the same.
+    """
+
+    NONE = "none"
+    STANDING_RENDERING = "standing_rendering"
+    TRANSCRIBED_NAME = "transcribed_name"
+
+
+CONVENTION_FLAGS = frozenset({Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value})
+FLAG_CONVENTION_UNSUPPORTED = "convention_unsupported"   # V12: the claimed convention is not supported
+
+
+def convention_of(flags: frozenset[str] | set[str]) -> Convention:
+    """The convention a flag set carries (NONE when it carries none); two is an error."""
+    found = sorted(CONVENTION_FLAGS & set(flags))
+    if len(found) > 1:
+        raise ValueError(f"more than one convention flag: {found}")
+    return Convention(found[0]) if found else Convention.NONE
+
+
+def with_convention(flags: frozenset[str] | set[str], convention: Convention | str) -> frozenset[str]:
+    """``flags`` with its convention flag replaced by ``convention`` (removed for NONE)."""
+    value = Convention(convention)
+    kept = frozenset(flags) - CONVENTION_FLAGS
+    return kept if value is Convention.NONE else kept | {value.value}
+
+
 class WitnessOnlyKind(StrEnum):
     """Kind of witness material that has no reference counterpart (orphan rows)."""
 
@@ -82,6 +121,9 @@ class Grade(StrEnum):
     B  all machine replicates agree on the outcome class and every check passed
     C  majority only, or a non-fatal verification flag
     X  fatal verification failure or no majority (the cell is UNALIGNED)
+
+    Convention flags (``CONVENTION_FLAGS``) are descriptions, not findings: they never
+    lower a grade. ``convention_unsupported`` (V12) is a finding and gives C.
     """
 
     A = "A"
@@ -263,6 +305,12 @@ class Verdict:
     quote_ref: str = ""               # short reference-side quote (licence-capped)
     quote_zh: str = ""                # short witness-side quote (licence-capped)
     minutes: float | None = None      # annotator time, to measure the real review cost
+    # Conventions (collate.v2): "" = not annotated (a sheet without the column), else a
+    # ``Convention`` value. Kept apart from ``flags`` because the blind value must survive
+    # the reveal; the machine value is recorded at reveal like ``machine_relation``.
+    machine_convention: str = ""
+    blind_convention: str = ""
+    final_convention: str = ""
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ..core.textnorm import find_terms
-from ..core.translit import transliteration_density
+from ..core.translit import MIN_TRANSLITERATION_DENSITY, transliteration_density
 from ..core.types import (
     REASON_SUBSTITUTED_MODEL,
     REASON_UNASSESSED,
@@ -21,7 +21,6 @@ from .verify import FLAG_CORROBORATED, FLAG_POLARITY_UNCORROBORATED, FLAG_QUOTE_
 
 BOTH_QUOTES = frozenset({"ret", "gen", "sub", "lit"})
 FLIP_CODES = frozenset({"sub", "om", "add"})
-MIN_TRANSLITERATION_DENSITY = 0.5
 
 FLAG_POLARITY_DISAGREES = "polarity_disagrees"
 FLAG_DUPLICATE_SLOT = "duplicate_slot"

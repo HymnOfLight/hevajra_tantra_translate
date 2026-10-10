@@ -7,7 +7,8 @@ frozen: false
 llm_backend: null                      # written by `prereg freeze`: api or subscription (config/llm.yaml)
 instrument_digests: {}                 # written by `prereg freeze`: task -> InstrumentId digest
 
-primary_outcome: any                   # any = omission + rewriting + prose transliteration; cov = omission only
+primary_outcome: any                   # any = omission + rewriting + content transliteration (conventions not counted);
+                                       # cov = omission only; E1_any_conv (conventions counted) is always reported beside them
 
 scope:                                 # printed beside every number
   - "relative to Derge D417-418 (revised by gZhon nu dpal), not to the Sanskrit"
