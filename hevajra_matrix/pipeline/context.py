@@ -188,19 +188,25 @@ def bind_backend(ctx: RunContext, explicit: bool) -> RunContext:
     if recorded is None or recorded == backend(ctx.settings):
         return ctx
     if explicit:
-        raise StageError(f"{ctx.run_dir} was produced with the {recorded} backend; use --backend {recorded} "
-                         "or a new run directory")
+        raise StageError(f"{ctx.run_dir} is bound to the {recorded} backend (its LLM outputs came from it); "
+                         f"use --backend {recorded} or a new run directory")
     return replace(ctx, settings=replace(ctx.settings, llm={**ctx.settings.llm, "backend": recorded}))
 
 
-def mark_backend(ctx: RunContext) -> None:
-    """Record the run's backend on its first LLM client; refuse a second, different one."""
+def check_backend(ctx: RunContext) -> None:
+    """Refuse an LLM client of another backend than the one the run is bound to."""
     name, recorded = backend(ctx.settings), run_backend(ctx.run_dir)
-    if recorded is None:
+    if recorded is not None and recorded != name:
+        raise StageError(f"{ctx.run_dir} is bound to the {recorded} backend, not {name}")
+
+
+def mark_backend(ctx: RunContext) -> None:
+    """Bind the run to its backend; called once the first LLM response has arrived (from
+    the cache or the network), so a failed or empty attempt binds nothing."""
+    check_backend(ctx)
+    if run_backend(ctx.run_dir) is None:
         ctx.run_dir.mkdir(parents=True, exist_ok=True)
-        (ctx.run_dir / BACKEND_MARKER).write_text(name + "\n", encoding="utf-8")
-    elif recorded != name:
-        raise StageError(f"{ctx.run_dir} was produced with the {recorded} backend, not {name}")
+        (ctx.run_dir / BACKEND_MARKER).write_text(backend(ctx.settings) + "\n", encoding="utf-8")
 
 
 def anthropic_client(settings: Settings) -> AnthropicClient:
@@ -220,9 +226,14 @@ def live_client(settings: Settings) -> LLMClient:
 
 def cache_root(settings: Settings) -> Path:
     """The response cache of the configured backend. The backends are different instruments,
-    so the subscription backend keeps its answers apart (``<cache>/subscription/``)."""
+    so the subscription backend keeps its answers apart (``<cache>/subscription/``), and a
+    pinned CLI version (``subscription.cli_version``) has a cache of its own, so answers of
+    another CLI are never served under the pinned instrument."""
     root = settings.path("cache")
-    return root / SUBSCRIPTION if backend(settings) == SUBSCRIPTION else root
+    if backend(settings) != SUBSCRIPTION:
+        return root
+    pin = (settings.llm.get("subscription") or {}).get("cli_version")
+    return root / SUBSCRIPTION / f"cli-{pin}" if pin else root / SUBSCRIPTION
 
 
 def audited(ctx: RunContext, inner: LLMClient) -> AuditedClient:
@@ -240,10 +251,12 @@ def audited(ctx: RunContext, inner: LLMClient) -> AuditedClient:
     if backend(ctx.settings) == SUBSCRIPTION:
         cap = (llm.get("subscription") or {}).get("budget_usd_equivalent")
         ledger, budget = f"llm_spend.{SUBSCRIPTION}.jsonl", float(cap) if cap is not None else float("inf")
+    check_backend(ctx)
     return AuditedClient(inner, ctx.path(AUDIT_LOG), pricing=dict(llm.get("pricing_usd_per_mtok") or {}),
                          budget_usd=budget, run_id=ctx.run_dir.name,
                          ledger_path=ctx.settings.path("cache") / ledger,
-                         fallback_pricing=dict(fallback) if fallback else None)
+                         fallback_pricing=dict(fallback) if fallback else None,
+                         on_first_response=lambda: mark_backend(ctx))
 
 
 def make_client(ctx: RunContext) -> AuditedClient:
@@ -253,7 +266,6 @@ def make_client(ctx: RunContext) -> AuditedClient:
     runs; the audit log is ``<run_dir>/llm_audit.jsonl``. Offline, the cache raises
     ``CacheMiss`` for anything not stored and no network client is constructed at all.
     """
-    mark_backend(ctx)
     inner: LLMClient = _NoNetwork() if ctx.offline else live_client(ctx.settings)
     return audited(ctx, CachedClient(inner, cache_root(ctx.settings), offline=ctx.offline))
 
@@ -296,6 +308,11 @@ def audit_summary(log_path: Path) -> dict[str, Any]:
         "served_models": {task: sorted(models) for task, models in sorted(served.items())},
         "substituted_calls": dict(Counter(str(r.get("task")) for r in records
                                           if r.get("fallback_used") or r.get("served_model") != r.get("requested_model"))),
+        # Subscription backend: which CLI versions and logins produced the answers used.
+        "cli_versions": sorted({str((r.get("client_info") or {}).get("cli_version")) for r in records
+                                if (r.get("client_info") or {}).get("cli_version")}),
+        "logins": sorted({str((r.get("client_info") or {}).get("auth")) for r in records
+                          if (r.get("client_info") or {}).get("auth")}),
         "est_usd_uncached": round(sum(float(r.get("est_usd") or 0) for r in records if not r.get("from_cache")), 4),
     }
 
@@ -317,9 +334,7 @@ def record_stage(ctx: RunContext, stage: str, inputs: Mapping[str, Path] | None 
     extra = {"run_id": ctx.run_dir.name, "offline": ctx.offline, "stages": stages,
              "instrument_digests": instrument_digests(ctx.settings), "llm_backend": backend(ctx.settings),
              "llm": audit_summary(ctx.path(AUDIT_LOG))}
-    if backend(ctx.settings) == SUBSCRIPTION and not ctx.offline:
-        cli = ClaudeCodeClient(CliSettings.from_config(ctx.settings.llm))
-        extra.update({"claude_code_version": cli.version(), "credential_source": cli.credential_source()})
+
     return write_manifest(ctx.run_dir, ctx.settings, present, extra)
 
 

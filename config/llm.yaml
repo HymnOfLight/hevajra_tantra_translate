@@ -33,8 +33,10 @@ tasks:
 subscription:
   command: claude                      # the Claude Code executable
   max_turns: 3                         # the structured answer may need a turn of its own
-  timeout_s: 3600                      # wall clock for one whole claude -p run (all turns); not retried
+  timeout_s: 7200                      # wall clock for one whole claude -p run (all turns; more for a huge
+                                       # output cap: max_tokens / 15 tok/s); a timeout is not retried
   max_retries: 1                       # transient failures only; a usage limit or a timeout stops the stage
   tools: ""                            # --tools value; "" = no built-in tools (part of the instrument)
-  cli_version: null                    # e.g. "2.1.296": refuse any other Claude Code version (part of the instrument)
+  cli_version: null                    # e.g. "2.1.296": refuse any other Claude Code version; part of the
+                                       # instrument, with its own cache directory
   budget_usd_equivalent: null          # optional cap on the API-equivalent cost (nothing is billed)

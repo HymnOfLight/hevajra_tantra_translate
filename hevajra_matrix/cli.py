@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import signal
 import sys
+import threading
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -24,6 +26,7 @@ from .evaluation.gold import GoldError
 from .evaluation.sentinels import SentinelError
 from .experiments.overattribution.analysis import AnalysisError
 from .experiments.overattribution.design import DesignError
+from .llm.claude_code_client import abort as abort_claude_code
 from .llm.client import LLMError
 from .pipeline import RunContext, StageError
 from .prereg import PreregError, freeze
@@ -246,8 +249,28 @@ def _review(ctx: RunContext, args: argparse.Namespace) -> int:
     return 0
 
 
+def _on_signal(signum: int, frame: object) -> None:
+    """Stop LLM work promptly: no retry or new ``claude -p`` in worker threads (the running
+    ones get the same signal through the process group), then unwind normally."""
+    abort_claude_code()
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    raise SystemExit(128 + signum)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    handled = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP) if threading.current_thread() is threading.main_thread() \
+        else ()
+    previous = {sig: signal.signal(sig, _on_signal) for sig in handled}
+    try:
+        return _main(args)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def _main(args: argparse.Namespace) -> int:
     try:
         root = getattr(args, "root", None)
         settings = load_settings(Path(root).resolve() if root else find_root())

@@ -112,6 +112,7 @@ class AuditedClient:
     """``LLMClient`` decorator that logs every call and enforces the budget. Thread-safe.
 
     ``clock`` returns epoch seconds (default ``time.time``); tests pass a fake one.
+    ``on_first_response`` is called once, after the first response has been logged.
     """
 
     def __init__(
@@ -124,6 +125,7 @@ class AuditedClient:
         clock: Callable[[], float] | None = None,
         ledger_path: Path | None = None,
         fallback_pricing: Mapping[str, float] | None = None,
+        on_first_response: Callable[[], None] | None = None,
     ) -> None:
         for name, table in (("pricing", pricing), ("fallback_pricing", fallback_pricing)):
             missing = [k for k in PRICING_KEYS if table is not None and k not in table]
@@ -143,6 +145,7 @@ class AuditedClient:
         self.clock = clock or time.time
         self.spent_usd = recorded_spend(self.ledger_path or self.log_path)
         self._lock = threading.Lock()
+        self._on_first_response = on_first_response
 
     def is_cached(self, request: LLMRequest) -> bool:
         is_cached = getattr(self.inner, "is_cached", None)
@@ -170,6 +173,9 @@ class AuditedClient:
                     entry = {k: record[k] for k in ("ts", "run_id", "task", "key", "est_usd", "from_cache")}
                     _append(self.ledger_path, json.dumps(entry, sort_keys=True) + "\n")
             _append(self.log_path, line)
+            first, self._on_first_response = self._on_first_response, None
+        if first is not None:
+            first()
         return response
 
 

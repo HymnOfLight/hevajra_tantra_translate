@@ -343,23 +343,28 @@ def collate(windows: Sequence[Window], client: LLMClient, settings: TaskSettings
 
     Returns replicate tag -> one parse result per window, in the order of ``windows``,
     whatever order the thread pool finished in. Requests are independent, so ``workers``
-    of them run concurrently, except that the first request runs alone: every request
-    shares the same cacheable prefix (instructions and the full witness text), and the
-    others can only read the prompt cache once the first has written it. Transport, budget
-    and cache-miss errors propagate after the requests not yet started are cancelled;
-    answers already received stay cached.
+    of them run concurrently, except that the first request not yet in the response cache
+    runs alone: every request shares the same cacheable prefix (instructions and the full
+    witness text), and the others can only read the prompt cache once one has written it.
+    Transport, budget and cache-miss errors propagate after the requests not yet started
+    are cancelled; answers already received stay cached.
     """
     if workers < 1:
         raise ValueError("workers must be >= 1")
     jobs = build_requests(windows, settings, replicates, examples, template)
-    responses = [client.complete(jobs[0][2])] if jobs else []
+    is_cached = getattr(client, "is_cached", lambda request: False)
+    first = next((i for i, (_, _, request) in enumerate(jobs) if not is_cached(request)), 0)
+    responses: list[LLMResponse | None] = [None] * len(jobs)
+    if jobs:
+        responses[first] = client.complete(jobs[first][2])
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(client.complete, request) for _, _, request in jobs[1:]]
+        futures = {i: pool.submit(client.complete, request) for i, (_, _, request) in enumerate(jobs) if i != first}
         try:
-            responses += [f.result() for f in futures]
+            for i, future in futures.items():
+                responses[i] = future.result()
         except BaseException:
-            for f in futures:
-                f.cancel()
+            for future in futures.values():
+                future.cancel()
             raise
     out: dict[str, list[Parsed]] = {tag: [] for tag in replicates}
     for (tag, window, _), response in zip(jobs, responses):

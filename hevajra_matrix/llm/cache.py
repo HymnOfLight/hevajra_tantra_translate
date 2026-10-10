@@ -65,8 +65,13 @@ class CachedClient:
 
 
 def response_to_dict(response: LLMResponse) -> dict[str, Any]:
-    """Plain JSON-ready dict of every field (``usage`` as a nested dict)."""
-    return dataclasses.asdict(response)
+    """Plain JSON-ready dict of every field (``usage`` as a nested dict). An empty
+    ``client_info`` (the API backend) is left out, so those entries stay readable by code
+    that predates the field."""
+    data = dataclasses.asdict(response)
+    if not data.get("client_info"):
+        data.pop("client_info", None)
+    return data
 
 
 def response_from_dict(data: Mapping[str, Any]) -> LLMResponse:

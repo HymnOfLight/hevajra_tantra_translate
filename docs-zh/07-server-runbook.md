@@ -116,8 +116,10 @@ collate --dry-run: 105 calls (0 cached), 3786924 input tokens (heuristic), assum
 | `claude-check needs the claude command` | 没装 Claude Code，或 `claude` 不在 PATH 中 |
 | `claude -p failed ... login` 或类似认证错误 | 没登录：运行 `claude` 后 `/login`，或设置 `CLAUDE_CODE_OAUTH_TOKEN` |
 | `UsageLimitReached`（"You've hit your session limit" 之类） | 套餐的用量额度暂时用完了。已完成的调用都在缓存里，等额度重置后**重新运行同一条命令**，会从停下的地方继续 |
-| `CliTimeout` | 单次调用超过 1 小时被停止（`config/llm.yaml` 的 `subscription.timeout_s`）。不会自动重试；把结果包发回，我们一起判断是否需要调大 |
-| `... was produced with the api backend` | 这个运行目录之前是用另一种后端跑的。换一个新的运行目录，或者改用原来的后端 |
+| `CliTimeout` | 单次调用超过 2 小时被停止（`config/llm.yaml` 的 `subscription.timeout_s`）。不会自动重试；把结果包发回，我们一起判断是否需要调大 |
+| `ModelUnavailable` | 这个账号此刻用不了 Opus 5.5（程序已关闭自动换模型）。稍后重跑同一条命令 |
+| `would not use a first-party Claude subscription login` | Claude Code 报告的登录不是包月登录，比如是 API 密钥。请用 `claude` 再 `/login` 登录订阅账号，或设置 `CLAUDE_CODE_OAUTH_TOKEN` |
+| `... is bound to the api backend` | 这个运行目录之前是用另一种后端跑的。换一个新的运行目录，或者改用原来的后端 |
 | `passed: false`，`status: invalid` | 没有返回结构化结果，可能与 Claude Code 版本有关。把结果包原样发回，我们来调整 `config/llm.yaml` 的 `subscription` 设置 |
 | `fallback_used: true` | 实际回答的不是 Opus 5.5，这样的回答不会进入测量。请把结果包发回 |
 | 下载原文失败 | 服务器访问 CBETA 或 GitHub 受限，可以手动把 `T18n0892.xml` 与 `derge_rgyud_bum_nga.txt` 放进 `data/raw/` |

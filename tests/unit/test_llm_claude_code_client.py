@@ -1,8 +1,8 @@
 """llm.claude_code_client: the subscription backend (``claude -p``) without the real CLI.
 
-Pure parts (command line, environment, result mapping) are tested directly; the client
-is tested with an injected runner and, end to end through the CLI, with a fake ``claude``
-executable on PATH.
+The command line and environment are tested directly; the client with an injected
+runner; the process handling with small shell scripts; and the pipeline end to end with a
+fake ``claude`` executable on PATH. Result mapping is in ``test_llm_claude_code_result``.
 """
 
 from __future__ import annotations
@@ -19,31 +19,33 @@ import pytest
 import yaml
 
 from hevajra_matrix.cli import main
+from hevajra_matrix.collate import collator
 from hevajra_matrix.config import load_settings
-from hevajra_matrix.llm.cache import CachedClient
+from hevajra_matrix.llm import claude_code_client as ccc
+from hevajra_matrix.llm.cache import CachedClient, response_to_dict
 from hevajra_matrix.llm.claude_code_client import (
     CliSettings,
     CliTimeout,
     ClaudeCodeClient,
+    ModelUnavailable,
     UsageLimitReached,
     _run,
     build_argv,
     child_env,
-    credential_source,
-    same_model,
-    served_model,
+    run_timeout,
     system_text,
-    to_response,
 )
-from hevajra_matrix.llm.client import ConfigurationError, LLMRequest, LLMTransportError
+from hevajra_matrix.llm.client import ConfigurationError, LLMRequest, LLMResponse, LLMTransportError
 from hevajra_matrix.llm.schema import strict
-from hevajra_matrix.pipeline import make_client
+from hevajra_matrix.pipeline import make_client, plan_collation
+from hevajra_matrix.pipeline.context import cache_root
 from hevajra_matrix.prereg import instrument_digests
 
 from test_pipeline_support import context, make_root
 
 MODEL = "claude-opus-5-5"
 SCHEMA = strict({"type": "object", "properties": {"ok": {"type": "boolean"}}})
+SUBSCRIBED = json.dumps({"loggedIn": True, "authMethod": "oauth_token", "apiProvider": "firstParty"})
 
 
 def request(context_text: str | None = "CONTEXT", max_tokens: int = 2048) -> LLMRequest:
@@ -54,11 +56,17 @@ def request(context_text: str | None = "CONTEXT", max_tokens: int = 2048) -> LLM
 def result(**overrides) -> dict:
     base = {"type": "result", "subtype": "success", "is_error": False, "stop_reason": "end_turn",
             "session_id": "sess-1", "structured_output": {"ok": True}, "result": "",
-            "usage": {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 100,
-                      "cache_creation_input_tokens": 7},
+            "usage": {"input_tokens": 10, "output_tokens": 5},
             "modelUsage": {MODEL: {"inputTokens": 10, "outputTokens": 5}}}
     base.update(overrides)
     return base
+
+
+@pytest.fixture(autouse=True)
+def not_aborted():
+    ccc.ABORTED.clear()
+    yield
+    ccc.ABORTED.clear()
 
 
 # --------------------------------------------------------------------------- request
@@ -92,7 +100,8 @@ def test_child_environment_is_an_allowlist(tmp_path: Path) -> None:
                  "CLAUDE_CODE_REMOTE", "CLAUDE_SESSION_INGRESS_TOKEN_FILE", "GH_TOKEN", "CLAUDE_EFFORT"):
         assert name not in env, name
     assert env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "4096" and env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
-    assert "CLAUDE_CONFIG_DIR" not in env, "a stored login under HOME keeps the host configuration"
+    assert env["CLAUDE_CODE_NO_MODEL_FALLBACK"] == "1" and env["DISABLE_AUTOUPDATER"] == "1"
+    assert "CLAUDE_CONFIG_DIR" not in env, "a stored login keeps the host configuration"
 
 
 def test_an_oauth_token_gets_a_fresh_config_directory(tmp_path: Path) -> None:
@@ -102,111 +111,23 @@ def test_an_oauth_token_gets_a_fresh_config_directory(tmp_path: Path) -> None:
     assert own["CLAUDE_CONFIG_DIR"] == "/mine"
 
 
-# -------------------------------------------------------------------------- response
-def test_success_with_a_valid_structured_answer_is_ok() -> None:
-    r = to_response(result(num_turns=2, terminal_reason="completed"), request(), "k", "now", cli_version="2.1.296")
-    assert r.status == "ok" and r.data == {"ok": True} and r.usable
-    assert r.served_model == MODEL and not r.fallback_used and r.request_id == "sess-1"
-    assert r.usage.cache_read_input_tokens == 100 and r.usage.output_tokens == 5
-    assert r.client_info == {"cli_version": "2.1.296", "subtype": "success", "num_turns": 2,
-                             "terminal_reason": "completed"}
-
-
-def test_live_check_shape_with_stop_reason_tool_use_is_ok() -> None:
-    assert to_response(result(stop_reason="tool_use"), request(), "k", "now").status == "ok"
-
-
-# Shapes as CLI 2.1.296 emits them: is_error is true on these answers too.
-@pytest.mark.parametrize("overrides", [
-    {"structured_output": {"ok": "yes"}},
-    {"structured_output": None, "result": "plain text"},
-    {"subtype": "error_max_structured_output_retries", "is_error": True, "structured_output": None,
-     "terminal_reason": "structured_output_retry_exhausted"},
-    {"subtype": "error_max_turns", "is_error": True, "structured_output": None, "num_turns": 3},
-])
-def test_answers_without_a_valid_structured_output_are_invalid(overrides) -> None:
-    r = to_response(result(**overrides), request(), "k", "now")
-    assert r.status == "invalid" and r.data is None and not r.usable
-
-
-@pytest.mark.parametrize("overrides", [{"stop_reason": "refusal"}, {"safety_stops": 1},
-                                       {"stop_reason": "refusal", "is_error": True}])
-def test_refusals_are_values(overrides) -> None:
-    r = to_response(result(**overrides), request(), "k", "now")
-    assert r.status == "refusal" and r.data is None
-
-
-@pytest.mark.parametrize("overrides", [
-    {"stop_reason": "max_tokens"},
-    {"is_error": True, "api_error": "max_output_tokens", "stop_reason": "stop_sequence", "structured_output": None},
-    {"is_error": True, "structured_output": None, "stop_reason": "stop_sequence",
-     "result": "API Error: Claude's response exceeded the 128000 output token maximum."},
-])
-def test_truncations_are_values_even_with_is_error(overrides) -> None:
-    assert to_response(result(**overrides), request(), "k", "now").status == "truncated"
-
-
-def test_output_beyond_max_tokens_is_flagged() -> None:
-    r = to_response(result(usage={"output_tokens": 5000}), request(max_tokens=2048), "k", "now")
-    assert r.status == "ok" and r.client_info["output_over_max_tokens"] is True
-
-
-def test_output_from_another_model_is_a_substitution() -> None:
-    usage = {MODEL: {"outputTokens": 3}, "claude-opus-4-8": {"outputTokens": 40}}
-    r = to_response(result(modelUsage=usage), request(), "k", "now")
-    assert r.served_model == "claude-opus-4-8" and r.fallback_used and not r.usable
-
-
-def test_served_model_reading() -> None:
-    assert served_model({f"{MODEL}[1m]": {"outputTokens": 9}}, MODEL) == (MODEL, False)
-    assert served_model({f"{MODEL}-20260701": {"outputTokens": 9}}, MODEL) == (MODEL, False)
-    assert served_model({}, MODEL) == ("unknown", True)
-    assert served_model({MODEL: {"outputTokens": 9}, "claude-haiku-4-5": {"outputTokens": 0}}, MODEL) == (MODEL, False)
-
-
-def test_a_longer_model_id_is_not_the_requested_model() -> None:
-    assert not same_model("claude-opus-5-5", "claude-opus-5")
-    assert served_model({"claude-opus-5-5": {"outputTokens": 9}}, "claude-opus-5") == ("claude-opus-5-5", True)
-
-
-LIMIT_TEXTS = ["You've hit your session limit \u00b7 resets 7pm", "You've hit your weekly limit \u00b7 resets Mon",
-               "You\u2019ve hit your Opus limit", "You're out of usage credits"]
-
-
-@pytest.mark.parametrize("text", LIMIT_TEXTS)
-def test_plan_limit_messages_stop_the_stage(text) -> None:
-    with pytest.raises(UsageLimitReached):
-        to_response(result(is_error=True, structured_output=None, result=text), request(), "k", "now")
-
-
-def test_typed_usage_limit_field_stops_the_stage() -> None:
-    with pytest.raises(UsageLimitReached):
-        to_response(result(is_error=True, structured_output=None, result="x", api_error="usage_limit_reached",
-                           api_error_status=429), request(), "k", "now")
-
-
-@pytest.mark.parametrize("overrides", [
-    {"is_error": True, "result": "API Error: 500"},
-    {"subtype": "error_during_execution", "errors": ["boom"]},
-    {"is_error": True, "result": "API Error: Server is temporarily limiting requests (not your usage limit)",
-     "api_error_status": 429},
-    {"is_error": True, "result": "API Error: 529 overloaded", "api_error_status": 529},
-])
-def test_run_failures_are_raised_not_cached(overrides) -> None:
-    with pytest.raises(LLMTransportError) as caught:
-        to_response(result(structured_output=None, **overrides), request(), "k", "now")
-    assert not isinstance(caught.value, UsageLimitReached), "transient failures stay retryable"
+def test_run_timeout_is_never_below_the_output_cap_at_a_slow_rate() -> None:
+    settings = CliSettings(timeout_s=3600)
+    assert run_timeout(request(max_tokens=2048), settings) == 3600
+    assert run_timeout(request(max_tokens=128000), settings) == 128000 / ccc.MIN_TOKENS_PER_S
 
 
 # --------------------------------------------------------------------------- client
-def scripted(outputs: list, seen: list | None = None):
-    """A runner answering --version and then the scripted (code, stdout, stderr) outputs."""
+def scripted(outputs: list, seen: list | None = None, auth: str = SUBSCRIBED, version: str = "2.1.296 (Claude Code)"):
+    """A runner answering --version and auth status, then the scripted outputs in order."""
     def runner(argv, stdin_text, env, cwd, timeout_s):
         if argv[1:] == ["--version"]:
-            return 0, "2.1.296 (Claude Code)", ""
+            return 0, version, ""
+        if argv[1:] == ["auth", "status", "--json"]:
+            return 0, auth, ""
         if seen is not None:
             system_file = Path(argv[argv.index("--system-prompt-file") + 1])
-            seen.append((stdin_text, system_file.read_text(encoding="utf-8"), cwd, env))
+            seen.append((stdin_text, system_file.read_text(encoding="utf-8"), cwd, env, timeout_s))
         item = outputs.pop(0)
         if isinstance(item, BaseException):
             raise item
@@ -214,166 +135,156 @@ def scripted(outputs: list, seen: list | None = None):
     return runner
 
 
+def client(outputs: list, tmp_path: Path, **kwargs) -> ClaudeCodeClient:
+    settings = kwargs.pop("settings", CliSettings())
+    return ClaudeCodeClient(settings, runner=scripted(outputs, **kwargs), sleep=lambda s: None, environ={},
+                            session_dir=tmp_path)
+
+
 def test_client_runs_one_process_and_retries_transport_failures(tmp_path: Path) -> None:
     seen, pauses = [], []
     runner = scripted([(1, "", "connection reset"), (0, json.dumps(result()), "")], seen)
-    client = ClaudeCodeClient(CliSettings(max_retries=2), runner=runner, sleep=pauses.append,
-                              environ={"ANTHROPIC_API_KEY": "k"}, session_dir=tmp_path)
-    r = client.complete(request())
+    c = ClaudeCodeClient(CliSettings(max_retries=2), runner=runner, sleep=pauses.append,
+                         environ={"ANTHROPIC_API_KEY": "k"}, session_dir=tmp_path)
+    r = c.complete(request())
     assert r.status == "ok" and r.key == request().key() and len(seen) == 2 and pauses == [30.0]
-    assert r.client_info["cli_version"] == "2.1.296 (Claude Code)"
-    stdin_text, system, cwd, env = seen[0]
+    assert r.client_info["cli_version"] == "2.1.296" and r.client_info["auth"] == "oauth_token (firstParty)"
+    assert "seconds" in r.client_info
+    stdin_text, system, cwd, env, timeout_s = seen[0]
     assert stdin_text == "BODY" and system == "SYSTEM\n\nCONTEXT" and "ANTHROPIC_API_KEY" not in env
+    assert timeout_s == CliSettings().timeout_s
     assert not Path(cwd).exists(), "the scratch directory is removed after the call"
 
 
 @pytest.mark.parametrize("payload, status", [
     (result(subtype="error_max_turns", is_error=True, structured_output=None), "invalid"),
     (result(subtype="error_max_structured_output_retries", is_error=True, structured_output=None), "invalid"),
-    (result(is_error=True, api_error="max_output_tokens", structured_output=None), "truncated"),
+    (result(is_error=True, api_error="max_output_tokens", stop_reason="stop_sequence", structured_output=None),
+     "truncated"),
 ])
 def test_research_outcomes_take_one_run_and_no_retry(tmp_path: Path, payload, status) -> None:
-    outputs, pauses = [(0, json.dumps(payload), "")], []
-    client = ClaudeCodeClient(runner=scripted(outputs), sleep=pauses.append, environ={}, session_dir=tmp_path)
-    assert client.complete(request()).status == status and not outputs and not pauses
+    outputs = [(0, json.dumps(payload), "")]
+    assert client(outputs, tmp_path).complete(request()).status == status and not outputs
 
 
 @pytest.mark.parametrize("failure, error", [
-    ((0, json.dumps(result(is_error=True, structured_output=None, result=LIMIT_TEXTS[0])), ""), UsageLimitReached),
+    ((0, json.dumps(result(is_error=True, structured_output=None, result="You've hit your session limit")), ""),
+     UsageLimitReached),
+    ((0, json.dumps(result(is_error=True, structured_output=None, api_error="model_substitution_disabled")), ""),
+     ModelUnavailable),
     (CliTimeout("too long"), CliTimeout),
 ])
-def test_usage_limit_and_timeout_are_not_retried(tmp_path: Path, failure, error) -> None:
-    outputs, pauses = [failure, (0, json.dumps(result()), "")], []
-    client = ClaudeCodeClient(CliSettings(max_retries=3), runner=scripted(outputs), sleep=pauses.append,
-                              environ={}, session_dir=tmp_path)
+def test_usage_limit_unavailable_model_and_timeout_are_not_retried(tmp_path: Path, failure, error) -> None:
+    outputs = [failure, (0, json.dumps(result()), "")]
     with pytest.raises(error):
-        client.complete(request())
-    assert len(outputs) == 1 and not pauses
+        client(outputs, tmp_path, settings=CliSettings(max_retries=3)).complete(request())
+    assert len(outputs) == 1
 
 
-def test_an_api_key_file_of_a_cloud_session_is_refused(tmp_path: Path) -> None:
+def test_nothing_is_retried_or_started_after_abort(tmp_path: Path) -> None:
+    outputs = [(1, "", "connection reset"), (0, json.dumps(result()), "")]
+    c = client(outputs, tmp_path, settings=CliSettings(max_retries=3))
+    c.sleep = lambda s: ccc.abort()
+    with pytest.raises(LLMTransportError):
+        c.complete(request())
+    assert len(outputs) == 1, "the retry after the pause did not start"
+    with pytest.raises(LLMTransportError, match="aborted"):
+        client([(0, json.dumps(result()), "")], tmp_path).complete(request())
+
+
+# --------------------------------------------------------------------------- preflight
+def test_an_api_key_file_of_a_cloud_session_is_refused_even_with_a_token(tmp_path: Path) -> None:
     (tmp_path / ".api_key").write_text("x")
-    calls = []
-    client = ClaudeCodeClient(runner=lambda *a: calls.append(a) or (0, "", ""), environ={}, session_dir=tmp_path)
-    with pytest.raises(ConfigurationError):
-        client.complete(request())
-    assert not calls
-    assert credential_source({}, tmp_path) == "cloud session API key file (refused)"
-    ok = ClaudeCodeClient(runner=scripted([(0, json.dumps(result()), "")]), environ={"CLAUDE_CODE_OAUTH_TOKEN": "t"},
-                          session_dir=tmp_path)
-    assert ok.complete(request()).status == "ok", "an explicit subscription token is used instead"
+    outputs = [(0, json.dumps(result()), "")]
+    c = ClaudeCodeClient(runner=scripted(outputs), environ={"CLAUDE_CODE_OAUTH_TOKEN": "t"}, session_dir=tmp_path)
+    with pytest.raises(ConfigurationError, match="API key file"):
+        c.complete(request())
+    assert outputs, "no request was sent"
 
 
-def test_credential_source_labels(tmp_path: Path) -> None:
-    assert credential_source({"CLAUDE_CODE_OAUTH_TOKEN": "t"}, tmp_path) == "CLAUDE_CODE_OAUTH_TOKEN"
-    assert credential_source({}, tmp_path) == "login stored under HOME"
-    (tmp_path / ".oauth_token").write_text("x")
-    assert credential_source({}, tmp_path) == "cloud session OAuth token"
+@pytest.mark.parametrize("auth", [
+    json.dumps({"loggedIn": True, "authMethod": "api_key", "apiProvider": "firstParty"}),
+    json.dumps({"loggedIn": True, "authMethod": "oauth_token", "apiProvider": "bedrock"}),
+    json.dumps({"loggedIn": False}),
+    "not json",
+])
+def test_anything_but_a_first_party_subscription_login_is_refused(tmp_path: Path, auth) -> None:
+    outputs = [(0, json.dumps(result()), "")]
+    with pytest.raises(ConfigurationError, match="subscription login"):
+        client(outputs, tmp_path, auth=auth).complete(request())
+    assert outputs, "no request was sent"
 
 
-def test_a_pinned_cli_version_is_enforced(tmp_path: Path) -> None:
-    client = ClaudeCodeClient(CliSettings(cli_version="9.0.0"), runner=scripted([]), environ={}, session_dir=tmp_path)
-    with pytest.raises(ConfigurationError):
-        client.complete(request())
-    pinned = ClaudeCodeClient(CliSettings(cli_version="2.1.296"), runner=scripted([(0, json.dumps(result()), "")]),
-                              environ={}, session_dir=tmp_path)
-    assert pinned.complete(request()).status == "ok"
+def test_a_claude_ai_login_is_accepted(tmp_path: Path) -> None:
+    auth = json.dumps({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+    assert client([(0, json.dumps(result()), "")], tmp_path, auth=auth).complete(request()).status == "ok"
+
+
+@pytest.mark.parametrize("pin, accepted", [("2.1.296", True), ("2.1.29", False), ("2.1", False), ("9.0.0", False)])
+def test_a_pinned_cli_version_must_match_exactly(tmp_path: Path, pin, accepted) -> None:
+    c = client([(0, json.dumps(result()), "")], tmp_path, settings=CliSettings(cli_version=pin))
+    if accepted:
+        assert c.complete(request()).status == "ok"
+    else:
+        with pytest.raises(ConfigurationError, match="pinned"):
+            c.complete(request())
 
 
 def test_missing_executable_is_a_configuration_error(tmp_path: Path) -> None:
-    client = ClaudeCodeClient(CliSettings(command="/nonexistent/claude-binary"), environ={}, session_dir=tmp_path)
+    c = ClaudeCodeClient(CliSettings(command="/nonexistent/claude-binary"), environ={}, session_dir=tmp_path)
     with pytest.raises(ConfigurationError):
-        client.complete(request())
+        c.complete(request())
 
 
-@pytest.mark.skipif(os.name != "posix", reason="process groups are POSIX")
-def test_timeout_kills_the_whole_process_group(tmp_path: Path) -> None:
-    marker = tmp_path / "grandchild.pid"
-    script = f"(sleep 30 & echo $! > {marker}; wait) & sleep 30"
+# --------------------------------------------------------------------------- processes
+@pytest.mark.skipif(os.name != "posix", reason="POSIX shell")
+def test_a_timed_out_child_is_stopped_promptly_even_if_a_helper_holds_its_pipes(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(ccc, "REAP_TIMEOUT_S", 0.5)
+    started = time.monotonic()
     with pytest.raises(CliTimeout):
-        _run(["/bin/sh", "-c", script], "", {"PATH": os.environ["PATH"]}, tmp_path, 1.0)
-    pid = int(marker.read_text().strip())
-    for _ in range(50):
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            break
+        _run(["/bin/sh", "-c", "(sleep 30) & sleep 30"], "", {"PATH": os.environ["PATH"]}, tmp_path, 0.5)
+    assert time.monotonic() - started < 5
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX shell")
+def test_a_normal_run_returns_its_output(tmp_path: Path) -> None:
+    assert _run(["/bin/sh", "-c", "cat; echo done"], "in\n", {"PATH": os.environ["PATH"]}, tmp_path, 10) == \
+        (0, "in\ndone\n", "")
+
+
+# --------------------------------------------------------------------------- collator warm-up
+class _Recorder:
+    """A client that records start/end order and pretends some requests are cached."""
+
+    def __init__(self, cached: set[str]) -> None:
+        self.cached, self.events = cached, []
+
+    def is_cached(self, req: LLMRequest) -> bool:
+        return req.key() in self.cached
+
+    def complete(self, req: LLMRequest) -> LLMResponse:
+        self.events.append(("start", req.key()))
         time.sleep(0.05)
-    else:
-        pytest.fail("the grandchild survived the timeout")
+        self.events.append(("end", req.key()))
+        return LLMResponse(key=req.key(), status="invalid", data=None, raw_text="", requested_model=req.model,
+                           served_model=req.model, stop_reason="end_turn")
 
 
-# --------------------------------------------------------------------------- pipeline
-FAKE_CLAUDE = '''#!{python}
-import json, os, sys
-argv = sys.argv[1:]
-if argv == ["--version"]:
-    print("9.9.9 (Claude Code)")
-    sys.exit(0)
-log = {log!r}
-with open(log, "a") as handle:
-    handle.write(json.dumps({{"argv": argv, "stdin": sys.stdin.read(),
-                             "api_key": os.environ.get("ANTHROPIC_API_KEY"),
-                             "github": os.environ.get("GH_TOKEN")}}) + "\\n")
-print(json.dumps({{"type": "result", "subtype": "success", "is_error": False, "stop_reason": "end_turn",
-                  "session_id": "fake", "structured_output": {{"ok": True}},
-                  "usage": {{"input_tokens": 3, "output_tokens": 2}},
-                  "modelUsage": {{argv[argv.index("--model") + 1]: {{"outputTokens": 2}}}}}}))
-'''
-
-
-@pytest.fixture
-def fake_claude(tmp_path: Path, monkeypatch) -> Path:
-    bin_dir, log = tmp_path / "bin", tmp_path / "claude_calls.jsonl"
-    bin_dir.mkdir()
-    exe = bin_dir / "claude"
-    exe.write_text(FAKE_CLAUDE.format(python=sys.executable, log=str(log)), encoding="utf-8")
-    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("GH_TOKEN", "must-not-reach-the-cli-either")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-reach-the-cli")
-    return log
-
-
-@pytest.mark.skipif(os.name != "posix", reason="the fake executable is a POSIX script")
-def test_claude_check_on_the_subscription_backend(tmp_path: Path, fake_claude: Path, capsys) -> None:
+def test_the_first_uncached_request_runs_alone_and_order_is_kept(tmp_path: Path) -> None:
     root, run = make_root(tmp_path), tmp_path / "run"
-    assert main(["claude-check", "--backend", "subscription", "--root", str(root), "--run-dir", str(run)]) == 0
-    summary = json.loads((run / "claude_check.json").read_text(encoding="utf-8"))
-    assert summary["passed"] and summary["backend"] == "subscription" and summary["served_model"] == MODEL
-    assert summary["claude_code_version"] == "9.9.9 (Claude Code)"
-    call = json.loads(fake_claude.read_text(encoding="utf-8").splitlines()[0])
-    assert call["api_key"] is None and call["github"] is None and call["argv"][call["argv"].index("--effort") + 1] == "low"
-    audit = [json.loads(x) for x in (run / "llm_audit.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert len(audit) == 1 and audit[0]["served_model"] == MODEL
-    assert (root / "runs" / "llm-cache" / "llm_spend.subscription.jsonl").is_file()
-    assert not (root / "runs" / "llm-cache" / "llm_spend.jsonl").exists(), "API budget untouched"
-
-
-def test_subscription_client_composition_and_separate_cache(tmp_path: Path) -> None:
-    root = make_root(tmp_path)
-    ctx = context(root, tmp_path / "run")
-    sub = dataclasses.replace(ctx, settings=dataclasses.replace(
-        ctx.settings, llm={**ctx.settings.llm, "backend": "subscription"}))
-    client = make_client(sub)
-    assert isinstance(client.inner, CachedClient) and isinstance(client.inner.inner, ClaudeCodeClient)
-    assert client.inner.root == ctx.settings.path("cache") / "subscription"
-    assert client.budget_usd == float("inf")
-    api, subscription = instrument_digests(ctx.settings), instrument_digests(sub.settings)
-    assert api.keys() == subscription.keys() and all(api[t] != subscription[t] for t in api), \
-        "the backend is part of every instrument"
-
-
-def test_unknown_backend_is_refused(tmp_path: Path, capsys) -> None:
-    root = make_root(tmp_path)
-    path = root / "config" / "llm.yaml"
-    path.write_text(path.read_text(encoding="utf-8").replace("backend: api", "backend: local"), encoding="utf-8")
-    assert main(["ingest", "--root", str(root), "--run-dir", str(tmp_path / "run")]) == 2
-    assert "backend 'local'" in capsys.readouterr().err
+    main(["ingest", "--root", str(root), "--run-dir", str(run)])
+    plan = plan_collation(context(root, run), replicates=2)
+    jobs = plan.requests()
+    assert len(jobs) >= 3
+    recorder = _Recorder({jobs[0][2].key()})
+    out = collator.collate(plan.windows, recorder, plan.settings, plan.tags, plan.examples, plan.template, workers=4)
+    warm = jobs[1][2].key()
+    assert recorder.events[:2] == [("start", warm), ("end", warm)], "the first uncached request ran alone"
+    assert {tag: len(parsed) for tag, parsed in out.items()} == {tag: len(plan.windows) for tag in plan.tags}
 
 
 # --------------------------------------------------------------------------- end to end
-FAKE_COLLATOR = '''#!{python}
+FAKE_CLAUDE = '''#!{python}
 import json, sys, time
 sys.path.insert(0, {support!r})
 from types import SimpleNamespace
@@ -382,10 +293,16 @@ argv = sys.argv[1:]
 if argv == ["--version"]:
     print("2.1.296 (Claude Code)")
     sys.exit(0)
+if argv == ["auth", "status", "--json"]:
+    print(json.dumps({{"loggedIn": True, "authMethod": "oauth_token", "apiProvider": "firstParty"}}))
+    sys.exit(0)
 started = time.time()
 system = open(argv[argv.index("--system-prompt-file") + 1], encoding="utf-8").read()
-context = system[system.index("WITNESS TEXT"):]
-answer = echo_script(SimpleNamespace(context=context, body=sys.stdin.read()))
+body = sys.stdin.read()
+if "WITNESS TEXT" in system:
+    answer = echo_script(SimpleNamespace(context=system[system.index("WITNESS TEXT"):], body=body))
+else:
+    answer = {{"ok": True}}
 time.sleep(0.2)
 with open({log!r}, "a") as handle:
     handle.write(json.dumps({{"start": started, "end": time.time()}}) + "\\n")
@@ -397,20 +314,39 @@ print(json.dumps({{"type": "result", "subtype": "success", "is_error": False, "s
 
 
 @pytest.fixture
-def fake_collator(tmp_path: Path, monkeypatch) -> Path:
+def fake_claude(tmp_path: Path, monkeypatch) -> Path:
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.jsonl"
     bin_dir.mkdir()
     exe = bin_dir / "claude"
-    exe.write_text(FAKE_COLLATOR.format(python=sys.executable, support=str(Path(__file__).parent), log=str(log)),
+    exe.write_text(FAKE_CLAUDE.format(python=sys.executable, support=str(Path(__file__).parent), log=str(log)),
                    encoding="utf-8")
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-reach-the-cli")
+    no_session = tmp_path / "no-session"
+    monkeypatch.setattr(ClaudeCodeClient.__init__, "__defaults__",
+                        (None, None, ccc.ABORTED.wait, None, no_session))
     return log
 
 
-@pytest.mark.skipif(os.name != "posix", reason="the fake executable is a POSIX script")
-def test_collate_on_the_subscription_backend_end_to_end(tmp_path: Path, fake_collator: Path, capsys) -> None:
+posix_only = pytest.mark.skipif(os.name != "posix", reason="the fake executable is a POSIX script")
+
+
+@posix_only
+def test_claude_check_on_the_subscription_backend(tmp_path: Path, fake_claude: Path) -> None:
+    root, run = make_root(tmp_path), tmp_path / "run"
+    assert main(["claude-check", "--backend", "subscription", "--root", str(root), "--run-dir", str(run)]) == 0
+    summary = json.loads((run / "claude_check.json").read_text(encoding="utf-8"))
+    assert summary["passed"] and summary["backend"] == "subscription" and summary["served_model"] == MODEL
+    assert summary["claude_code_version"].startswith("2.1.296")
+    assert summary["credential_source"] == "oauth_token (firstParty)"
+    assert (run / "llm_backend.txt").read_text().strip() == "subscription"
+    assert (root / "runs" / "llm-cache" / "llm_spend.subscription.jsonl").is_file()
+    assert not (root / "runs" / "llm-cache" / "llm_spend.jsonl").exists(), "API budget untouched"
+
+
+@posix_only
+def test_collate_on_the_subscription_backend_end_to_end(tmp_path: Path, fake_claude: Path, capsys) -> None:
     root, run = make_root(tmp_path), tmp_path / "run"
     cli = lambda *a: main([*a, "--root", str(root), "--run-dir", str(run)])  # noqa: E731
     cli("ingest")
@@ -419,26 +355,62 @@ def test_collate_on_the_subscription_backend_end_to_end(tmp_path: Path, fake_col
     cache = root / "runs" / "llm-cache"
     assert any((cache / "subscription").rglob("*.json")) and not (cache / MODEL).exists()
     audit = [json.loads(x) for x in (run / "llm_audit.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert audit and all(a["status"] == "ok" and a["client_info"]["cli_version"].startswith("2.1.296") for a in audit)
-    calls = [json.loads(x) for x in fake_collator.read_text().splitlines()]
+    assert audit and all(a["status"] == "ok" and a["client_info"]["cli_version"] == "2.1.296" for a in audit)
+    calls = [json.loads(x) for x in fake_claude.read_text().splitlines()]
     assert len(calls) == len(audit) >= 2
-    first_end = min(calls, key=lambda c: c["start"])["end"]
-    assert all(c["start"] >= first_end for c in sorted(calls, key=lambda c: c["start"])[1:]), \
-        "the first request warms the prompt cache before the others start"
+    ordered = sorted(calls, key=lambda c: c["start"])
+    assert all(c["start"] >= ordered[0]["end"] for c in ordered[1:]), "the first request warms the prompt cache"
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["llm_backend"] == "subscription" and manifest["claude_code_version"].startswith("2.1.296")
+    assert manifest["llm_backend"] == "subscription"
+    assert manifest["llm"]["cli_versions"] == ["2.1.296"] and manifest["llm"]["logins"] == ["oauth_token (firstParty)"]
     subscription_digest = manifest["instrument_digests"]["collate"]
 
     # Later stages without --backend adopt the run's backend; a conflicting one is refused.
     assert cli("build") == 0
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["llm_backend"] == "subscription"
-    assert manifest["instrument_digests"]["collate"] == subscription_digest
+    assert manifest["llm_backend"] == "subscription" and manifest["instrument_digests"]["collate"] == subscription_digest
     capsys.readouterr()
     assert cli("build", "--backend", "api") == 2
-    assert "produced with the subscription backend" in capsys.readouterr().err
+    assert "bound to the subscription backend" in capsys.readouterr().err
     # Offline replay finds the subscription cache without being told the backend.
     assert cli("collate", "--offline", "--replicates", "2") == 0
+
+
+def test_a_failed_attempt_does_not_bind_the_run(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    root, run = make_root(tmp_path), tmp_path / "run"
+    main(["ingest", "--root", str(root), "--run-dir", str(run)])
+    assert main(["collate", "--offline", "--root", str(root), "--run-dir", str(run)]) == 2, "empty cache"
+    assert not (run / "llm_backend.txt").exists()
+
+
+def test_subscription_client_composition_and_separate_cache(tmp_path: Path) -> None:
+    root = make_root(tmp_path)
+    ctx = context(root, tmp_path / "run")
+    sub = dataclasses.replace(ctx, settings=dataclasses.replace(
+        ctx.settings, llm={**ctx.settings.llm, "backend": "subscription"}))
+    made = make_client(sub)
+    assert isinstance(made.inner, CachedClient) and isinstance(made.inner.inner, ClaudeCodeClient)
+    assert made.inner.root == ctx.settings.path("cache") / "subscription"
+    assert made.budget_usd == float("inf")
+    api, subscription = instrument_digests(ctx.settings), instrument_digests(sub.settings)
+    assert api.keys() == subscription.keys() and all(api[t] != subscription[t] for t in api), \
+        "the backend is part of every instrument"
+
+
+def test_a_pinned_cli_version_has_its_own_cache_and_digest(tmp_path: Path) -> None:
+    settings = load_settings(make_root(tmp_path))
+    sub = {**settings.llm, "backend": "subscription"}
+    plain = dataclasses.replace(settings, llm=sub)
+    pinned = dataclasses.replace(settings, llm={**sub, "subscription": {**sub["subscription"], "cli_version": "2.1.296"}})
+    assert instrument_digests(plain)["collate"] != instrument_digests(pinned)["collate"]
+    assert cache_root(pinned) == cache_root(plain) / "cli-2.1.296"
+
+
+def test_api_cache_entries_stay_readable_by_older_code() -> None:
+    entry = response_to_dict(LLMResponse(key="k", status="ok", data={}, raw_text="", requested_model=MODEL,
+                                         served_model=MODEL, stop_reason="end_turn"))
+    assert "client_info" not in entry
 
 
 def test_prereg_freeze_honours_the_backend_option(tmp_path: Path) -> None:
@@ -451,10 +423,9 @@ def test_prereg_freeze_honours_the_backend_option(tmp_path: Path) -> None:
     assert doc["instrument_digests"] == instrument_digests(sub) != instrument_digests(settings)
 
 
-def test_a_pinned_cli_version_enters_the_digest(tmp_path: Path) -> None:
-    settings = load_settings(make_root(tmp_path))
-    sub = {**settings.llm, "backend": "subscription"}
-    plain = instrument_digests(dataclasses.replace(settings, llm=sub))
-    pinned = instrument_digests(dataclasses.replace(
-        settings, llm={**sub, "subscription": {**sub["subscription"], "cli_version": "2.1.296"}}))
-    assert plain["collate"] != pinned["collate"]
+def test_unknown_backend_is_refused(tmp_path: Path, capsys) -> None:
+    root = make_root(tmp_path)
+    path = root / "config" / "llm.yaml"
+    path.write_text(path.read_text(encoding="utf-8").replace("backend: api", "backend: local"), encoding="utf-8")
+    assert main(["ingest", "--root", str(root), "--run-dir", str(tmp_path / "run")]) == 2
+    assert "backend 'local'" in capsys.readouterr().err

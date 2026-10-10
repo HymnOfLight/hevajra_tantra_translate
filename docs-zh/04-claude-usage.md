@@ -69,15 +69,12 @@ hevajra-matrix prereg freeze --amend "修改原因"   # 冻结后的任何改动
 
 订阅后端在每个请求时启动一个独立的 `claude -p` 进程。适用于 Claude Code 云端沙箱，也适用于自己的电脑或服务器。
 
-- **登录凭据**，按以下顺序使用：
-  1. 环境变量 `CLAUDE_CODE_OAUTH_TOKEN`（由 `claude setup-token` 生成）；
-  2. 本机 `/login` 保存的登录；
-  3. 在 Claude Code 云端沙箱里，使用该会话自己的登录，也就是会话所属账号。
-
-  三种都计入对应账号的包月额度。子进程拿不到父进程的 `ANTHROPIC_API_KEY`，所以不会误用 API 计费。如果沙箱里存在 API 密钥文件，程序会拒绝运行，除非另设了 `CLAUDE_CODE_OAUTH_TOKEN`。`claude-check` 的结果和运行清单都会记下用的是哪一种凭据（只记名称，不记内容）。
-- **运行目录绑定后端**：一个运行目录第一次调用 Claude 时，就把后端记在 `llm_backend.txt` 里。之后对这个目录运行的命令即使不加 `--backend`，也会沿用同一后端；如果显式指定了不同的后端，程序会拒绝运行。
-- **记录 Claude Code 版本**：每个回答都会附带 Claude Code 的版本号。Claude Code 会在系统提示前加一行自己的身份说明，并自行处理结构化输出的重试，这些行为可能随版本变化。正式研究时，建议在 `config/llm.yaml` 的 `subscription.cli_version` 里固定版本：版本不符时程序会拒绝运行，而且版本号会写进工具指纹。
+- **只用包月登录**：子进程拿不到父进程的 `ANTHROPIC_API_KEY`。发出第一个请求之前，程序先问 Claude Code 它会用什么凭据（`claude auth status --json`，本地调用，不发模型请求）：只有报告为第一方的包月登录（`oauth_token` 或 `claude.ai`）才运行，其余一律拒绝。云端沙箱里如果存在 API 密钥文件也会拒绝，因为 Claude Code 会优先用它计费。在云端沙箱里，Claude Code 用的是该会话所属账号的登录。每个回答和运行清单都会记下登录方式（只记名称，不记内容）。
+- **不换模型**：已关闭 Claude Code 的自动换模型。请求的模型不可用时，程序直接停下，不会用别的模型回答、白白消耗额度。
+- **运行目录绑定后端**：一个运行目录收到第一个 Claude 回答后，就把后端记在 `llm_backend.txt` 里。之后对这个目录运行的命令即使不加 `--backend`，也会沿用同一后端；如果显式指定了不同的后端，程序会拒绝运行。失败、没有产出的尝试不会绑定。
+- **记录 Claude Code 版本**：每个回答都会附带 Claude Code 的版本号。Claude Code 会在系统提示前加一行自己的身份说明，并自行处理结构化输出的重试，这些行为可能随版本变化。正式研究时，建议在 `config/llm.yaml` 的 `subscription.cli_version` 里固定版本：版本必须完全一致，否则拒绝运行；固定的版本号会写进工具指纹，并使用单独的缓存目录。
 - **何时停下、何时重试**：
-  - 额度用完（"You've hit your session limit" 之类）或单次调用超过 1 小时（`subscription.timeout_s`），程序都会直接停下，不重试。已完成的调用都在缓存里，过后**重跑同一条命令**即从停下处继续。
+  - 以下情况程序会直接停下，不重试：额度用完（"You've hit your session limit" 之类）、模型不可用、单次调用超过 2 小时（`subscription.timeout_s`；输出上限特别大时会按比例更长）。已完成的调用都在缓存里，过后**重跑同一条命令**即从停下处继续。
   - 临时的限流（"not your usage limit"）和服务器错误，会自动重试一次。
+  - 按 Ctrl-C 或停止任务时，正在运行的 `claude -p` 会一起停下，也不会再启动新的调用。
 - **截断不一定被报告**：一条回答写到输出上限时，Claude Code 会先让模型接着写，而不是直接报告截断。所以这个后端的"截断"可能变成一个正常的回答。审计日志里的 `client_info` 记录了轮数（`num_turns`）以及输出是否超过上限（`output_over_max_tokens`），分析时据此单独列出。
