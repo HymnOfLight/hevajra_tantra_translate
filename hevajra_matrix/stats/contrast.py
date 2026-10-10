@@ -19,8 +19,9 @@ tabulates verified error rates by chapter and length tertile so that the assumpt
 and ``overlap_diagnostics`` reports how many strata and units the estimator actually uses.
 
 E4 is preregistered on the primary outcome only (``matrix.status.PRIMARY_OUTCOMES``): ``delta``
-and ``misclassification_table`` refuse the sensitivity variant ``any_conv``, which the draws
-cannot carry (a convention is plugged in per unit, not drawn).
+and ``misclassification_table`` refuse the sensitivity variant ``any_conv``
+(``twophase.require_primary``): its conventions are imputed jointly with the class for E1 alone
+(``stats.anyconv.convention_draws``), and the class draws used here carry none.
 """
 
 from __future__ import annotations

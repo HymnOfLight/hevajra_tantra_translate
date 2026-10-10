@@ -10,7 +10,7 @@
 
 ``machine_convention`` is the convention flag of the built machine cell (``none`` without
 one; empty when there is no cell or the cell is UNALIGNED). A convention the code checks
-did not support (V12, ``convention_unsupported``) is shown as ``<convention>:unsupported``
+did not support (``convention_unsupported``: V12, or the consensus rule) is shown as ``<convention>:unsupported``
 and imported without the suffix. The resolve task has no reveal step. Written and read
 through ``review.sheets.export`` and ``review.sheets.import_`` with task "reveal".
 """

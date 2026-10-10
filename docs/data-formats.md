@@ -119,7 +119,7 @@ One `core.types.Alignment` per file (`pipeline/store.py`). The first line is a h
 | `polarity_flip` | bool |
 | `confidence` | `high`, `medium`, `low` (T1 only) or null |
 | `quotes` | list of `{side: "ref" or "wit", text, segment_ids}` |
-| `flags` | sorted list of flags (see [llm-tasks.md](llm-tasks.md), V-checks); under collate.v2 a link's convention is one flag named by its value, `standing_rendering` or `transcribed_name` (none for `none`), plus `convention_unsupported` when V12 does not confirm it |
+| `flags` | sorted list of flags (see [llm-tasks.md](llm-tasks.md), V-checks); under collate.v2 a link's convention is one flag named by its value, `standing_rendering` or `transcribed_name` (none for `none`), plus `convention_unsupported` when V12 does not confirm it or, on a consensus link, when no majority reading with the voted relation holds the voted convention ([llm-tasks.md](llm-tasks.md), consensus) |
 | `source` | producer, e.g. `claude-opus-5-5:collate.v1:r2` (`...:collate.v2:r2` for the v2 prompt), `claude:consensus`, `dp:zero`, `dp:anchor`, `placebo:shuffled`, `external:<name>` |
 
 Files: `dp_zero.jsonl` (P1), `dp_anchor.jsonl` (B0), `external_<name>.jsonl`,

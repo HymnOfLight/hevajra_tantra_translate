@@ -87,7 +87,7 @@ class Convention(StrEnum):
 
 
 CONVENTION_FLAGS = frozenset({Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value})
-FLAG_CONVENTION_UNSUPPORTED = "convention_unsupported"   # V12: the claimed convention is not supported
+FLAG_CONVENTION_UNSUPPORTED = "convention_unsupported"   # V12 or the consensus rule: the convention is not supported
 
 
 def convention_of(flags: frozenset[str] | set[str]) -> Convention:
@@ -123,7 +123,8 @@ class Grade(StrEnum):
     X  fatal verification failure or no majority (the cell is UNALIGNED)
 
     Convention flags (``CONVENTION_FLAGS``) are descriptions, not findings: they never
-    lower a grade. ``convention_unsupported`` (V12) is a finding and gives C.
+    lower a grade. ``convention_unsupported`` (V12, or the consensus rule in ``collate.consensus``)
+    is a finding and gives C.
     """
 
     A = "A"

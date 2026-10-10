@@ -71,20 +71,20 @@ def _v2_prompt(data: Path) -> str:
 
 
 def test_only_verified_entries_change_the_v2_prompt(tmp_path: Path) -> None:
+    # Independent of the shipped entry's status, so verifying it trips only the tripwire test.
     data = tmp_path / "data"
     shutil.copytree(DATA / "codebook" / "collate.v2", data / "codebook" / "collate.v2")
-    shipped = _v2_prompt(data)
-    assert shipped == _v2_prompt(DATA)
     target = data / "codebook" / "collate.v2" / "standing_renderings.yaml"
     doc = glossary_doc()
-    real = doc["entries"][0]
+    real = {**doc["entries"][0], "status": "proposed", "verified_by": None}
     proposed = {**_template_entry(), "id": "doc_template", "status": "proposed", "verified_by": None}
 
     def write(entries: list[dict]) -> str:
         target.write_text(yaml.safe_dump({**doc, "entries": entries}, allow_unicode=True), encoding="utf-8")
         return _v2_prompt(data)
 
-    assert write([real, proposed]) == shipped, "adding a proposed entry changes nothing"
-    assert write([real, {**proposed, "status": "retired"}]) == shipped, "retiring a proposed entry neither"
-    assert write([]) == shipped, "removing a proposed entry neither"
-    assert write([{**real, "status": "verified", "verified_by": "A. Researcher"}]) != shipped
+    baseline = write([real])
+    assert write([real, proposed]) == baseline, "adding a proposed entry changes nothing"
+    assert write([real, {**proposed, "status": "retired"}]) == baseline, "retiring a proposed entry neither"
+    assert write([]) == baseline, "removing a proposed entry neither"
+    assert write([{**real, "status": "verified", "verified_by": "A. Researcher"}]) != baseline

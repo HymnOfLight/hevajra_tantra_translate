@@ -178,7 +178,7 @@ examples:
   - kind: prose
     text: 以嚕地囉塗其像。
   - kind: mantra
-    text: 唵鉢訥摩嚕地囉吽
+    text: 唵鉢訥摩嚕地囉剎吽
   - kind: note
     text: 二合
   - kind: prose
@@ -193,7 +193,7 @@ examples:
   - kind: prose
     text: ཁྲག་གིས་སྐུ་གཟུགས་བྱུགས།
   - kind: mantra
-    text: ཨོཾ་པདྨ་རུ་དྷི་ར་ཧཱུྃ།
+    text: ཨོཾ་པདྨ་རུ་དྷི་ར་ཀྵ་ཧཱུྃ།
   - kind: prose
     text: སྲིན་པོ་རྣམས་བཏུལ།
   answer:
@@ -232,8 +232,8 @@ examples:
       polarity_flip: false
       confidence: high
       convention: none
-      ref_quote: ཨོཾ་པདྨ་རུ་དྷི་ར་ཧཱུྃ
-      wit_quote: 唵鉢訥摩嚕地囉吽
+      ref_quote: ཨོཾ་པདྨ་རུ་དྷི་ར་ཀྵ་ཧཱུྃ
+      wit_quote: 唵鉢訥摩嚕地囉剎吽
     - ref: r005
       wit:
       - z0007
