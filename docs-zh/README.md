@@ -12,5 +12,6 @@
 | [`05-overattribution-experiment.md`](05-overattribution-experiment.md) | 过度归因实验操作说明 |
 | [`06-outputs-glossary.md`](06-outputs-glossary.md) | 输出文件与术语中英对照 |
 | [`07-server-runbook.md`](07-server-runbook.md) | 服务器运行说明：用包月订阅或 API 跑连通检查与费用估算，打包回传结果 |
+| [`08-pilot-I1.md`](08-pilot-I1.md) | 第一次真实试跑（I.1 品，订阅后端）：用量、输出概况、暴露的方法问题 |
 | [`reference/2026-09-30-code-review.md`](reference/2026-09-30-code-review.md) | 本次改版所依据的代码审查与研究价值评估 |
 | `archive/` | v0.2 的研究设计文档（已被 01、02 取代，保留作记录） |
