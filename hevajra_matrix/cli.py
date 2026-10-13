@@ -4,8 +4,10 @@ Every command takes ``--root`` (default: the directory above the current one tha
 ``config/run.yaml``), ``--run-dir`` (default: a new run directory for ``ingest``, ``run``
 and ``claude-check``, otherwise the latest one under ``runs/``), ``--offline`` (answer
 LLM calls from the response cache only) and ``--backend`` (``api`` or ``subscription``;
-overrides ``config/llm.yaml: backend``). Exit status: 0 success, 1 a check failed,
-2 a stage could not run (the message says why and what to run first).
+overrides ``config/llm.yaml: backend``); ``adopt`` names its two run directories with
+``--v1-run`` and ``--v2-run`` instead of ``--run-dir``. Exit status: 0 success, 1 a check
+failed (``adopt``: the rule cannot decide yet), 2 a stage could not run (the message says
+why and what to run first).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from . import pipeline
 from .align.external import ExternalAlignmentError
 from .config import ConfigError, Settings, find_root, load_settings
 from .core.lexicon import LexiconError
+from .evaluation.adoption import NOT_READY
 from .evaluation.gold import GoldError
 from .evaluation.sentinels import SentinelError
 from .experiments.overattribution.analysis import AnalysisError
@@ -151,6 +154,11 @@ def build_parser() -> argparse.ArgumentParser:
     q = add("freeze", "Write instrument digests and frozen: true into config/preregistration.yaml.", psub)
     q.add_argument("--amend", help="reason for changing a frozen preregistration (appended to amendments)")
 
+    p = add("adopt", "Apply the collate.v1/v2 adoption rule (docs-zh/09 section 7) to two built runs on dev gold.")
+    p.add_argument("--v1-run", type=Path, required=True, help="run directory collated with collate.v1 and built")
+    p.add_argument("--v2-run", type=Path, required=True,
+                   help="run directory collated with collate.v2 and built; evaluation/adoption.json is written here")
+
     p = add("run", "Run ingest, baselines, collate, build, evaluate, stats and report as far as possible.")
     p.add_argument("--raw-dir", type=Path, help="directory with the raw files (default: run.yaml paths.raw)")
     p.add_argument("--gold", choices=("dev", "test"), default="test", help="gold set to score (default: test)")
@@ -173,6 +181,16 @@ def _context(args: argparse.Namespace, settings: Settings) -> RunContext:
     return ctx.for_witness(witness) if witness else ctx
 
 
+def _named_run(args: argparse.Namespace, settings: Settings, run_dir: Path) -> RunContext:
+    """An existing run directory named by an option (``adopt``), bound to its recorded backend."""
+    run_dir = Path(run_dir).resolve()
+    if not run_dir.is_dir():
+        raise StageError(f"{run_dir} is not a run directory")
+    ctx = RunContext(settings.root, run_dir, settings, offline=bool(getattr(args, "offline", False)))
+    witness = getattr(args, "witness", None)
+    return pipeline.bind_backend(ctx.for_witness(witness) if witness else ctx, explicit=False)
+
+
 def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
     command, action = args.command, getattr(args, "action", None)
     if command == "fetch":
@@ -183,6 +201,11 @@ def _dispatch(args: argparse.Namespace, settings: Settings) -> int:
         print(f"prereg: frozen with {len(doc['instrument_digests'])} instrument digests; "
               f"{len(doc['amendments'])} amendment(s)")
         return 0
+    if command == "adopt":     # two named run directories, not --run-dir; exit 1 while the rule cannot decide
+        if getattr(args, "run_dir", None) is not None:
+            raise StageError("adopt names its runs with --v1-run and --v2-run; --run-dir does not apply")
+        found = pipeline.adopt(*(_named_run(args, settings, d) for d in (args.v1_run, args.v2_run)))
+        return 1 if found["decision"]["decision"] == NOT_READY else 0
     if command == "claude-check" and getattr(args, "offline", False):
         raise StageError("claude-check is a live check; it cannot run --offline")
     # A run directory keeps the LLM backend its outputs were produced with (see bind_backend).

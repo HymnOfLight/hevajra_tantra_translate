@@ -398,8 +398,10 @@ on the units the v1 and v2 codebooks code alike (linked gold units whose gold co
 annotated `none` and whose gold relation is neither `generalised` nor `category_name_omitted`);
 the adoption rule of docs-zh/09 section 7 compares it, while the overall `relation_kappa` is
 descriptive (a v1 source scored on v2 gold is structurally lower on it). That rule, fixed on
-2026-10-13 before any dev result, is decided on `without_window["I.1"]`, the dev units outside
-I.1, where v2 was tuned (all dev units are reported, descriptive only; the three I.7 units
+2026-10-13 before any dev result, is decided by `hevajra-matrix adopt` (below) on the dev units
+outside I.1, where v2 was tuned, with each gold `?` read by its note marker (`scores.dev.json:
+without_window["I.1"]` leaves every `?` out, so it matches only adopt's sensitivity figures; all
+dev units are reported, descriptive only; the three I.7 units
 D417:8b.5.2-8b.5.4 the second v2 revision was written for are in-sample too, so convention
 precision is also reported without them). v2 is adopted when (1) its `relation_kappa_shared`
 is at least v1's minus 0.05, a point-estimate tolerance, not a non-inferiority test (about 1.5
@@ -407,10 +409,39 @@ standard deviations of the run-to-run difference between two 3-replicate consens
 about one sampling standard error); (2) its convention precision is at least 0.8; (3) a
 replicate-kappa floor symmetric in the two versions holds, read from the dev run's
 `collation/integrity.json: fleiss_kappa` (all collated units of the dev chapters, I.1
-included): if v1 reaches 0.80, v2 must too; if v1 does not, the floor does not decide. Convention precision without those three units is computed by hand from the per-unit records, not by `without_window`; they stay in condition (2) because three of about 262 units can move precision only a little, and the separate figure shows whether they do. Any prompt or effort tuning after the comparison first names the regions it may look at, and the comparison is then redone on the other regions only. A
-`convention_unsupported` on a consensus link may come from the consensus rule above rather than
+included): if v1 reaches 0.80, v2 must too; if v1 does not, the floor does not decide (the version
+chosen is then tuned on the dev set before `prereg freeze` if it is below 0.80). The three I.7
+units stay in condition (2) because three of about 262 units can move precision only a little,
+and the separate figure shows whether they do. Any prompt or effort tuning after the comparison
+first names the regions it may look at, and the comparison is then redone on the other regions
+only. A `convention_unsupported` on a consensus link may come from the consensus rule above rather than
 from a replicate's V12, and then counts in `convention_unsupported_rate` too. No gate uses a convention metric. Sentinels of kind `relation_in` may restrict conventions with
 `expect.conventions`.
+
+**Applying the adoption rule.** One command applies it once the dev gold exists and both dev
+runs are collated and built: `hevajra-matrix adopt --v1-run <v1 run dir> --v2-run <v2 run dir>`
+(`evaluation/adoption.py`, `pipeline/adoption.py`; `--run-dir` does not apply). It reads the
+version each run collated with from its `collation/replicates.json`, so `config/llm.yaml` need
+match neither run, and refuses (exit status 2): a run of the other version or not collated; a run
+collated with another text of its version (its recorded `prompt_sha` and `schema_sha` differ from
+the current template, examples and verified glossary, e.g. after verifying a glossary entry, or
+are missing); a run whose chapters are not exactly the preregistered dev chapters or whose
+replicates are not 3; a run without a consensus (`build` not run); two runs of different texts;
+and a missing dev gold. It scores both consensuses on the dev gold as `evaluate` does, takes the
+floor from the preregistration's `min_replicate_kappa`, prints each condition with its numbers
+and the decision (`adopt collate.v2`, `keep collate.v1` or `not ready`, the last with exit status
+1), and writes `evaluation/adoption.json` into the v2 run. Deferred gold cells (`?`, stored as
+convention "" with a note marker) are read by `data/codebook/collate.v2/note_markers.yaml`: a
+part-transcribed name (Q7) as `transcribed_name`, an explained word (Q8) and a class noun (Q3) as
+`none`; this default reading is primary, and the same conditions with the `?` rows left out are
+reported as a sensitivity result. The decision is `not ready` while a dev region is not (fully) in
+the gold, while a `?` marked for the Hevajra glossary entry remains (until the entry is verified
+or rejected and the `?` replaced by a decided convention), while a `?` carries no known marker,
+or when a value of condition (1) or (2) is undefined or a replicate kappa is missing. Also
+reported, descriptive only: the figures on all dev windows, convention precision without the
+three I.7 units, convention recall, `dany_kappa`, `dany_conv_kappa`, the D_any level of each
+version against the gold level over the shared units, and the paired window-bootstrap interval of
+the v2-v1 difference in `relation_kappa_shared` outside I.1.
 
 **Perturbations** (`collate/perturb.py`, stage `perturb`, gate G2), run on the windows of the
 dev-gold chapters with one replicate: *P-wrong-window* moves the core window to the most

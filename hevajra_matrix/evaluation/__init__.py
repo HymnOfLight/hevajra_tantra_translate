@@ -8,6 +8,8 @@
                (re-exported by ``gold``)
     sentinels  the 8 sentinel check kinds at stages ingest, proposal and final
     gate       G0-G4, report level, confirmatory flag, the append-only ledger
+    adoption   the collate.v1/v2 adoption rule on dev gold (docs-zh/09 section 7): deferred
+               gold conventions read by note marker, the scopes, the decision
 
 Nothing here calls a model: ``evaluate --gold dev --baselines-only`` scores the DP baselines
 and any imported external alignment without an API key. Submodules are imported explicitly.

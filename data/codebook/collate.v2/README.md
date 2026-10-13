@@ -12,6 +12,7 @@ supports the switch.
 | `examples.yaml` | three synthetic bo -> zh examples in the v1 format plus a `convention` per unit and per-example `standing_renderings` |
 | `standing_renderings.yaml` | the glossary of the witness's standing renderings against the reference, with counts and the terms considered but not listed |
 | `examples.<ref>-<wit>.yaml`, `standing_renderings.<ref>-<wit>.yaml` | the same for another language pair (e.g. `sa-zh`); both files are required for a pair to have a v2 instrument |
+| `note_markers.yaml` | the note markers of deferred gold conventions (`?`) and how the v1/v2 adoption rule reads each; not part of the prompt |
 
 The template is `hevajra_matrix/prompts/collate.v2.md`: v1 plus two conventions
 (`standing_rendering`, `transcribed_name`), a narrower `transliterated`, and the list rule
@@ -73,9 +74,29 @@ The review sheets list the same verified entries (`standing_renderings.csv` besi
 blind and reveal sheet), and a human `standing_rendering` decision is checked by the same rule
 as V12.
 
+## Deferred gold conventions
+
+An annotator who cannot decide a convention yet writes `?` in the gold sheet's convention cell
+and a marker in its `note` (review guide, docs-zh/03-review-guide.md section 1a); the gold stores
+convention "" (not annotated) with that note. `note_markers.yaml` lists the markers in precedence
+order (a note may carry several; the first listed that the note contains decides) and what each
+reads as when `hevajra-matrix adopt` applies the v1/v2 adoption rule (docs-zh/09 section 7): the
+Hevajra glossary marker reads null and blocks the comparison until the glossary entry is verified
+or rejected and the `?` replaced by a decided convention; the part-transcribed name (Q7) reads
+`transcribed_name`; the explained word (Q8) and the class noun (Q3) read `none`. A `?` whose note
+holds none of the markers also blocks, until it is given one or a decided convention. That default
+reading is primary; the same figures with the `?` rows left out are reported as a sensitivity
+result. The file is validated on
+load (`evaluation/adoption.py: note_markers`: `schema_version: 1`, entries `marker`, `reads`,
+optional `question`, any other key refused). It never reaches the model and changes no
+instrument digest; it was fixed with the rule on 2026-10-13, so changing it changes the rule.
+
 ## Switching to collate.v2
 
-Set `tasks.collate.prompt: collate.v2` in `config/llm.yaml` and collate a new run directory: the
+The switch follows the dev-gold comparison: collate and build one dev run with each version,
+then `hevajra-matrix adopt --v1-run <v1 run dir> --v2-run <v2 run dir>` prints the decision and
+writes `evaluation/adoption.json` into the v2 run. To switch, set
+`tasks.collate.prompt: collate.v2` in `config/llm.yaml` and collate a new run directory: the
 v2 requests have new cache keys, and a run directory keeps the version it collated with
 (`evaluate`, `perturb` and `review reveal` refuse a configured version that differs). A
 language pair other than Tibetan -> Chinese needs both `examples.<ref>-<wit>.yaml` and

@@ -20,7 +20,8 @@ Run directory ``runs/<UTC timestamp>-<git short hash>/``::
     matrix/                     cells.csv, units.csv, wide_status.csv, stale_verdicts.csv,
                                 cells.jsonl (human decisions applied), machine_cells.jsonl
     evaluation/                 scores.json, gate.json, sentinels.jsonl (the gating evaluation: Claude on
-                                test gold), scores.<set>[_baselines].json (every evaluation), perturbations.json
+                                test gold), scores.<set>[_baselines].json (every evaluation), perturbations.json,
+                                adoption.json (``adopt``, in the collate.v2 run of a v1/v2 comparison)
     topics/prelabels.jsonl      T3 hints
     review/                     the sheets (licensed text; never committed); review plans and their
                                 frozen strata are committed under data/annotations/verdicts/<witness>/
@@ -41,7 +42,8 @@ Modules: ``context`` (RunContext, run directories, ``make_client``, text loading
 components, claude-check), ``measure`` (build, evaluate), ``results`` (stats, report), ``e3``
 (E3: manuscript readings, co-witness, A2 bound), ``e4``
 (the E4 diagnostics and the MDE on real labels),
-``review`` (topics, sample, review sheets), ``human_data`` (committed annotations), ``experiment``.
+``review`` (topics, sample, review sheets), ``human_data`` (committed annotations), ``experiment``,
+``adoption`` (the collate.v1/v2 adoption rule on dev gold).
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterator
 
+from .adoption import adopt
 from .context import (RunContext, StageError, bind_backend, credentials_hint, has_credentials, latest_run_dir,
                       make_client, new_run_dir)
 from .experiment import experiment_plan, experiment_run, experiment_score
@@ -59,7 +62,7 @@ from .review import review_export, review_import, review_status, sample, topics_
 from .texts import baselines, baselines_import, fetch, ingest
 
 __all__ = [
-    "RunContext", "StageError", "baselines", "baselines_import", "build", "claude_check", "collate",
+    "RunContext", "StageError", "adopt", "baselines", "baselines_import", "build", "claude_check", "collate",
     "components_stage", "evaluate", "experiment_plan", "experiment_run", "experiment_score", "fetch", "ingest",
     "bind_backend", "latest_run_dir", "make_client", "new_run_dir", "perturb", "plan_collation", "report", "review_export",
     "review_import", "review_status", "run", "sample", "stats", "topics_prelabel", "witness_contexts",

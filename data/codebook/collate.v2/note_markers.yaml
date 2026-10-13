@@ -1,0 +1,36 @@
+# Note markers of deferred conventions in the gold, and how the collate.v1/v2 adoption rule
+# reads them (docs-zh/09-collate-v2-draft.md section 7; review guide docs-zh/03-review-guide.md
+# section 1a). Read by hevajra_matrix/evaluation/adoption.py (note_markers, read_deferred)
+# through `hevajra-matrix adopt`; fixed on 2026-10-13 with the rule.
+#
+# A gold cell "?" defers the convention of a linked unit: it is stored as convention ""
+# (not annotated) with a marker in the note column. The rule reads such a row as `reads`, the
+# default of the open question (the primary reading), and also reports every result with the
+# "?" rows left out as stored (the sensitivity reading). `reads: null` blocks: that convention
+# must be decided before the comparison (for the Hevajra glossary marker, by verifying or
+# rejecting the glossary entry), and the decision is "not ready" while such a row remains.
+# A decided convention is never changed, whatever its note says; a "" row without a listed
+# marker stays not annotated, and the decision is "not ready" until it gets a marker or a
+# decided convention (every "?" is handled before the comparison).
+#
+# Markers are matched as substrings of the note. A note may carry several: the first marker
+# listed here that the note contains decides (the blocking marker first, then the
+# part-transcribed name, then the others). Keys: marker (required), reads (required: null,
+# none, standing_rendering or transcribed_name) and question (optional); any other key is
+# refused.
+
+schema_version: 1
+
+markers:
+  - marker: 空智
+    reads: null
+    question: Q2, a Hevajra rendering awaiting the verification of the glossary entry
+  - marker: 半音
+    reads: transcribed_name
+    question: Q7, one name rendered part by meaning and part by sound (default transcribed_name)
+  - marker: 释词
+    reads: none
+    question: Q8, a unit explaining a word whose transcription the witness keeps (default transliterated, no convention)
+  - marker: 类名
+    reads: none
+    question: Q3, a transcribed class noun such as dakini or yogini (default transliterated, no convention)

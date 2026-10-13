@@ -90,6 +90,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `pipeline/review.py` | `topics_prelabel`, `sample`, `review_export`, `review_import`, `review_status` | human-work stages; `glossary_check` (V12's rule for human `standing_rendering` decisions) |
 | `pipeline/human_data.py` | - | reads committed gold, verdicts, topic labels, review plans and frozen strata (committed beside the verdicts; run-directory fallback for old runs); `annotations_dir` (per reference) and `ledger_path` (per reference and witness pair); `standing_renderings` (the verified collate.v2 glossary of the run's texts, empty for another pair) |
 | `pipeline/experiment.py` | `experiment_plan`, `experiment_run`, `experiment_score` | the over-attribution experiment |
+| `pipeline/adoption.py` | `adopt` | Claude-free; the collate.v1/v2 adoption rule on two named built runs (`--v1-run`, `--v2-run`; the version each collated with is read from its `replicates.json`, not from `config/llm.yaml`; refused unless each run holds the current text of its version, exactly the preregistered dev chapters and 3 replicates) and the dev gold; `load_note_markers`; writes `evaluation/adoption.json` into the v2 run |
 
 ### Core (`core/`, no I/O except `core/io.py`)
 
@@ -171,6 +172,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `evaluation/windows.py` | dev regions and test-window draw | `dev_region_units`, `draw_test_windows` |
 | `evaluation/sentinels.py` | 8 sentinel check kinds at 3 stages (`relation_in` may restrict conventions) | `load`, `check`, `applicable` (alignment checks only on their own text pair), `text_prefixes` |
 | `evaluation/gate.py` | G0-G4, report level, confirmatory flag, ledger | `evaluate`, `check_g1`, `GateSpecs.from_prereg`, `ledger_append`, `ledger_summary` |
+| `evaluation/adoption.py` | the collate.v1/v2 adoption rule of docs-zh/09 section 7, fixed 2026-10-13 (pure): constants `TOLERANCE`, `MIN_CONVENTION_PRECISION`, `TUNING_WINDOWS`, `IN_SAMPLE_UNITS`, `REPLICATES`; deferred gold `?` read by note marker (primary) or left out (sensitivity); dev regions the gold does not cover yet; figures outside the tuning windows and without the in-sample units; the decision | `note_markers`, `read_deferred`, `gold_gaps`, `score_run`, `RunScores`, `dany_level`, `kappa_difference`, `decide` |
 | `stats/twophase.py` | strata, posterior-predictive draws, E1/E2 (and the sensitivity `E1_any_conv` with per-draw conventions), Manski bounds, revision rate | `stratum_of`, `draws`, `prevalence`, `manski`, `revision_rate`, `uncalibrated_strata`, `UncalibratedStrata`, `latest_verdicts`, `sample_verdicts`, `require_primary` |
 | `stats/anyconv.py` | D_any_conv for `E1_any_conv`: conventions imputed jointly with the class from the phase-2 verdicts, human conventions only (valid for a collate.v1 run) | `known_conventions`, `convention_counts`, `convention_draws`, `summary` |
 | `stats/contrast.py` | Delta (E4), permutation test, TOST, matching, diagnostics; length strata are mid-rank tertiles | `delta`, `tertile_strata`, `permutation_p`, `tost`, `matched_rd`, `overlap_diagnostics`, `misclassification_table` |
@@ -234,6 +236,8 @@ ingest   -> ingest/segments_<witness>.jsonl, footnotes.jsonl, variants.csv,
 evaluate -> evaluation/scores.<set>[_baselines].json; when gating (test gold, Claude scored):
             scores.json, gate.json, sentinels.jsonl and one line in
             data/ledger/test_evaluations.jsonl (not appended for an identical re-scoring)
+adopt --v1-run <run> --v2-run <run>
+         -> <v2 run>/evaluation/adoption.json (the collate.v1/v2 decision on dev gold; both runs built)
 stats    -> stats/estimates.json, stats/details.json (incl. e3, distance), stats/power.json (complete topic labels)
 report   -> summary.md, status_strip.svg, chapter_heatmap.svg
 
@@ -247,7 +251,8 @@ Sanskrit reference: baselines ... report run once per aligned witness (`--witnes
 ```
 
 `ingest`, `run` and `claude-check` create a new run directory; every other command uses the
-latest one unless `--run-dir` is given. Committed human data (`data/annotations/`,
+latest one unless `--run-dir` is given (`adopt` names its two runs with `--v1-run` and `--v2-run`
+and refuses `--run-dir`). Committed human data (`data/annotations/`,
 `data/ledger/`) is shared by all runs, including the review plans and their frozen strata
 (runs made before plans were committed kept them under `review/`; they are still read for any
 batch with no committed plan). The LLM response cache (`run.yaml: paths.cache`,
@@ -255,11 +260,11 @@ default `runs/llm-cache/`) is shared by all runs and makes any finished run repl
 `--offline`. Exact file formats are in [data-formats.md](data-formats.md).
 
 Order of a research campaign (a checklist, not code): ingest and G0; dev gold blind; prompt
-and effort development on dev gold; `sample windows`; blind test gold; `prereg freeze`; full
-collation with replicates, controls and perturbations; `evaluate` once on test gold (ledgered);
-topic labelling (before sampling: strata freeze when a plan is drawn); verification and audit
-samples; blind-then-reveal review (`review export --hours` chunks: export, fill, import, repeat);
-`stats`, `report`.
+and effort development on dev gold (`adopt` decides between collate.v1 and collate.v2);
+`sample windows`; blind test gold; `prereg freeze`; full collation with replicates, controls and
+perturbations; `evaluate` once on test gold (ledgered); topic labelling (before sampling: strata
+freeze when a plan is drawn); verification and audit samples; blind-then-reveal review
+(`review export --hours` chunks: export, fill, import, repeat); `stats`, `report`.
 
 ## 5. Key invariants
 

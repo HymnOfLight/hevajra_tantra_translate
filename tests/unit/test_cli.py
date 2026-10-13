@@ -14,7 +14,7 @@ from hevajra_matrix.cli import build_parser, main
 from test_pipeline_support import REPO, make_root
 
 COMMANDS = ("fetch", "ingest", "baselines", "collate", "build", "evaluate", "perturb", "stats", "report", "topics",
-            "sample", "review", "components", "experiment", "claude-check", "prereg", "run")
+            "sample", "review", "components", "experiment", "claude-check", "prereg", "adopt", "run")
 
 
 def _run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
