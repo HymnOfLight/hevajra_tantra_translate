@@ -33,6 +33,8 @@
 
 可选标记（`flags`，多个用分号隔开）：`scope_list`（整张列表的现象）、`uniform_across_list`（整表包括中性成员都做了同样处理，这类单元不进入敏感/中性对比）、`instruction_as_mantra`（说明文字被当成真言音写）、`reordered`（顺序被调整）、`unsure`（不确定）。
 
+藏文说明真言怎样拼出（取某字、加某字、末尾加 svāhā 之类），汉文只给出拼好的真言：按现行规则判 `transliterated`，标 `instruction_as_mantra`，`note` 栏写"真言拼法"，以便专家定下规则之后复查（[`09-collate-v2-draft.md`](09-collate-v2-draft.md) Q10）。
+
 仅见于汉文的片段（参照里没有的材料）在汉文侧表格的 `witness_only` 列填：`addition`（增写）、`translator_note`（译者夹注）、`paratext`（题记等副文本）、`belongs_elsewhere`（其实属于别处的内容）。
 
 ---
