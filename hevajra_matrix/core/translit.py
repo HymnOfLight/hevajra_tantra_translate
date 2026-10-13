@@ -1,21 +1,30 @@
 """Transliteration density: how much of a stretch of text is phonetic transcription.
 
-Its consumers use the same measure and threshold, so they cannot drift apart:
+V11, V12 and C4 share the density measure and the threshold ``MIN_TRANSLITERATION_DENSITY``
+(V11 and V12 add the ``MIN_TRANSCRIBED_RUN`` alternative); d_lit reports the density itself:
 
     collate.verify (V11)   a ``transliterated`` link needs a witness quote that contains a
                            transcription (``contains_transcription``); otherwise it is
                            flagged for review
     collate.verify (V12)   a ``transcribed_name`` convention needs the same of its quote
     components (C4)        a ``lit`` slot code needs a quote that is mostly transcription
-                           (``looks_transcribed``)
+                           (the whole-quote density, as in ``looks_transcribed``)
     matrix (d_lit)         the descriptive transliteration density of a cell
 
 V11 and V12 ask whether a quote *contains* a transcription because one witness quote also
 shows the rest of the unit: an ordinal before a channel name, the gloss after a seed
 syllable, "how is ... called" around a deity name. On the I.1 run of collate.v2
-(2026-10-13) the whole-quote density flagged 13 of 34 claimed transcribed names, each
-quoted together with such words. A C4 slot quote is the coded word itself, so it keeps
-the stricter test.
+(2026-10-13) the whole-quote density put 12 of 34 claimed transcribed names below one half,
+each quoted together with such words (10 links flagged ``convention_unsupported``; the
+other 2 were on units V4 had rejected).
+
+C4 knowingly keeps the whole-quote density: its quote is the coded word itself. The test
+also rejects a bare, fully transcribed word whose characters are missing from the mantra
+charset, a known C4 false failure (fatal for the pair). Bare quotes in the collate.v2
+answers on I.1: samayasattva at density 0.40 (no T0892 mantra holds the three characters
+of samaya), yogini at 0.33 and samadhi at 0.00. Measure it on double-coded dev pairs before
+``d_comp`` is used. The run rule would rescue only samayasattva (through the two characters
+of sattva) and would accept under a fifth of six-character prose stretches as well.
 
 For a witness language other than Chinese or Tibetan the density is always 0, so V11 and
 V12 always flag there.
@@ -87,7 +96,8 @@ def contains_transcription(text: str, lang: str, charset: frozenset[str] = froze
 
     A single transcription character among other words does not count: about one prose
     character in ten is in the charset by chance (mean prose density 0.10), while two in a
-    row occur in under a fifth of six-character prose stretches of T0892.
+    row occur in under a fifth of six-character prose stretches of T0892. A two-character
+    quote with one transcription character still passes, on density (exactly one half).
     """
     if looks_transcribed(text, lang, charset):
         return True

@@ -9,11 +9,12 @@ counted over five categories
     NONDEV without a convention, NONDEV with a convention, DEV_PRESENT, PARTIAL, ABSENT
 
 (under any_conv only the first is non-deviating). A verdict's convention follows
-``review.verdicts.decision_convention``; "" (not annotated) counts as none and is reported
-(``summary``). The posterior predictive is Dirichlet(x_h + prior) with the prior of
-``twophase.draws`` unchanged: the Jeffreys 1/2 of NONDEV stays on NONDEV without a convention
-and the convention category gets no pseudo-count. By the aggregation property of the
-Dirichlet this equals
+``review.verdicts.decision_convention``; "" (not annotated, e.g. a ``?`` left on the sheet)
+counts as none, here as in the built matrix, and ``summary`` reports how many sample verdicts
+and how many units decided by gold or resolve leave it so. The posterior predictive is
+Dirichlet(x_h + prior) with the prior of ``twophase.draws`` unchanged: the Jeffreys 1/2 of
+NONDEV stays on NONDEV without a convention and the convention category gets no pseudo-count.
+By the aggregation property of the Dirichlet this equals
 
     the class draw of ``twophase.draws`` (NONDEV with weight x_h,NONDEV + 1/2), then
     q_h ~ Beta(c_h, x_h,NONDEV - c_h + 1/2) per draw (c_h: NONDEV verdicts with a convention),
@@ -121,7 +122,7 @@ def convention_draws(
 
 def summary(
     cells: Iterable[Cell], verdicts: Sequence[Verdict], strata: Mapping[str, str],
-    ref_kinds: Mapping[str, str] | None = None,
+    ref_kinds: Mapping[str, str] | None = None, gold: Sequence[Verdict] = (),
 ) -> dict[str, int]:
     """What the any_conv imputation rests on (``stats/details.json: any_conv``).
 
@@ -130,11 +131,29 @@ def summary(
     ``with_convention``         of them, recording a convention
     ``nondev_with_convention``  of them, non-deviating and recording a convention
     ``verified_with_convention`` verified units carrying a human convention
-    E1_any_conv equals E1_any when the last two are 0.
+    ``verified_unannotated``    verified units whose deciding verdict is gold or resolve (not
+                                a sample verdict) with no annotated convention (counted as none)
+    ``verified_nondev_unannotated``  of them, non-deviating (the only verified units whose
+                                annotation could move E1_any_conv)
+    E1_any_conv equals E1_any when ``nondev_with_convention`` and ``verified_with_convention``
+    are 0. ``gold`` are the gold verdicts behind the grade A gold cells; they enter the last two
+    counts only, and the deciding verdict is the one ``known_conventions`` reads (a usable
+    verdict of ``verdicts`` over the gold cell).
     """
-    used = twophase.sample_verdicts(verdicts, strata, "final", ref_kinds)
+    cells = list(cells)
+    kinds = ref_kinds or {}
+    used = twophase.sample_verdicts(verdicts, strata, "final", kinds)
+    known = twophase.known_outcomes(cells, verdicts, "final", kinds)
+    deciding = twophase.latest_verdicts(gold, "final")
+    for unit, v in twophase.latest_verdicts(verdicts, "final").items():
+        if twophase.verdict_outcome(v, "final", kinds.get(unit, "")) is not None:
+            deciding[unit] = v
+    unannotated = [known[u] for u, v in deciding.items()
+                   if u in known and v.task not in twophase.SAMPLE_TASKS and not decision_convention(v)]
     return {"verdicts": len(used),
             "unannotated": sum(1 for _, v, _ in used if not decision_convention(v)),
             "with_convention": sum(1 for _, v, _ in used if verdict_convention(v)),
             "nondev_with_convention": sum(1 for _, v, o in used if o is OutcomeClass.NONDEV and verdict_convention(v)),
-            "verified_with_convention": sum(known_conventions(cells, verdicts, ref_kinds).values())}
+            "verified_with_convention": sum(known_conventions(cells, verdicts, kinds).values()),
+            "verified_unannotated": len(unannotated),
+            "verified_nondev_unannotated": sum(1 for o in unannotated if o is OutcomeClass.NONDEV)}

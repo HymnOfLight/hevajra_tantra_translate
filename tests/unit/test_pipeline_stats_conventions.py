@@ -32,6 +32,7 @@ from hevajra_matrix.review.verdicts import read_file
 from test_pipeline_calibration import audit, cli, rewrite, verify_all_absent
 from test_pipeline_collate_v2 import select_prompt
 from test_pipeline_evaluate_conventions import echo_names
+from test_pipeline_gating import fill_gold
 from test_pipeline_support import context, fill_cache, make_root
 
 ZERO = {"standing_rendering": 0, "transcribed_name": 0, "unsupported": 0, "human": 0}
@@ -83,7 +84,8 @@ def test_v1_run_without_human_conventions_gives_e1_any_conv_equal_to_e1_any(fini
     assert set(details(run)["manski"]) == {"any", "cov"}, "collate.v1 records no conventions: no Manski any_conv"
     n = len(sample_verdicts(root))
     assert details(run)["any_conv"] == {"verdicts": n, "unannotated": 0, "with_convention": 0,
-                                        "nondev_with_convention": 0, "verified_with_convention": 0}
+                                        "nondev_with_convention": 0, "verified_with_convention": 0,
+                                        "verified_unannotated": 0, "verified_nondev_unannotated": 0}
     assert details(run)["conventions"] == ZERO
 
 
@@ -121,11 +123,33 @@ def test_v1_run_imputes_human_conventions_and_reports_the_unannotated_verdicts(f
     assert verify and all(v.final_convention == "" for v in verify)
     assert details(run)["any_conv"] == {"verdicts": len(sample_verdicts(root)), "unannotated": len(verify),
                                         "with_convention": 2, "nondev_with_convention": 2,
-                                        "verified_with_convention": 2}
+                                        "verified_with_convention": 2, "verified_unannotated": 0,
+                                        "verified_nondev_unannotated": 0}
     assert details(run)["conventions"] == {**ZERO, "transcribed_name": 2, "human": 2}
     ctx = context(root, run, offline=True)
     inputs = results.report_inputs(ctx)
     assert inputs.conventions == details(run)["conventions"] and inputs.any_conv == details(run)["any_conv"]
+
+
+def test_gold_decided_without_a_convention_is_reported_beside_e1_any_conv(finished) -> None:
+    root, run = finished
+    assert cli(root, run, "sample", "windows") == 0
+    fill_gold(root, run, "dev")
+    refs: list[dict] = []
+
+    def unannotate(rows):                         # a '?' left on the gold sheet is stored empty
+        refs.extend(r for r in rows if r["row_type"] == "ref")
+        return [{**r, "convention": ""} for r in rows]
+
+    rewrite(next((root / "data" / "annotations" / "gold").rglob("dev.csv")), unannotate)
+    assert cli(root, run, "build") == 0
+    verify_all_absent(root, run)
+    audit(root, run, ["equivalent", "equivalent"])
+    assert cli(root, run, "stats") == 0
+    any_conv = details(run)["any_conv"]
+    assert refs and any_conv["verified_unannotated"] == len(refs)
+    assert any_conv["verified_nondev_unannotated"] == sum(r["relation"] == "equivalent" for r in refs)
+    assert any_conv["unannotated"] == 0, "the sample verdicts record theirs"
 
 
 def test_v2_run_calibrates_the_machine_conventions_and_has_manski_any_conv(tmp_path: Path) -> None:

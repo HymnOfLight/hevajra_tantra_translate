@@ -83,19 +83,26 @@ content. Record them in `convention` and set them aside when you choose the rela
   place, channel or ritual object) or a syllable or letter that the text treats as a
   sound (a seed syllable, a letter of the alphabet), while it renders everything else
   in the unit by meaning. Judge the relation as if the name had been translated.
-  Quote the name on both sides. A name rendered partly by meaning and partly by sound
-  (one part translated, the other transcribed) is a transcribed name too. A word for a
-  class or kind of being (for example a class of goddesses, spirits or practitioners,
-  such as dakini or yogini) is not a proper name, even when it refers to deities:
-  rendered by sound it is the relation `transliterated` with convention `none`. So is a
-  word whose meaning or etymology the unit itself states (a gloss on that word) when the
-  witness keeps the word by sound: the glossed word is content, not a name.
+  Quote the transcribed name or syllable itself on both sides. A name is also a
+  transcribed name when one part of the reference name is translated and another part
+  of the same reference name is rendered by sound. A word that the witness adds and that
+  renders no part of the reference name (for example the usual word for bodhisattva
+  after a translated name of a goddess) does not make a translated name transcribed. A
+  word for a class or kind of being (for example a class of goddesses, spirits or
+  practitioners, such as dakini or yogini) is not a proper name, even when it refers to
+  deities: rendered by sound it is the relation `transliterated` with convention `none`.
+  So is a word whose meaning or etymology the unit itself states (a gloss on that word)
+  when the witness keeps the word by sound: the glossed word is content, not a name. This
+  gloss rule covers words only: a seed syllable, a letter, or a syllable of a name glossed
+  syllable by syllable stays a transcribed name when the unit states what it means or
+  stands for.
 - `none`: neither applies. This is the usual value.
 
-When a convention applies and something else in the unit also differs, the convention
-still applies to the name or term, and the relation records the other difference (for
-example `transcribed_name` with `abridged` when the name is transcribed and a phrase is
-missing). A convention never turns a missing, reversed or replaced content element into
+When both conventions apply in one unit (a listed term rendered as listed, and a
+transcribed name), record `standing_rendering`. When a convention applies and something
+else in the unit also differs, the convention still applies to the name or term, and
+the relation records the other difference (for example `transcribed_name` with
+`abridged` when the name is transcribed and a phrase is missing). A convention never turns a missing, reversed or replaced content element into
 `equivalent`.
 
 ## Witness-only material
@@ -131,8 +138,9 @@ reference unit of this chunk, with one of these kinds:
 - Quotes are copied verbatim from the supplied lines: `ref_quote` from the unit's own
   text, `wit_quote` from the text of the witness lines you list in `wit`. Keep quotes
   short: the words that show the relation. Do not normalise, translate or complete them.
-  Each quote is one unbroken stretch of text: never join separate pieces with a slash,
-  an ellipsis or anything else.
+  A quote may run on across adjacent lines listed in `wit` when it skips no text: copy
+  the text as it stands, without inserting any separator. Never join pieces that are not
+  adjacent (with a slash, an ellipsis or anything else).
 - `ref_quote` is required for every relation except `equivalent`, `paraphrase` and
   `expanded` (there it may be empty), and whenever `convention` is not `none`. For
   `no_counterpart`, quote the unit.

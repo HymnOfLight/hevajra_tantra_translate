@@ -25,9 +25,9 @@ def gate(level: int) -> GateReport:
 
 V2_MANSKI = {"any": (0.2, 0.21), "any_conv": (0.3, 0.31)}
 SUMMARY = {"verdicts": 12, "unannotated": 4, "with_convention": 3, "nondev_with_convention": 2,
-           "verified_with_convention": 3}
+           "verified_with_convention": 3, "verified_unannotated": 5, "verified_nondev_unannotated": 2}
 NO_CONVENTION = {"verdicts": 12, "unannotated": 0, "with_convention": 0, "nondev_with_convention": 0,
-                 "verified_with_convention": 0}
+                 "verified_with_convention": 0, "verified_unannotated": 0, "verified_nondev_unannotated": 0}
 
 
 def inputs(conventions=None, any_conv=None, manski=None, **est) -> ReportInputs:
@@ -51,7 +51,8 @@ def test_level_2_prints_the_caliber_and_what_the_imputation_rests_on():
     assert "  - caliber: a unit also counts when it carries a convention" in text
     assert "machine conventions are never used" in text and "not imputed" not in text
     assert ("  - phase-2 verdicts behind the imputation: 12; 4 without an annotated convention (counted as none), "
-            "3 recording one; 3 verified units carry a human convention") in text
+            "3 recording one; 3 verified units carry a human convention, 5 decided by gold or resolve without an "
+            "annotated convention (counted as none; 2 of them non-deviating)") in text
     assert ("  - conventions in the built matrix (descriptive; unverified machine ones are not used): 7 units "
             "(standing_rendering 2, transcribed_name 5); 1 without code support (convention_unsupported), "
             "3 human-decided") in text
@@ -59,6 +60,12 @@ def test_level_2_prints_the_caliber_and_what_the_imputation_rests_on():
     assert "- any_conv (conventions counted, sensitivity): [0.300, 0.310]" in text
     assert "- any: [0.200, 0.210]" in text
     assert "E1_any_conv_blind" not in text and text.count("automation-bias") == 0
+
+
+def test_details_written_before_the_unannotated_unit_count_are_printed_without_it():
+    old = {k: v for k, v in SUMMARY.items() if not k.startswith("verified_") or k == "verified_with_convention"}
+    text = render(inputs({}, old), gate(2))
+    assert "3 verified units carry a human convention\n" in text and "decided by gold or resolve" not in text
 
 
 def test_without_any_human_convention_the_report_says_the_variant_equals_e1_any():

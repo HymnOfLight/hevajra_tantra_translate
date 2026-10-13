@@ -92,6 +92,28 @@ def test_resolve_copies_the_blind_convention_to_the_final_one(tmp_path: Path):
     assert (v.blind_convention, v.final_convention) == ("transcribed_name", "transcribed_name")
 
 
+def test_a_deferred_blind_convention_imports_unannotated(tmp_path: Path):
+    path, items = _filled_blind(tmp_path)
+    header, rows = read(path)
+    rows[0]["blind_convention"] = "?"                 # the glossary entry awaits verification
+    write_rows(path, header, rows)
+    unit = sheets.import_(path, "verify", params=PARAMS, items=items)[0]
+    assert (unit.blind_convention, unit.final_convention) == ("", "")
+
+
+def test_a_deferred_convention_is_refused_where_none_can_be_recorded(tmp_path: Path):
+    path, items = _filled_blind(tmp_path)
+    header, rows = read(path)
+    rows[1].update(blind_relation="no_counterpart", blind_convention="?")
+    rows[2]["blind_convention"] = "\uff1f"                                   # an orphan row, full-width
+    write_rows(path, header, rows)
+    with pytest.raises(VerdictError) as exc:
+        sheets.import_(path, "verify", params=PARAMS, items=items)
+    text = str(exc.value)
+    assert "line 3: '?' defers a convention, but no_counterpart rows take none: leave the cell blank" in text
+    assert "line 4: '?' defers a convention, but orphan rows take none" in text
+
+
 def test_blind_import_refuses_bad_conventions_with_their_line(tmp_path: Path):
     path, items = _filled_blind(tmp_path)
     header, rows = read(path)
@@ -147,17 +169,20 @@ def test_reveal_sheet_shows_the_machine_convention(tmp_path: Path):
     items = [make_item("verify", r.id, "s", 0.5) for r in REFS[:5]]
     blind = [_blind_verdict(i, "abridged", (WITS[n].id,)) for n, i in enumerate(items)]
     blind[1] = replace(blind[1], blind_relation="equivalent", blind_convention="transcribed_name")
+    blind[3] = replace(blind[3], blind_relation="no_counterpart", blind_wit_ids=())
     path = sheets.export(items, "reveal", tmp_path, SEGMENTS, cells, batch="v1", links=alignment.by_ref(),
                          blind=blind)[0]
     _, rows = read(path)
     assert [r["machine_convention"] for r in rows] == ["none", "transcribed_name", "standing_rendering:unsupported",
                                                        "none", "none"]
     assert (rows[1]["blind_convention"], rows[1]["final_convention"]) == ("transcribed_name", "transcribed_name")
-    assert rows[0]["final_convention"] == ""                                      # a blind verdict of before v2
+    # a blind verdict of before v2 is not annotated: '?' where a convention can be recorded
+    assert (rows[0]["blind_convention"], rows[0]["final_convention"]) == ("?", "?")
+    assert (rows[3]["blind_convention"], rows[3]["final_convention"]) == ("", "")      # no_counterpart takes none
     out = sheets.import_(path, "reveal", params=PARAMS, blind=blind)
     assert [v.machine_convention for v in out] == ["none", "transcribed_name", "standing_rendering", "none", "none"]
-    assert [v.final_convention for v in out] == ["none", "transcribed_name", "none", "none", "none"]
-    assert out[0].final_relation == "abridged", "a legacy blind '' and a blank final cell are no revision"
+    assert [v.final_convention for v in out] == ["", "transcribed_name", "", "none", ""]
+    assert out[0].final_relation == "abridged", "an unedited legacy row is no revision"
 
 
 def test_reveal_sheet_without_a_machine_cell_shows_no_convention(tmp_path: Path):
@@ -175,7 +200,7 @@ def test_reveal_sheet_without_a_machine_cell_shows_no_convention(tmp_path: Path)
 def test_a_changed_final_convention_is_a_revision(tmp_path: Path):
     alignment, cells = machine()
     items = [make_item("verify", REFS[1].id, "s", 0.5)]
-    blind = [_blind_verdict(items[0], "abridged", (WITS[1].id,))]
+    blind = [replace(_blind_verdict(items[0], "abridged", (WITS[1].id,)), blind_convention="none")]
     path = sheets.export(items, "reveal", tmp_path, SEGMENTS, cells, batch="v1", blind=blind)[0]
     header, rows = read(path)
     rows[0]["final_convention"] = "transcribed_name"
@@ -189,11 +214,70 @@ def test_a_changed_final_convention_is_a_revision(tmp_path: Path):
     rows[0].update(final_relation="abridged", final_wit_loci=WITS[1].id)
     write_rows(path, header, rows)
     v = sheets.import_(path, "reveal", params=PARAMS, blind=blind)[0]
-    assert (v.blind_convention, v.final_convention, v.note) == ("", "transcribed_name", "revised: a name read by sound")
+    assert (v.blind_convention, v.final_convention, v.note) == ("none", "transcribed_name",
+                                                                "revised: a name read by sound")
     rows[0]["machine_convention"] = "gloss"
     write_rows(path, header, rows)
     with pytest.raises(VerdictError, match="machine_convention 'gloss'"):
         sheets.import_(path, "reveal", params=PARAMS, blind=blind)
+
+
+def _reveal(tmp_path: Path, blind_convention: str):
+    _, cells = machine()
+    items = [make_item("verify", REFS[1].id, "s", 0.5)]
+    blind = [replace(_blind_verdict(items[0], "abridged", (WITS[1].id,)), blind_convention=blind_convention)]
+    path = sheets.export(items, "reveal", tmp_path, SEGMENTS, cells, batch="v1", blind=blind)[0]
+    header, rows = read(path)
+    return path, header, rows, blind
+
+
+def test_deferring_a_decided_blind_convention_at_reveal_is_a_revision(tmp_path: Path):
+    path, header, rows, blind = _reveal(tmp_path, "transcribed_name")
+    rows[0]["final_convention"] = "?"
+    write_rows(path, header, rows)
+    with pytest.raises(VerdictError, match="line 2: the final decision differs from the blind one"):
+        sheets.import_(path, "reveal", params=PARAMS, blind=blind)
+    rows[0]["revised_reason"] = "the entry is not verified yet"
+    write_rows(path, header, rows)
+    assert sheets.import_(path, "reveal", params=PARAMS, blind=blind)[0].final_convention == ""
+
+
+def test_deciding_a_deferred_blind_convention_at_reveal_is_no_revision(tmp_path: Path):
+    path, header, rows, blind = _reveal(tmp_path, "")
+    assert (rows[0]["blind_convention"], rows[0]["final_convention"]) == ("?", "?")
+    assert sheets.import_(path, "reveal", params=PARAMS, blind=blind)[0].final_convention == ""   # kept deferred
+    rows[0]["final_convention"] = "transcribed_name"
+    write_rows(path, header, rows)
+    v = sheets.import_(path, "reveal", params=PARAMS, blind=blind)[0]
+    assert (v.blind_convention, v.final_convention, v.note) == ("", "transcribed_name", "")
+
+
+def test_reveal_refuses_a_prefilled_question_mark_on_a_relation_without_a_convention(tmp_path: Path):
+    path, header, rows, blind = _reveal(tmp_path, "")
+    rows[0].update(final_relation="no_counterpart", final_wit_loci="", revised_reason="no counterpart after all")
+    write_rows(path, header, rows)                                       # final_convention keeps its '?'
+    with pytest.raises(VerdictError, match="line 2: '\\?' defers a convention, but no_counterpart rows take none"):
+        sheets.import_(path, "reveal", params=PARAMS, blind=blind)
+    rows[0]["final_convention"] = ""
+    write_rows(path, header, rows)
+    assert sheets.import_(path, "reveal", params=PARAMS, blind=blind)[0].final_convention == "none"
+
+
+def test_a_deferred_blind_convention_survives_the_reveal(tmp_path: Path):
+    path, items = _filled_blind(tmp_path)
+    header, rows = read(path)
+    rows[0]["blind_convention"] = "?"
+    write_rows(path, header, rows)
+    save(sheets.import_(path, "verify", params=PARAMS, date="2026-10-03", items=items),
+         tmp_path / "committed" / "zh_wit" / "b7.csv")
+    blind = load(tmp_path / "committed")
+    _, cells = machine()
+    revealed = [i for i in items if i.item_id in {v.item_id for v in blind}]
+    reveal = sheets.export(revealed, "reveal", tmp_path / "reveal", SEGMENTS, cells, batch="b7", blind=blind)[0]
+    _, rows = read(reveal)
+    assert [(r["blind_convention"], r["final_convention"]) for r in rows] == [("?", "?"), ("none", "none")]
+    out = sheets.import_(reveal, "reveal", params=PARAMS, blind=blind)         # unedited
+    assert [(v.blind_convention, v.final_convention) for v in out] == [("", ""), ("none", "none")]
 
 
 def test_legacy_and_half_legacy_reveal_sheets(tmp_path: Path):
@@ -246,6 +330,14 @@ def test_a_deferred_gold_convention_imports_unannotated(tmp_path: Path):
     assert [v.blind_convention for v in out] == ["transcribed_name", "", "none"]
 
 
+def test_a_deferred_gold_convention_is_refused_on_a_no_counterpart_row(tmp_path: Path):
+    ref_path, header, rows = _gold_sheet(tmp_path)
+    rows[2]["convention"] = "?"
+    write_rows(ref_path, header, rows)
+    with pytest.raises(VerdictError, match="test_w01.ref.csv line 4: '\\?' defers a convention, but no_counterpart"):
+        sheets.import_(ref_path, "gold", params=PARAMS, check=accept)
+
+
 def test_a_gold_sheet_of_before_the_column_imports_unannotated(tmp_path: Path):
     ref_path, header, rows = _gold_sheet(tmp_path)
     old = [c for c in header if c != "convention"]
@@ -271,3 +363,18 @@ def test_a_human_convention_reaches_the_cell_and_keeps_grade_a(tmp_path: Path):
     assert human.flags == {"transcribed_name", "unsure"} and has_convention(human.flags)
     assert has_convention(next(c for c in cells if c.unit_id == REFS[5].id).flags)        # machine cell untouched
     assert not any(has_convention(c.flags) for c in orphans)
+
+
+def test_a_deferred_human_convention_adds_no_flag_and_drops_the_machine_one(tmp_path: Path):
+    path, _ = _filled_blind(tmp_path, task="resolve")
+    header, rows = read(path)
+    rows[0]["blind_convention"] = "?"
+    write_rows(path, header, rows)
+    verdicts = sheets.import_(path, "resolve", params=PARAMS, date="2026-10-03")
+    assert (verdicts[0].blind_convention, verdicts[0].final_convention) == ("", "")      # copied to final
+    alignment, machine_cells = machine_with({REFS[4].id: frozenset({"transcribed_name"})})
+    assert has_convention(next(c for c in machine_cells if c.unit_id == REFS[4].id).flags)
+    grades = {r.id: Grade.B for r in REFS} | {"+" + WITS[9].id: Grade.C}
+    cells, _, _ = build_cells(REFS, alignment, grades, {}, (), verdicts, WITS, GROUPS)
+    human = next(c for c in cells if c.unit_id == REFS[4].id)
+    assert human.grade is Grade.A and human.flags == {"unsure"}, "a remaining '?' counts as none in the matrix"

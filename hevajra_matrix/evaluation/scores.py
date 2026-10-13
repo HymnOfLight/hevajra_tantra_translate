@@ -36,8 +36,9 @@ codebook (``generalised`` for merged lists; names and seed syllables judged as t
 ``relation_kappa_shared`` is the relation agreement on the units the two codebooks code
 alike: linked gold units (relation not ``no_counterpart``) whose gold convention is annotated
 as ``none`` and whose gold relation is neither ``generalised`` nor ``category_name_omitted``.
-The section-7 adoption rule ("v2 not worse than v1 on relation agreement", with a
-non-inferiority margin of 0.05) compares ``relation_kappa_shared``, never ``relation_kappa``.
+The section-7 adoption rule ("v2 not worse than v1 on relation agreement": at least v1's value
+minus 0.05, a point-estimate tolerance) compares ``relation_kappa_shared``, never
+``relation_kappa``.
 
 ``COLLATE_V2_FAMILIES`` names the metric families collate.v2 added; a ledger record written
 before them lacks these keys and nothing else (``pipeline.measure.already_ledgered``).
@@ -372,6 +373,15 @@ def interval_estimates(s: AlignmentScores, n_boot: int, seed: int,
         out[name] = Estimate(name=name, point=full.get(name), lo=lo, hi=hi, n=len(s.units),
                              scope=f"gold:{s.gold_set}", sources=(s.source,))
     return out
+
+
+def without_each_window(s: AlignmentScores) -> dict[str, dict[str, float | None]]:
+    """The metrics on all windows but one, for every window left out (empty for one window).
+
+    Dev gold only: docs-zh/09 section 7 takes the collate.v1/v2 decision without I.1, the
+    region collate.v2 was developed on, and reports every other region left out alike."""
+    windows = s.windows()
+    return {w: s.on_windows([x for x in windows if x != w]).metrics() for w in windows} if len(windows) > 1 else {}
 
 
 # Nominal probability that a unit is right, for each T1 confidence label (fixed before any

@@ -199,7 +199,7 @@ Follow the shape of `topics/prelabel.py` or `collate/components.py`:
    (e.g. accept reference segments only), and test that forbidden text cannot reach the request.
 5. **Pure parse and verify.** Never raise on a model answer: `refusal`, `truncated`, `invalid` and
    `response.substituted_model` become values with a reason. Check every handle and quote in code
-   (`core.textnorm.quote_in`, `collate.verify.quote_match`).
+   (`core.textnorm.quote_in`, `collate.quotes.quote_match`).
 6. **Instrument.** Add the task to `prereg.instruments` so its digest is frozen and recorded.
 7. **Stage and CLI.** A function in `pipeline/` that uses `make_client(ctx)` (audit, cache, budget,
    offline replay come for free), writes its outputs into the run directory and calls
@@ -216,6 +216,13 @@ preregistration is frozen this is routine (old cache entries simply stop being h
 `prereg freeze`, record the change with `hevajra-matrix prereg freeze --amend "<reason>"`, which
 recomputes the digests and appends to `amendments`; the ledger then shows the test set scored by
 more than one instrument version and the report reads "exploratory".
+
+A change to what the collate checks V1-V12 accept or flag (`collate/verify.py`, `collate/quotes.py`,
+`collate/merge.py`, the `core/textnorm.py` and `core/translit.py` functions and thresholds they call,
+`data/lexicon/negators.yaml`, `data/lexicon/variant_forms.yaml`) changes measured outputs without
+touching a request: bump `collate/verify.py: VERIFY_VERSION` in the same commit, update the pinned
+`V1_COLLATE_PARAMS_SHA` in `tests/unit/test_pipeline_collate_v2.py`, and after freezing amend the
+preregistration as above. Cache keys stay valid, so the responses replay offline under the new checks.
 
 ## 6. Commit hygiene
 

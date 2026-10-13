@@ -56,6 +56,7 @@ def build(ctx: RunContext) -> dict[str, int]:
     computed on machine cells).
     """
     texts = load_texts(ctx)
+    check_prompt(ctx, texts)          # the stage records the configured digest: it must be the collated one
     replicates = read_replicates(ctx)
     cons = consensus(replicates, texts.ref_kinds)
     agree = agreement(replicates, texts.ref_kinds)
@@ -186,7 +187,8 @@ def evaluate(ctx: RunContext, gold_set: str = "test", baselines_only: bool = Fal
         "sources": {src: {"counts": s.counts(), "metrics": s.metrics(),
                           "intervals": {k: estimate_to_dict(e) for k, e in
                                         gold_sets.interval_estimates(s, specs.g1.n_boot, specs.seed).items()},
-                          "reliability": gold_sets.confidence_reliability(s)}
+                          "reliability": gold_sets.confidence_reliability(s),
+                          **({"without_window": gold_sets.without_each_window(s)} if gold_set == "dev" else {})}
                     for src, s in scores.items()}}
     own = out / f"scores.{gold_set}{'_baselines' if baselines_only else ''}.json"     # every evaluation keeps its own
     _write_json(own, scores_doc)

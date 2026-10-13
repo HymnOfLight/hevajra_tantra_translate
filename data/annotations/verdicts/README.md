@@ -56,10 +56,10 @@ is refused.
 | `machine_convention` | the convention of that proposal shown at reveal (`none`, `standing_rendering` or `transcribed_name`; a v1 instrument always gives `none`; empty before reveal, without a machine cell, or for an UNALIGNED one). A convention the code checks did not support is shown on the sheet as `<convention>:unsupported` and stored without the suffix |
 | `blind_relation` | the decision made before seeing any machine output |
 | `blind_wit_ids` | witness segment ids of the blind decision |
-| `blind_convention` | the convention of the blind decision: `none`, `standing_rendering` or `transcribed_name` (a blank sheet cell is stored as `none`; empty = not annotated) |
+| `blind_convention` | the convention of the blind decision: `none`, `standing_rendering` or `transcribed_name` (a blank sheet cell is stored as `none`; empty = not annotated: a sheet cell holding `?`, `review.verdicts.CONVENTION_DEFERRED`, not decided yet, or a file of before collate.v2) |
 | `final_relation` | the decision after reveal (resolve: a copy of the blind one, since resolve has no reveal) |
 | `final_wit_ids` | witness segment ids of the final decision |
-| `final_convention` | the convention of the final decision (resolve: a copy of the blind one) |
+| `final_convention` | the convention of the final decision (resolve: a copy of the blind one); a `?` on the reveal sheet is stored empty, as above |
 | `polarity_flip` | `true` or `false` (true for `reversal`) |
 | `flags` | any of `scope_list`, `uniform_across_list`, `instruction_as_mantra`, `reordered`, `unsure` |
 | `quote_ref` | short quote of the reference unit (re-resolution hint only) |
@@ -90,14 +90,22 @@ is refused.
   of a verified glossary entry and the linked witness segments contain a rendering of the same
   entry: `standing_renderings.csv` beside the sheets lists the verified entries (the same ones
   the collate.v2 prompt shows; while none is verified, every `standing_rendering` is refused on
-  import). The flag `convention_unsupported` is set by the code checks only.
+  import). The flag `convention_unsupported` is set by the code checks only. When the
+  convention cannot be decided yet (e.g. the glossary entry awaits verification), write `?`:
+  it is stored empty (not annotated). A `?` is refused where no convention can be recorded
+  (`no_counterpart`, `lacuna`, `unresolved`, orphan rows): leave that cell blank. A full-width
+  question mark or semicolon typed with a Chinese input method is read as `?` or `;`. How to
+  fill the sheets: `docs-zh/03-review-guide.md`.
 
 Status is never stored: it is derived from the relation (`hevajra_matrix.matrix.status`). A
 decided convention (final columns; gold: blind) reaches the matrix as the cell flag of the same
-name, on a grade-A cell; an empty convention adds none. The sensitivity estimate E1_any_conv
-takes its conventions from the human decisions only (`stats/anyconv.py`): the final convention
-of a phase-2 verify or audit verdict calibrates its stratum, an empty one counting as none and
-reported in `stats/details.json: any_conv`, so record the convention on every such decision.
+name, on a grade-A cell; an empty convention adds none (the human cell replaces the machine
+cell, so a remaining `?` counts as `none`). The sensitivity estimate E1_any_conv takes its
+conventions from the human decisions only (`stats/anyconv.py`): the final convention of a
+phase-2 verify or audit verdict calibrates its stratum, and a verified unit keeps its own; an
+empty one counts as none and is reported in `stats/details.json: any_conv` (sample verdicts,
+and units decided by gold or resolve), so record the convention on every decision and replace
+every `?` before the measurement.
 
 ## How verdicts are used
 
@@ -110,5 +118,8 @@ reported in `stats/details.json: any_conv`, so record the convention on every su
   pre-registered automation-bias sensitivity estimate, and the blind-to-final revision rate is
   reported per stratum. Assisted (post-reveal) verdicts are never used as G1 gold.
 - **Revisions:** a final decision that differs from the blind one in relation, witness ids,
-  flags or convention needs a `revised_reason` on the reveal sheet; an empty convention and
-  `none` count as the same. A blind decision, convention included, is fixed once revealed.
+  flags or convention needs a `revised_reason` on the reveal sheet; against a decided blind
+  convention an empty final one counts as `none`. A blind convention that is not annotated is
+  shown as `?` on the reveal sheet and stays empty unless the reviewer decides it there, which
+  is no revision; where the blind relation takes no convention it is shown blank and imports
+  as `none`. A blind decision, convention included, is fixed once revealed.

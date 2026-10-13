@@ -17,6 +17,7 @@ from hevajra_matrix.review.verdicts import (
     decision_convention,
     load,
     normalise_convention,
+    parse_flags,
     read_file,
     same_convention,
     save,
@@ -103,6 +104,11 @@ def test_convention_states() -> None:
     assert normalise_convention("?") == normalise_convention(" ? ") == ""     # not decided yet
     assert same_convention("", "none") and same_convention("none", "") and same_convention("", "")
     assert not same_convention("", "transcribed_name") and not same_convention("none", "standing_rendering")
+
+
+def test_full_width_marks_typed_by_a_chinese_input_method_are_folded() -> None:
+    assert normalise_convention("\uff1f") == normalise_convention(" \uff1f\u3000") == ""    # full-width "?"
+    assert parse_flags("reordered\uff1b unsure") == parse_flags("reordered;unsure") == {"reordered", "unsure"}
 
 
 def test_load_missing_directory_is_empty(tmp_path: Path) -> None:

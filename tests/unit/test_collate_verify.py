@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+import yaml
 
 from hevajra_matrix.collate.collator import Unresolved
 from hevajra_matrix.collate.verify import (
@@ -29,6 +30,7 @@ from hevajra_matrix.collate.verify import (
 from hevajra_matrix.core.types import Link, Relation, WitnessOnlyKind
 from hevajra_matrix.registry import load_concordance
 
+from test_collate_collator import _example_window
 from test_collate_support import (
     DATA,
     SOURCE,
@@ -287,6 +289,21 @@ def test_v6_flip_on_another_relation_is_a_mismatch_and_checked_for_negators() ->
     record = unit(w, U_TREES, [Z_TREES], Relation.EQUIVALENT, polarity_flip=True)
     flags = link(run(with_unit(record, w), w), U_TREES).flags
     assert {FLAG_POLARITY_MISMATCH, FLAG_POLARITY_UNCORROBORATED} <= flags
+
+
+def test_v6_reads_a_cut_tibetan_quote_completed_to_whole_syllables() -> None:
+    """V4 lets mi'am be quoted as mi (a fused -'am left out); V6 still reads mi'am, which
+    negates nothing, so the reversal stays uncorroborated."""
+    case = yaml.safe_load((DATA / "fixtures" / "collate_quotes.yaml").read_text(encoding="utf-8"))["negator_cut"]
+    w = _example_window(1, {"reference": [{"kind": "verse_line", "text": case["text"]}],
+                            "witness": [{"kind": "prose", "text": case["wit_text"]}]})
+    for ref_quote in (case["text"], case["quote"]):
+        answer = {"units": [{"ref": "r001", "wit": ["z0001"], "relation": "reversal", "polarity_flip": True,
+                             "confidence": "high", "ref_quote": ref_quote, "wit_quote": case["wit_text"]}],
+                  "witness_only": []}
+        result = run(answer, w)
+        assert dict(result.unresolved) == {}
+        assert link(result, w.units[0].id).flags == {FLAG_POLARITY_UNCORROBORATED}
 
 
 def test_v6_negator_in_an_exclusion_context_does_not_count() -> None:

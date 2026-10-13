@@ -107,3 +107,13 @@ def test_scores_docstring_names_the_adoption_caliber():
     doc = S.__doc__ or ""
     assert "relation_kappa_shared" in doc and "adoption rule" in doc
     assert "descriptive" in doc
+
+
+def test_without_each_window_scores_the_other_windows():
+    s = scored(True)
+    left_out = G.without_each_window(s)
+    assert set(left_out) == set(s.windows()) == {"w01", "w02"}
+    assert left_out["w01"] == s.on_windows(["w02"]).metrics()
+    assert left_out["w02"]["relation_kappa_shared"] == s.on_windows(["w01"]).metrics()["relation_kappa_shared"]
+    assert G.without_each_window(s.on_windows(["w01"])) == {}
+

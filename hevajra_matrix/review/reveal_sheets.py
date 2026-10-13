@@ -6,7 +6,13 @@
                          ``machine_grade``) and the final answer columns, prefilled with the
                          blind decision; ``revised_reason`` is required when the final
                          decision differs from the blind one (relation, witness ids, flags or
-                         convention; "" and ``none`` count as the same convention)
+                         a decided blind convention, against which a final "" counts as
+                         ``none``)
+
+A blind convention that is not annotated ("": a ``?`` cell or a sheet of before collate.v2)
+is shown as ``?`` in ``blind_convention`` and ``final_convention`` wherever the blind
+decision can record one (``verdicts.takes_convention``), so an unedited row keeps it
+unannotated; deciding it on the reveal sheet is no revision and needs no ``revised_reason``.
 
 ``machine_convention`` is the convention flag of the built machine cell (``none`` without
 one; empty when there is no cell or the cell is UNALIGNED). A convention the code checks
@@ -36,6 +42,7 @@ from .sheets import (
     truncate_quote,
 )
 from .verdicts import (
+    CONVENTION_DEFERRED,
     CONVENTIONS,
     VerdictRecord,
     format_flags,
@@ -43,6 +50,7 @@ from .verdicts import (
     parse_flags,
     parse_ids,
     same_convention,
+    takes_convention,
 )
 
 UNSUPPORTED_SUFFIX = ":unsupported"
@@ -65,14 +73,16 @@ def export_reveal(items: Sequence[ReviewItem], out: Path, batch: str, index: Map
         cell = by_unit.get(item.unit_id)
         row = blind_row(item, index, ref, wit, cells)
         blind_ids, blind_flags = " ".join(v.blind_wit_ids), format_flags(v.flags)
-        row.update(blind_relation=v.blind_relation, blind_wit_loci=blind_ids, blind_convention=v.blind_convention,
+        deferred = CONVENTION_DEFERRED if takes_convention(v.unit_id, v.blind_relation) else ""
+        blind_conv = v.blind_convention or deferred
+        row.update(blind_relation=v.blind_relation, blind_wit_loci=blind_ids, blind_convention=blind_conv,
                    blind_flags=blind_flags, note=v.note,
                    machine_relation=machine_relation(cell),
                    machine_polarity_flip="1" if cell is not None and cell.polarity_flip else "0",
                    machine_convention=machine_convention(cell),
                    machine_wit_loci=" ".join(cell.wit_ids) if cell else "",
                    machine_quotes=_quotes(links.get(item.unit_id)), machine_grade=cell.grade.value if cell else "",
-                   final_relation=v.blind_relation, final_wit_loci=blind_ids, final_convention=v.blind_convention,
+                   final_relation=v.blind_relation, final_wit_loci=blind_ids, final_convention=blind_conv,
                    final_flags=blind_flags)
         rows.append(row)
     path = out / f"{batch}.reveal.csv"
@@ -134,13 +144,16 @@ def _final(v: VerdictRecord, row: Mapping[str, str], value: str, params: ReviewP
            where: str, errors: list[str], check: GlossaryCheck | None) -> VerdictRecord:
     ids, flags = parse_ids(row["final_wit_loci"]), parse_flags(row["final_flags"])
     # A sheet exported before the convention columns leaves the final convention unannotated
-    # (""), and then a convention cannot have been revised on it.
-    annotated = "final_convention" in row
-    conv = normalise_convention(row["final_convention"]) if annotated else ""
-    check_decision(v.unit_id, value, ids, flags, where, errors, conv, check)
+    # (""), and then a convention cannot have been revised on it; nor can a blind one that
+    # was not annotated: deciding it now is no revision.
+    cell = row.get("final_convention")
+    conv = "" if cell is None else normalise_convention(cell)
+    check_decision(v.unit_id, value, ids, flags, where, errors, conv, check, cell)
     reason = row["revised_reason"].strip()
     revised = (value, ids, flags) != (v.blind_relation, v.blind_wit_ids, v.flags)
-    if (revised or (annotated and not same_convention(conv, v.blind_convention))) and not reason:
+    if cell is not None and v.blind_convention and not same_convention(conv, v.blind_convention):
+        revised = True
+    if revised and not reason:
         errors.append(f"{where}: the final decision differs from the blind one; give revised_reason")
     note = row.get("note", "").strip()
     if reason:

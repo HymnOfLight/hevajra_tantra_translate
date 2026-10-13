@@ -2,8 +2,11 @@
 
 An instrument is everything that decides what an LLM task measures: model, task, effort,
 the rendered static prompt, the output schema, the code version, the task parameters and
-the number of replicates (``core.types.InstrumentId``). Its digest changes whenever any of
-these change, which is what makes a validated instrument re-validatable:
+the number of replicates (``core.types.InstrumentId``); for the collator the parameters also
+hold the window parameters and the version of its code checks
+(``collate.verify.VERIFY_VERSION``); the latter enters no request or cache key. Its digest
+changes whenever any of these change, which is what makes a validated instrument
+re-validatable:
 
     collate     T1, the measurement instrument (gate G2 compares its digest with the prereg)
                 in the configured prompt version (``tasks.collate.prompt``); one more
@@ -37,6 +40,7 @@ import yaml
 from . import __version__
 from .collate import collator
 from .collate import components
+from .collate.verify import VERIFY_VERSION
 from .collate.windows import WindowParams
 from .config import CONFIG_FILES, ConfigError, Settings, load_settings
 from .core.types import InstrumentId
@@ -87,12 +91,14 @@ def instruments(settings: Settings) -> dict[str, InstrumentId]:
     t1 = collator.TaskSettings.from_config(llm)
     template = collator.load_template(t1.prompt)
     # The prompt version is captured by prompt_sha and schema_sha; keeping it out of the
-    # parameters leaves the collate.v1 digests as they were before versions existed.
+    # parameters gives collate.v1 and collate.v2 the same params_sha. The verifier version
+    # makes a change to the code checks change the digest (not the requests or cache keys).
     t1_params = {k: v for k, v in asdict(t1).items() if k != "prompt"}
     collate = {collate_task(*pair): _instrument(
         "collate", t1.model, t1.effort,
         collator.system_prompt(template, collator.load_examples(data, *pair, prompt=t1.prompt)),
-        collator.schema_for(t1.prompt), (t1_params, WindowParams.from_config(settings.run)), t1.replicates)
+        collator.schema_for(t1.prompt),
+        (t1_params, WindowParams.from_config(settings.run), {"verify_version": VERIFY_VERSION}), t1.replicates)
         for pair in collator.example_pairs(data, t1.prompt)}
     t3 = TopicTaskSettings.from_config(llm)
     codebook = load_codebook(data / "codebook" / "topics.yaml")

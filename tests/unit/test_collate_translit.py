@@ -61,6 +61,13 @@ def test_contains_transcription_finds_a_transcribed_stretch_among_other_words() 
     assert contains_transcription(mantra[0], "zh", charset)
 
 
+def test_a_two_character_quote_with_one_transcription_character_passes_on_density() -> None:
+    charset = transliteration_charset(witness())
+    quote = for_quote(seg(Z_MANTRA).text, "zh")[0] + for_quote(seg(Z_TREES).text, "zh")[0]
+    assert transliteration_density(quote, "zh", charset) == 0.5
+    assert looks_transcribed(quote, "zh", charset) and contains_transcription(quote, "zh", charset)
+
+
 def test_contains_transcription_elsewhere_is_looks_transcribed() -> None:
     for text in (seg(U_MANTRA).text, seg(U_SAID).text, seg(U_SAID).text + seg(U_MANTRA).text):
         assert contains_transcription(text, "bo") is looks_transcribed(text, "bo")

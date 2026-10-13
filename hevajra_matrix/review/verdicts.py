@@ -29,10 +29,15 @@ Conventions (collate.v2; ``core.types.Convention``)
     convention apart from the relation, each in its own column (never in ``flags``): the
     blind value must survive the reveal. Three states: "" = not annotated (a file or sheet
     made before the columns existed, or a cell marked ``?``: not decided yet), ``none``, or
-    a convention. A blank cell of a sheet that has the column is ``none``. "" and ``none`` are equal
-    wherever a revision is judged (``same_convention``). A convention other than none needs
-    a linked relation (a ``Relation`` other than no_counterpart; never lacuna, unresolved or
-    an orphan row); ``decision_convention`` follows the column rule of ``decision``.
+    a convention. A blank cell of a sheet that has the column is ``none``. "" and ``none`` are
+    equal when two recorded conventions are compared (``same_convention``: a final convention
+    against a decided blind one, a revealed blind decision re-imported); deciding a blind ""
+    on the reveal sheet is no revision. A convention other than none, and a ``?``, needs a
+    linked relation (``takes_convention``: a ``Relation`` other than no_counterpart; never
+    lacuna, unresolved or an orphan row); ``decision_convention`` follows the column rule of
+    ``decision``. Sheet convention cells and every flags cell are NFKC-folded (``fold``)
+    before they are compared, so the full-width forms a Chinese input method types (U+FF1F,
+    U+FF1B) read as ``?`` and ``;``.
 
 ``VerdictRecord`` extends the frozen ``core.types.Verdict`` with the three committed columns
 the core type does not carry (``quote_ref``, ``quote_zh``, ``minutes``). It is a ``Verdict``,
@@ -43,6 +48,7 @@ from __future__ import annotations
 
 import csv
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -126,14 +132,33 @@ def decision_date(v: Verdict) -> str:
 CONVENTION_DEFERRED = "?"   # a sheet cell for "not decided yet": imports as "" (not annotated)
 
 
+def fold(value: str | None) -> str:
+    """A sheet cell NFKC-folded and stripped (the full-width U+FF1F and U+FF1B become ``?`` and ``;``)."""
+    return unicodedata.normalize("NFKC", value or "").strip()
+
+
 def normalise_convention(value: str | None) -> str:
     """A convention cell of a sheet that HAS the column: blank means ``none``;
-    ``CONVENTION_DEFERRED`` means not decided yet and reads as "" (not annotated), e.g. a
-    unit with a glossary term whose entry awaits verification."""
-    cell = (value or "").strip()
+    ``CONVENTION_DEFERRED`` (also full-width) means not decided yet and reads as "" (not
+    annotated), e.g. a unit with a glossary term whose entry awaits verification."""
+    cell = fold(value)
     if cell == CONVENTION_DEFERRED:
         return ""
     return cell or Convention.NONE.value
+
+
+def takes_convention(unit_id: str, relation: str) -> bool:
+    """Whether a decision can record a convention: a linked relation on a reference unit."""
+    return not is_orphan(unit_id) and relation in LINKED_RELATIONS
+
+
+def deferred_problem(unit_id: str, relation: str, cell: str | None) -> str | None:
+    """Why a raw sheet cell holding ``CONVENTION_DEFERRED`` cannot go with this decision, or
+    None: only a decision that ``takes_convention`` can wait for one."""
+    if fold(cell) != CONVENTION_DEFERRED or takes_convention(unit_id, relation):
+        return None
+    kind = "orphan" if is_orphan(unit_id) else relation
+    return f"'?' defers a convention, but {kind} rows take none: leave the cell blank"
 
 
 def same_convention(a: str, b: str) -> bool:
@@ -147,7 +172,7 @@ def convention_problem(unit_id: str, relation: str, convention: str) -> str | No
         return f"convention {convention!r} is not one of {', '.join(CONVENTIONS)}"
     if convention in ("", Convention.NONE.value):
         return None
-    if is_orphan(unit_id) or relation not in LINKED_RELATIONS:
+    if not takes_convention(unit_id, relation):
         return (f"convention {convention} needs a linked relation (not {relation or 'an empty relation'}; "
                 "never no_counterpart, lacuna, unresolved or an orphan row)")
     return None
@@ -181,7 +206,8 @@ def parse_ids(value: str) -> tuple[str, ...]:
 
 
 def parse_flags(value: str) -> frozenset[str]:
-    return frozenset(x.strip() for x in value.split(FLAG_SEPARATOR) if x.strip())
+    """Flags separated by ``;`` (the full-width U+FF1B too: the cell is ``fold``-ed first)."""
+    return frozenset(x.strip() for x in fold(value).split(FLAG_SEPARATOR) if x.strip())
 
 
 def format_flags(flags: Iterable[str]) -> str:

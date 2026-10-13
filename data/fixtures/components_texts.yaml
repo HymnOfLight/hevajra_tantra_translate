@@ -70,3 +70,12 @@ quotes:
 
 # The Tibetan shad (end-of-clause mark): quotes that differ only by it are the same quote.
 shad: "།"
+
+# C5 reads negators from a Tibetan quote completed to whole syllables of its text
+# (collate.quotes.completed_quote). The reference is real, D418:15a.2.8 (II.2): mi'am ci
+# (kimnara) negates nothing, but its first syllable cut to mi is a negator form. The witness
+# line is written for this file. Kept apart from the units above, which other tests count.
+negator_cut:
+  reference: {id: "D418:15a.2.8", kind: verse_line, text: "གནོད་སྦྱིན་མིའམ་ཅི་ལས་ཀྱང་།"}
+  witness: {id: "T0892:0596b29.1", kind: prose, text: "夜叉緊那羅"}
+  ref_quote: "གནོད་སྦྱིན་མི"

@@ -14,9 +14,9 @@ and ``review.sheets.import_`` with task "gold".
 
 ``convention`` (collate.v2) is recorded apart from the relation, so that both the v1 and
 the v2 caliber can be computed from one gold: a blank cell imports as ``none``, a cell
-marked ``?`` (``verdicts.CONVENTION_DEFERRED``: not decided yet) and every row of a ref
-sheet exported before the column existed import with "" (not annotated). Witness-only rows carry
-no convention.
+marked ``?`` (``verdicts.CONVENTION_DEFERRED``: not decided yet; refused on a
+no_counterpart, lacuna or unresolved row) and every row of a ref sheet exported before the
+column existed import with "" (not annotated). Witness-only rows carry no convention.
 """
 
 from __future__ import annotations
@@ -92,8 +92,9 @@ def import_gold(path: Path, rows: Sequence[Mapping[str, str]], header: Sequence[
         ids = tuple(r["seg_id"].strip() for r in known)
         linked.update(ids)
         flags = parse_flags(row["flags"])
-        conv = normalise_convention(row[GOLD_CONVENTION_COLUMN]) if GOLD_CONVENTION_COLUMN in row else ""
-        check_decision(unit_id, value, ids, flags, where, errors, conv, check)
+        cell = row.get(GOLD_CONVENTION_COLUMN)
+        conv = "" if cell is None else normalise_convention(cell)
+        check_decision(unit_id, value, ids, flags, where, errors, conv, check, cell)
         flip = parse_flip(row["polarity_flip"], where, errors) or value == Relation.REVERSAL.value
         out.append(VerdictRecord(
             item_id=f"gold:{unit_id}", unit_id=unit_id, fingerprint=row["fingerprint"].strip(),

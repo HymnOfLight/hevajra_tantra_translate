@@ -166,11 +166,19 @@ these refusals have no category.
 
 `prereg.instruments(settings)` builds an `InstrumentId` per task: model, task, effort, sha256 of
 the rendered system prompt (template plus examples, codebook or evidence lines), sha256 of the
-schema, package version, sha256 of the task parameters (for T1 also the window parameters) and
-the number of replicates. `prereg freeze` writes the digests into
-`config/preregistration.yaml`; gate G2 requires the collate digest to equal the preregistered
-one, and the ledger records it. Editing a prompt, an example, the codebook, an evidence line, a
-schema or a parameter therefore changes both every cache key and the digest.
+schema, package version, sha256 of the task parameters (for T1 also the window parameters and
+the version of the code checks, `collate/verify.py: VERIFY_VERSION`) and the number of
+replicates. `prereg freeze` writes the digests into `config/preregistration.yaml`; gate G2
+requires the collate digest to equal the preregistered one, and the ledger records it. Editing a
+prompt, an example, the codebook, an evidence line, a schema or a parameter therefore changes
+both every cache key and the digest. A change to what the code checks V1-V12 accept or flag
+bumps `VERIFY_VERSION`, whether it is made in their code (`collate/verify.py`,
+`collate/quotes.py`, `collate/merge.py` for V9 and V10, and the `core/textnorm.py` and
+`core/translit.py` functions and thresholds they call) or in the word lists they read
+(`data/lexicon/negators.yaml`, `data/lexicon/variant_forms.yaml`). The bump changes the collate
+digest but no request or cache key, so cached answers replay and are verified by the new checks.
+The components (T2) digest does not carry `VERIFY_VERSION`, although its checks C3 and C5 share
+`collate/quotes.py` and the two lexicons.
 
 The collator has one digest per language pair, because its examples are per pair: `collate` for
 Tibetan -> Chinese (`data/codebook/collate_examples.yaml`) and `collate:<ref>-<wit>` for every
@@ -181,9 +189,12 @@ reveal import use the digest of the run's pair (`pipeline/instrument.py: collate
 The collate digests are those of the configured prompt version (`tasks.collate.prompt`, below):
 under collate.v2 the prompt sha covers the v2 template, the v2 examples and the block of
 verified standing renderings, and the schema sha the `convention` field. The version name
-itself is not hashed into `params_sha` (it selects what is hashed), so the collate.v1 digests
-and cache keys are exactly those of the runs made before collate.v2 existed (pinned in
+itself is not hashed into `params_sha` (it selects what is hashed), so the collate.v1 prompt,
+schema and cache keys are exactly those of the runs made before collate.v2 existed (pinned in
 `tests/unit/test_collate_v2.py`: system prompt sha `3ab88636...`, schema sha `ed99b249...`).
+The collate.v1 digest is not: `VERIFY_VERSION` 2 (the 2026-10-13 revision of V4, V11 and V12,
+under which an offline replay of the v1 pilot resolves one more unit and drops two V11 flags)
+entered `params_sha` (pinned in `tests/unit/test_pipeline_collate_v2.py`).
 
 ## 2. The tasks
 
@@ -320,15 +331,15 @@ UNALIGNED with a reason; non-fatal ones keep the link with a flag (any flag exce
 | V1 coverage | every reference handle exactly once | duplicate: keep first, flag `duplicate_record`; missing: `unassessed`; more than 2% missing: whole window `invalid` |
 | V2 existence | every handle exists | unknown handle dropped, flag `unknown_handle`; nothing left where a witness is required: `verification_failed` |
 | V3 consistency | `no_counterpart` exactly when `wit` is empty | `verification_failed` |
-| V4 verbatim quotes | `ref_quote` in the unit, `wit_quote` in the linked segments (`core.textnorm.quote_in`; a Tibetan quote covers whole syllables but may leave out a particle fused to its last syllable, -s, -r, -'i, -'o, -'ang, -'am, as V12 does: a name quoted without its case ending; `collate/verify.py: quote_match`, also used by C3) | no match: `verification_failed`; match only after variant folding: flag `quote_variant_form` |
+| V4 verbatim quotes | `ref_quote` in the unit, `wit_quote` in the linked segments (`core.textnorm.quote_in`; a Tibetan quote covers whole syllables but may stop where the letters of a particle fused to its last syllable begin, -s, -r, -'i, -'o, -'ang, -'am, as V12 does: the unit's -por quoted as -po. The test is on letters alone, so a final -s or -r is dropped whatever it is: la for las, na for nas and rnam for rnams pass, because spelling cannot tell a fused particle from a final letter; any other letters left out of a syllable fail. After a final a-chung the particle's own a-chung is the quote's (nam mkha' in nam mkha'i); where -r or -s replaces the a-chung (sems dpar) the quote stops where the text's letters stop (sems dp), never at the restored citation form. The only consumer that reads meaning from a Tibetan quote, the negator check (V6, C5), reads it completed to whole syllables; `collate/quotes.py: quote_match`, also used by C3) | no match: `verification_failed`; match only after variant folding: flag `quote_variant_form` |
 | V5 required quotes | `ref_quote` for every relation except equivalent, paraphrase, expanded; `wit_quote` whenever `wit` is non-empty | `verification_failed` |
-| V6 polarity | `reversal` exactly when `polarity_flip`; a negator in exactly one quote corroborates | flags `polarity_mismatch`, `corroborated` / `polarity_uncorroborated` |
+| V6 polarity | `reversal` exactly when `polarity_flip`; a negator in exactly one quote corroborates (a Tibetan quote read completed to whole syllables of its text, `collate/quotes.py: completed_quote`: mi cut from mi'am is no negator) | flags `polarity_mismatch`, `corroborated` / `polarity_uncorroborated` |
 | V7 locality | links outside the core window | flag `relocation` and a `relocation` diagnostic |
 | V8 order | units off the longest order-preserving chain | flag `crossing`; crossing count in a diagnostic; never removed |
 | V9 exhaustiveness | after merging a chapter's chunks, every core-window witness segment is linked or witness-only | `unaccounted` diagnostic |
 | V10 overlap | the 10 overlap units read in two chunks are compared | flag `overlap_disagreement`; agreement rate in `collation/r<k>.json` |
 | V11 transliteration | `transliterated` needs a witness quote that contains a transcription: at least 50% transcription, or `MIN_TRANSCRIBED_RUN` (2) transcription characters together (`core/translit.py: contains_transcription`), since one quote also shows the rest of the unit (an ordinal, a gloss); under v2 `transliterated` covers content and mantras only | flag `transliteration_unsupported`; prose unit linked to a mantra segment: flag `instruction_as_mantra` |
-| V12 conventions (v2) | the claimed convention becomes a link flag of the same name. `standing_rendering`: both quotes non-empty, and one verified entry has a reference form in `ref_quote` and one of its own renderings in `wit_quote` (quote keys, variant forms folded; Tibetan matched from a syllable start, the last syllable may carry a fused particle -s, -r, -'i, -'o, -'ang, -'am). `transcribed_name`: a non-empty `ref_quote` and a `wit_quote` that passes the V11 test | flag `convention_unsupported` beside the convention flag; never fatal; grade C |
+| V12 conventions (v2) | the claimed convention becomes a link flag of the same name. `standing_rendering`: both quotes non-empty, and one verified entry has a reference form in `ref_quote` and one of its own renderings in `wit_quote` (quote keys, variant forms folded; Tibetan matched from a syllable start, the last syllable may stop where a fused particle -s, -r, -'i, -'o, -'ang, -'am begins, by V4's letter test). `transcribed_name`: a non-empty `ref_quote` and a `wit_quote` that passes the V11 test | flag `convention_unsupported` beside the convention flag; never fatal; grade C |
 
 Witness-only records are checked for V2, V4 and V5 as well. A refusal, truncation, invalid
 answer or substituted model makes every unit of the window UNALIGNED with reason
@@ -354,21 +365,22 @@ made before collate.v2.
 
 **Conventions in the measurement.** The relation-to-status mapping is unchanged and a convention
 never changes a status, D_any or D_cov; the primary outcome stays `any` or `cov`. The outcome
-`any_conv` (D_any_conv: deviating, or carrying a convention) is computed only as the E1
-sensitivity estimate `E1_any_conv` (final column) and, for a collate.v2 run, its Manski bounds,
-for comparison with published counts that include transcriptions (omission + rewriting +
-transliteration). `E1_any_conv` imputes the convention jointly with the outcome class
-(`stats/anyconv.py`): verified units keep their human class and human convention, and every
-unverified unit drawn non-deviating carries a convention with the share its stratum's phase-2
-sample verdicts record. Machine conventions never enter (as machine classes do not), so the
-estimate is valid for a collate.v1 run too, where conventions come in through the human
-verdicts only, and on a v2 run the machine's convention errors are calibrated by the sample. A
-sample verdict without an annotated convention counts as none; `stats/details.json: any_conv`
-reports how many there are. It equals `E1_any` when no non-deviating verified unit and no
-non-deviating phase-2 sample verdict records a convention. The Manski bounds of `any_conv` read
-the built cells and are computed only for a run collated with collate.v2. Human gold and
-verdicts record the relation and the convention separately, so both calibers come from one gold.
-On gold, `evaluate` adds `relation_kappa`, `relation_kappa_shared`, `dany_conv_kappa`, convention
+`any_conv` (D_any_conv: any deviation, or any transcribed, part-transcribed or standing-rendered
+name in the unit) is computed only as the E1 sensitivity estimate `E1_any_conv` (final column)
+and, for a collate.v2 run, its Manski bounds. It is wider than collate.v1's D_any (measured on
+I.1 in docs-zh/09 section 9.2) and is not directly the caliber of published counts that include
+transcriptions (omission + rewriting + transliteration). `E1_any_conv` imputes the convention
+jointly with the outcome class (`stats/anyconv.py`): verified units keep their human class and
+human convention, and every unverified unit drawn non-deviating carries a convention with the
+share its stratum's phase-2 sample verdicts record. Machine conventions never enter (as
+machine classes do not), so the estimate is valid for a collate.v1 run too, where conventions
+come in through the human verdicts only, and on a v2 run the machine's convention errors are
+calibrated by the sample. A sample verdict without an annotated convention counts as none;
+`stats/details.json: any_conv` reports how many there are. It equals `E1_any` when no
+non-deviating verified unit and no non-deviating phase-2 sample verdict records a convention.
+The Manski bounds of `any_conv` read the built cells and are computed only for a run collated
+with collate.v2. Human gold and verdicts record the relation and the convention separately, so
+both calibers come from one gold. On gold, `evaluate` adds `relation_kappa`, `relation_kappa_shared`, `dany_conv_kappa`, convention
 precision, recall and F1 (overall and per convention) and `convention_unsupported_rate`.
 `relation_kappa`, `relation_kappa_shared` and `dany_conv_kappa` are computed for every source (a
 source without conventions is read by its own D_any for D_any_conv), which is what makes the

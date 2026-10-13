@@ -1,5 +1,6 @@
-"""collate.v2 conventions in the code checks and the consensus: V12 (verify), the
-convention vote and grades (consensus), and V10 (merge) staying blind to conventions.
+"""collate.v2 conventions in the code checks and the consensus: V12 (verify) and V4 on a
+glossary form quoted without its fused particle, the convention vote and grades
+(consensus), and V10 (merge) staying blind to conventions.
 
 Tibetan and Chinese forms come from data/codebook/collate.v2/; the few extra letters
 are \\u escapes (tests/unit/test_language_policy.py).
@@ -34,7 +35,7 @@ from test_collate_support import DATA, SOURCE, gold_answer, lexicon, raw, window
 
 V2_DIR = DATA / "codebook" / "collate.v2"
 SHAD, FULL_STOP = "\u0f0d", "\u3002"
-PARTICLES = {"s": "\u0f66", "r": "\u0f62", "i": "\u0f60\u0f72"}
+PARTICLES = {"s": "\u0f66", "r": "\u0f62", "i": "\u0f60\u0f72", "am": "\u0f60\u0f58"}
 NOT_A_PARTICLE = "\u0f51"                       # da: not a fused particle
 SR, TN = Convention.STANDING_RENDERING.value, Convention.TRANSCRIBED_NAME.value
 
@@ -87,6 +88,18 @@ def test_v12_accepts_a_fused_particle_on_the_last_syllable(particle: str) -> Non
     form, rendering = hevajra().reference_forms[2], hevajra().witness_renderings[1]
     fused = form + PARTICLES[particle]
     assert flags(check(fused + SHAD, rendering, fused, rendering)) == {SR}
+
+
+@pytest.mark.parametrize("particle", sorted(PARTICLES))
+def test_v4_keeps_a_ref_quote_that_leaves_out_a_fused_particle(particle: str) -> None:
+    form, rendering = hevajra().reference_forms[2], hevajra().witness_renderings[1]
+    assert flags(check(form + PARTICLES[particle] + SHAD, rendering, form, rendering, convention="none")) == set()
+
+
+def test_v4_a_ref_quote_that_leaves_out_other_letters_is_unaligned() -> None:
+    form, rendering = hevajra().reference_forms[2], hevajra().witness_renderings[1]
+    result = check(form + NOT_A_PARTICLE + SHAD, rendering, form, rendering, convention="none")
+    assert list(result.unresolved.values()) == ["verification_failed"] and result.alignment.links == ()
 
 
 def test_v12_rejects_other_continuations_and_mid_syllable_starts() -> None:

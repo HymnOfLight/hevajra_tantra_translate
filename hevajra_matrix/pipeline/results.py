@@ -46,9 +46,10 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
     convention; machine conventions never enter, so it is valid for a collate.v1 run too. It
     equals ``E1_any`` when no non-deviating verified unit or phase-2 sample verdict records a
     convention. ``details.json: any_conv`` says what the imputation rests on (including the
-    sample verdicts without an annotated convention); ``conventions`` counts the conventions of
-    the built matrix (descriptive). Manski ``any_conv`` reads the built cells and is computed
-    only when the run was collated with a prompt that records conventions (collate.v2).
+    sample verdicts and the gold or resolve decisions without an annotated convention, which
+    count as none); ``conventions`` counts the conventions of the built matrix (descriptive).
+    Manski ``any_conv`` reads the built cells and is computed only when the run was collated
+    with a prompt that records conventions (collate.v2).
 
     ``E1_<primary>_prior`` repeats E1 of the primary outcome with ``twophase.PRIOR_SYMMETRIC_D``
     (the spec's Jeffreys prior leans 3/4 toward deviation in sparse strata). A column whose
@@ -93,7 +94,8 @@ def stats(ctx: RunContext) -> dict[str, Estimate]:
             conventions = None
             if column == "final":
                 conventions = anyconv.convention_draws(cells, verdicts, strata, draws[column], seed, texts.ref_kinds)
-                extra["any_conv"] = anyconv.summary(cells, verdicts, strata, texts.ref_kinds)
+                gold = ann.current_verdicts(ann.gold_verdicts(ctx, texts), texts)    # for its unannotated count
+                extra["any_conv"] = anyconv.summary(cells, verdicts, strata, texts.ref_kinds, gold)
             for outcome in outcomes:
                 est[f"E1_{outcome}{suffix}"] = twophase.prevalence(draws[column], outcome, name=f"E1_{outcome}{suffix}",
                                                                    scope=scope, conventions=conventions)

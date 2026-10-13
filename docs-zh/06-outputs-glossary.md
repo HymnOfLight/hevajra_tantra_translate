@@ -54,7 +54,7 @@
 | witness-only | 仅见于见证 | addition 增写、translator_note 译者夹注、paratext 副文本、belongs_elsewhere 属于别处 |
 | status | 状态 | PRESENT 在场、PARTIAL 部分、ABSENT 缺失、UNALIGNED 未判定（附原因）、LACUNA 物理残缺、NA 不覆盖 |
 | D_any / D_cov | 任何偏移 / 覆盖偏移 | 前者含改写与内容音写，后者只算部分与缺失；两者都不计惯例，主结果只能是二者之一 |
-| D_any_conv / E1_any_conv | 含惯例的任何偏移 | D_any 之外，带惯例的单元也算偏移；只作 E1 的敏感性分析（与德重 2026 的口径比较），从不作主结果；惯例与类别联合插补，只用人工惯例，所以 v1 运行同样有效；没有人工记下无偏移单元的惯例时等于 E1_any |
+| D_any_conv / E1_any_conv | 含惯例的任何偏移 | D_any 之外，带惯例的单元也算偏移；只作 E1 的敏感性分析，从不作主结果；它比 collate.v1 的 D_any 宽得多（单元里有任何音写、半音半义或固定译名的名字都算），不能直接当作德重 2026 的口径，与德重可比的是 D_any；惯例与类别联合插补，只用人工惯例，所以 v1 运行同样有效；没有人工记下无偏移单元的惯例时等于 E1_any |
 | grade A/B/C/X | 证据等级 | A 人工裁决；B 三次重复一致且核验全通过；C 多数或有非致命标记（惯例标记本身不降级，`convention_unsupported` 降为 C）；X 核验失败或无多数 |
 | gold (dev / test / test_second) | 金标准（开发集 / 测试集 / 第二标注者） | 只接受盲标 |
 | control: P1 / B0 / P2 | 对照：纯长度 / 锚点基线 / 洗牌 | Claude 必须显著优于所有对照 |

@@ -1,6 +1,6 @@
 """The collate stage and the instrument digests under a selected prompt version: v2 plans,
 requests, check lexicon, provenance and the glossary's witness check; v1 digests and
-provenance unchanged by the version field."""
+provenance unchanged by the version field; the collated text recorded and checked."""
 
 from __future__ import annotations
 
@@ -15,16 +15,19 @@ from hevajra_matrix.cli import main
 from hevajra_matrix.collate.collator import PROMPT_V1, PROMPT_V2, SCHEMA_V1, SCHEMA_V2
 from hevajra_matrix.config import load_settings
 from hevajra_matrix.llm.cache import CachedClient
-from hevajra_matrix.llm.client import LLMRequest
+from hevajra_matrix.llm.client import LLMRequest, canonical_json, sha256_text
 from hevajra_matrix.llm.fake import FakeClient
 from hevajra_matrix.pipeline import StageError, plan_collation
 from hevajra_matrix.pipeline.context import load_texts
+from hevajra_matrix.pipeline.instrument import check_prompt
 from hevajra_matrix.pipeline.store import read_alignment
 from hevajra_matrix.prereg import instruments
 
 from test_pipeline_support import REPO, context, echo_script, make_root
 
-V1_COLLATE_PARAMS_SHA = "581b3cac184a9c182f6c9ffed7f02161c32c26d20f70b4984248658b19688c6f"
+# Changed from 581b3cac... when collate.verify.VERIFY_VERSION (2) joined the collate parameters,
+# so that a change to the code checks changes the digest; prompt, schema and request keys did not.
+V1_COLLATE_PARAMS_SHA = "e65ffb04e787c0c869863132d0095565b6fb0d85d4f28eb2536e1f6d359803b2"
 
 
 def select_prompt(root: Path, prompt: str) -> None:
@@ -104,6 +107,47 @@ def test_a_missing_glossary_stops_the_plan(ingested: tuple[Path, Path]) -> None:
     (root / "data" / "codebook" / "collate.v2" / "standing_renderings.yaml").unlink()
     with pytest.raises(StageError, match=r"standing_renderings\.yaml is missing"):
         plan_collation(context(root, run))
+
+
+def _edit_examples_in_place(root: Path) -> None:
+    """Change the v1 examples' wording without a new version name (the prompt text changes)."""
+    path = root / "data" / "codebook" / "collate_examples.yaml"
+    text = path.read_text(encoding="utf-8")
+    assert "rendered in other words" in text
+    path.write_text(text.replace("rendered in other words", "said otherwise"), encoding="utf-8")
+
+
+def test_a_run_records_its_collated_text_and_refuses_another_under_the_same_name(ingested) -> None:
+    root, run = ingested
+    collate_offline(root, run)
+    index = json.loads((run / "collation" / "replicates.json").read_text(encoding="utf-8"))
+    request = plan_collation(context(root, run), replicates=1).requests()[0][2]
+    assert (index["prompt_sha"], index["schema_sha"]) == (request.prompt_sha, sha256_text(canonical_json(SCHEMA_V1)))
+    assert check_prompt(context(root, run)) == PROMPT_V1
+    _edit_examples_in_place(root)
+    with pytest.raises(StageError, match=f"another collate.v1 text \\(prompt_sha {index['prompt_sha'][:12]} "
+                                         "recorded, [0-9a-f]{12} configured\\): its template, examples or glossary"):
+        check_prompt(context(root, run))
+
+
+def test_build_refuses_a_text_revised_under_the_same_name(ingested, capsys) -> None:
+    root, run = ingested
+    collate_offline(root, run)
+    _edit_examples_in_place(root)
+    assert main(["build", "--root", str(root), "--run-dir", str(run), "--offline"]) != 0
+    assert "another collate.v1 text" in capsys.readouterr().err
+    assert not (run / "alignments" / "claude.jsonl").exists()
+
+
+def test_a_run_from_before_the_recorded_text_is_checked_by_name_only(ingested) -> None:
+    root, run = ingested
+    collate_offline(root, run)
+    path = run / "collation" / "replicates.json"
+    index = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({k: v for k, v in index.items() if k not in ("prompt_sha", "schema_sha")}),
+                    encoding="utf-8")
+    _edit_examples_in_place(root)
+    assert check_prompt(context(root, run)) == PROMPT_V1
 
 
 # --------------------------------------------------------------------------- digests

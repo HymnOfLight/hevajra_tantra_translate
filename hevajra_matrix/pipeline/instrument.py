@@ -31,7 +31,7 @@ from ..core.types import Alignment, Relation
 from ..llm.cache import CachedClient
 from ..llm.check import build_check_request, run_check
 from ..llm.claude_code_client import ClaudeCodeClient
-from ..llm.client import CacheMiss, LLMError, LLMRequest
+from ..llm.client import CacheMiss, LLMError, LLMRequest, canonical_json, sha256_text
 from ..ingest import CONTENT_KINDS
 from .context import (
     RunContext,
@@ -62,6 +62,7 @@ from .store import (
 )
 
 CONSENSUS_FILE = "claude.jsonl"
+COLLATED_SHAS = ("prompt_sha", "schema_sha")     # replicates.json: the collated text and schema (as audited)
 ASSUMED_OUTPUT_TOKENS = 30_000          # per T1 call; synthesis 3.5 expects 20-40k (thinking included)
 
 
@@ -122,23 +123,41 @@ def collate_digest(ctx: RunContext, texts: Texts) -> str:
     return instrument_digests(ctx.settings).get(collate_task(*text_langs(texts)), "")
 
 
+def _replicates_index(ctx: RunContext) -> dict[str, Any] | None:
+    path = ctx.path("collation", "replicates.json")
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
 def collated_prompt(ctx: RunContext) -> str | None:
     """The prompt version of this run's latest collate (``collation/replicates.json: prompt``;
     collate.v1 for a run written before the key existed), or None before any collate."""
-    path = ctx.path("collation", "replicates.json")
-    if not path.is_file():
-        return None
-    return str(json.loads(path.read_text(encoding="utf-8")).get("prompt", collator.PROMPT_V1))
+    index = _replicates_index(ctx)
+    return None if index is None else str(index.get("prompt", collator.PROMPT_V1))
 
 
-def check_prompt(ctx: RunContext) -> str | None:
+def check_prompt(ctx: RunContext, texts: Texts | None = None) -> str | None:
     """Refuse a configured ``tasks.collate.prompt`` other than the version this run collated
-    with (like ``context.check_backend`` for the backend): perturbing or digest-checking a
-    v1 consensus as v2 (or the reverse) would mix two instruments. Returns that version."""
-    recorded, configured = collated_prompt(ctx), collator.TaskSettings.from_config(ctx.settings.llm).prompt
-    if recorded is not None and recorded != configured:
+    with (like ``context.check_backend`` for the backend): building, perturbing or
+    digest-checking a v1 consensus as v2 (or the reverse) would mix two instruments. A run that recorded its
+    ``COLLATED_SHAS`` is refused too when the configured instrument's differ (a text revised
+    under the same name); an older run is checked by name only. Returns that version."""
+    index = _replicates_index(ctx)
+    if index is None:
+        return None
+    recorded = str(index.get("prompt", collator.PROMPT_V1))
+    configured = collator.TaskSettings.from_config(ctx.settings.llm).prompt
+    if recorded != configured:
         raise StageError(f"{ctx.run_dir} was collated with {recorded}, but config/llm.yaml selects "
                          f"tasks.collate.prompt: {configured}; set it back to {recorded}, or collate anew")
+    if all(k in index for k in COLLATED_SHAS):
+        from ..prereg import collate_task, instruments      # local import: prereg imports every task module
+        found = instruments(ctx.settings).get(collate_task(*text_langs(load_texts(ctx) if texts is None else texts)))
+        current = {k: getattr(found, k) for k in COLLATED_SHAS} if found else {}   # no examples: nothing matches
+        changed = [f"{k} {index[k][:12]} recorded, {(current.get(k) or 'none')[:12]} configured"
+                   for k in COLLATED_SHAS if index[k] != current.get(k)]
+        if changed:
+            raise StageError(f"{ctx.run_dir} was collated with another {recorded} text ({'; '.join(changed)}): its "
+                             "template, examples or glossary changed under the same name; restore them, or collate anew")
     return recorded
 
 
@@ -198,11 +217,13 @@ def collate(ctx: RunContext, chapters: str | None = None, replicates: int | None
                                       "unresolved": len(verified.unresolved), "overlap_agreement": overlap.rate}
         print(f"collate {tag}: {len(verified.alignment.by_ref())} units resolved, {len(verified.unresolved)} "
               f"UNALIGNED, overlap agreement {overlap.rate if overlap.rate is None else round(overlap.rate, 3)}")
+    requests = [r for _, _, r in cplan.requests()]       # one system prompt and one schema per plan
     ctx.path("collation", "replicates.json").write_text(
-        json.dumps({"tags": list(cplan.tags), "prompt": cplan.settings.prompt,
+        json.dumps({"tags": list(cplan.tags), "prompt": cplan.settings.prompt, "prompt_sha": requests[0].prompt_sha,
+                    "schema_sha": sha256_text(canonical_json(requests[0].schema)),
                     "chapters": sorted({w.chapter for w in cplan.windows}),
                     "windows": [w.key for w in cplan.windows],
-                    "request_keys": sorted(r.key() for _, _, r in cplan.requests())}, indent=1) + "\n",
+                    "request_keys": sorted(r.key() for r in requests)}, indent=1) + "\n",
         encoding="utf-8")
     record_stage(ctx, "collate")
     return summary
@@ -308,7 +329,7 @@ def perturb(ctx: RunContext, fraction: float = 0.05, seed: int | None = None,
     """
     texts = load_texts(ctx)
     expected = read_alignment(require(ctx.path("alignments", CONSENSUS_FILE), "build"))
-    check_prompt(ctx)                 # the expected counterparts come from the collated version
+    check_prompt(ctx, texts)          # the expected counterparts come from the collated text
     seed = int((ctx.settings.prereg.get("stats") or {}).get("seed", 0)) if seed is None else seed
     base = plan_collation(ctx, ",".join(dev_chapters(ctx.settings.prereg)) or None, 1, texts)
     order = texts.concordance.local_order[texts.witness_id]

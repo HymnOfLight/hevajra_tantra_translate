@@ -14,15 +14,18 @@ convention flags make the consensus grade C), and window-level findings become
                          with no witness segment is UNALIGNED(verification_failed)
     V3  consistency      ``no_counterpart`` exactly when ``wit`` is empty, else verification_failed
     V4  verbatim quotes  ``ref_quote`` in the unit, ``wit_quote`` in the linked segments
-                         (``core.textnorm.quote_in``; a Tibetan quote may leave out a
-                         particle fused to its last syllable, as in V12); a match only
-                         after variant folding keeps the link with flag
-                         ``quote_variant_form``; no match is verification_failed
+                         (``core.textnorm.quote_in``; a Tibetan quote may stop where the
+                         letters of a fused particle begin in its last syllable, as in V12,
+                         a test on letters alone: ``collate.quotes``); a match only after
+                         variant folding keeps the link with flag ``quote_variant_form``; no
+                         match is verification_failed
     V5  required quotes  ``ref_quote`` for every relation except equivalent, paraphrase and
                          expanded; ``wit_quote`` whenever ``wit`` is non-empty
     V6  polarity         ``reversal`` exactly when ``polarity_flip`` (else flag
                          ``polarity_mismatch``); for a reversal or flip, a negator in exactly
-                         one quote gives ``corroborated``, otherwise ``polarity_uncorroborated``
+                         one quote gives ``corroborated``, otherwise ``polarity_uncorroborated``;
+                         a Tibetan quote is read completed to whole syllables of its text
+                         (``collate.quotes.completed_quote``)
     V7  locality         a link outside the core window: flag and ``relocation`` diagnostic
     V8  order            units off the longest order-preserving chain of links: flag
                          ``crossing``; the number of crossing pairs goes in a diagnostic
@@ -50,7 +53,6 @@ witness-only record stays linked and leaves the record (flag ``witness_only_trim
 
 from __future__ import annotations
 
-import re
 from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -64,7 +66,7 @@ from ..core.lexicon import (
     load_negators,
     load_variant_forms,
 )
-from ..core.textnorm import TSHEG, find_terms, fold_variants, for_quote, quote_in
+from ..core.textnorm import find_terms, fold_variants, for_quote
 from ..core.translit import (  # noqa: F401  (MIN_TRANSLITERATION_DENSITY re-exported)
     MIN_TRANSLITERATION_DENSITY,
     contains_transcription,
@@ -86,6 +88,7 @@ from ..core.types import (  # noqa: F401  (CONVENTION_FLAGS, FLAG_CONVENTION_UNS
     WitnessOnlyKind,
 )
 from .collator import Parsed, RawCollation, RawUnit, Unresolved
+from .quotes import completed_quote, quote_match, term_in
 from .windows import Window
 
 MAX_MISSING_FRACTION = 0.02
@@ -104,8 +107,14 @@ FLAG_DUPLICATE = "duplicate_record"
 FLAG_UNKNOWN_HANDLE = "unknown_handle"
 FLAG_WITNESS_ONLY_TRIMMED = "witness_only_trimmed"
 FLAG_HINT = "substituted_model_hint"
-# A Tibetan reference form may end in a fused particle (-s, -r, -'i, -'o, -'ang, -'am).
-_BO_FUSED_SUFFIX = "(?:\u0f66|\u0f62|\u0f60\u0f72|\u0f60\u0f7c|\u0f60\u0f44|\u0f60\u0f58)?"
+# Version of the code checks: counts every change to what V1-V12 accept or flag, in this
+# module, ``collate.quotes``, ``collate.merge`` (V9, V10), the ``core.textnorm`` and
+# ``core.translit`` functions and thresholds they call, or the negator and variant-form
+# lexicons. It enters the collate instrument digest (``prereg.instruments``), never a request
+# or cache key; the components digest does not carry it. 2: the 2026-10-13 revision of V4,
+# V11 and V12 after the collate.v2 smoke test (with its review: the a-chung ending in V4/V12,
+# completed quotes in V6).
+VERIFY_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -234,17 +243,20 @@ def _check_unit(unit: Segment, rec: RawUnit, duplicate: bool, window: Window, le
     if wit_ids and not rec.wit_quote.strip():
         return failed("V5 wit_quote is required when wit is non-empty")
     quotes = []
+    read = {"ref": rec.ref_quote, "wit": rec.wit_quote}                          # what V6 reads
     for side, quote, text, lang in (("ref", rec.ref_quote, unit.text, window.ref_lang),
                                     ("wit", rec.wit_quote, _joined(wit_ids, window), window.wit_lang)):
         if not quote.strip():
             continue
-        match = quote_match(quote, text, lang, lex.variants.for_lang(lang))       # V4
+        variants = lex.variants.for_lang(lang)
+        match = quote_match(quote, text, lang, variants)                          # V4
         if match is None:
             return failed(f"V4 {side}_quote is not verbatim in the {'unit' if side == 'ref' else 'linked segments'}")
         if match == "variant":
             flags.add(FLAG_QUOTE_VARIANT)
         quotes.append(Quote(side, quote, (unit.id,) if side == "ref" else wit_ids))
-    flags |= _polarity_flags(relation, rec.polarity_flip, rec.ref_quote, rec.wit_quote, window, lex.negators)
+        read[side] = completed_quote(quote, text, lang, variants)
+    flags |= _polarity_flags(relation, rec.polarity_flip, read["ref"], read["wit"], window, lex.negators)
     found: list[Diagnostic] = []
     outside = tuple(i for i in wit_ids if i not in window.core)                  # V7
     if outside:
@@ -284,8 +296,8 @@ def standing_supported(ref_quote: str, wit_quote: str, ref_lang: str, wit_lang: 
         return False
     ref_key = _folded(ref_quote, ref_lang, lex)
     wit_key = _folded(wit_quote, wit_lang, lex)
-    return any(any(_term_in(_folded(f, ref_lang, lex), ref_key, ref_lang) for f in entry.reference_forms)
-               and any(_term_in(_folded(r, wit_lang, lex), wit_key, wit_lang) for r in entry.witness_renderings)
+    return any(any(term_in(_folded(f, ref_lang, lex), ref_key, ref_lang) for f in entry.reference_forms)
+               and any(term_in(_folded(r, wit_lang, lex), wit_key, wit_lang) for r in entry.witness_renderings)
                for entry in lex.standing_renderings.entries)
 
 
@@ -293,16 +305,6 @@ def _folded(text: str, lang: str, lex: CheckLexicon) -> str:
     key = for_quote(text, lang)
     variants = lex.variants.for_lang(lang)
     return fold_variants(key, variants) if variants else key
-
-
-def _term_in(term: str, key: str, lang: str) -> bool:
-    """A Tibetan term starts at a syllable and ends at one, or in a fused particle on its
-    last syllable (the Derge text writes the name with -'i, -s and -r); elsewhere a substring."""
-    if not term:
-        return False
-    if lang != "bo":
-        return term in key
-    return re.search(re.escape(f"{TSHEG}{term}") + _BO_FUSED_SUFFIX + TSHEG, f"{TSHEG}{key}{TSHEG}") is not None
 
 
 def _polarity_flags(relation: Relation, flip: bool, ref_quote: str, wit_quote: str, window: Window,
@@ -336,24 +338,6 @@ def _check_witness_only(handles: Sequence[str], kind: WitnessOnlyKind, quote: st
     if match == "variant":
         flags.add(FLAG_QUOTE_VARIANT)
     return Link(None, ids, kind, quotes=(Quote("wit", quote, ids),), flags=frozenset(flags), source=source)
-
-
-def quote_match(quote: str, text: str, lang: str, variants: Mapping[str, str]) -> str | None:
-    """"exact", "variant" (only after folding variant forms) or None (not verbatim).
-
-    A Tibetan quote may end where a particle fused to its last syllable begins (the name
-    without its case ending: the unit's -por quoted as -po), the boundary V12 uses for
-    glossary forms; it may not stop inside a syllable anywhere else."""
-    q, t = for_quote(quote, lang), for_quote(text, lang)
-    if _verbatim(q, t, lang):
-        return "exact"
-    if variants and _verbatim(fold_variants(q, variants), fold_variants(t, variants), lang):
-        return "variant"
-    return None
-
-
-def _verbatim(quote_key: str, text_key: str, lang: str) -> bool:
-    return quote_in(quote_key, text_key, lang) or (lang == "bo" and _term_in(quote_key, text_key, lang))
 
 
 def _resolve(handles: Sequence[str], window: Window) -> tuple[tuple[str, ...], tuple[str, ...]]:

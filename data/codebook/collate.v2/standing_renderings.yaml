@@ -42,12 +42,17 @@ entries:
       - {side: witness, form: "空智金剛", n: 18}
       - {side: witness, form: "大悲空智金剛", n: 11}
     note: >-
-      The name of the deity and of the tantra. The witness renders it as (da bei) kong
-      zhi jin gang throughout; the reference has about 45 occurrences against 18 in the
-      witness, so many reference occurrences have no name in the witness at all, and
-      those are judged by the ordinary tests. Only the full name is listed: the witness
-      also uses kong zhi alone for the syllable he and for Heruka, which is not a
-      standing rendering (see considered_not_listed).
+      The name of the deity and of the tantra. The listed witness renderings are (da bei)
+      kong zhi jin gang (18 occurrences). The witness also names Hevajra jin gang kong zhi
+      (10), kong zhi da jin gang wang (3) and kong zhi zhu (1), e.g. D418:22a.7.8 =
+      T0892:0598b08.1 and D418:23b.1.5 (abbreviated kye rdor, not listed either) =
+      T0892:0598c19.2; whether to list these is left to the verifying expert (corrected
+      2026-10-13; an earlier note said kong zhi forms other than the full name render only
+      the syllable he and Heruka). The reference has about 45 occurrences (one of the 8
+      kye rdo rje hits, D418:18a.7.1, is probably the vocative kye kye before rdo rje mkha'
+      'gro ma); occurrences without a name in the witness are judged by the ordinary
+      tests. Bare kong zhi for the syllable he and for Heruka is not a standing rendering
+      (see considered_not_listed).
     status: proposed
     verified_by: null
 

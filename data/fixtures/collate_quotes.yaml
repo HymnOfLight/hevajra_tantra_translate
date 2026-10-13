@@ -1,5 +1,7 @@
-# V4 on Tibetan quotes (collate/verify.py: quote_match). Short quotes from the Derge
-# text of chapter I.1; "match" is "exact" or null (not verbatim).
+# V4 on Tibetan quotes (collate/quotes.py: quote_match). Short quotes from the Derge
+# text of chapter I.1 unless a comment names another segment; "match" is "exact" or null
+# (not verbatim). The particle test is on letters alone: a final -s or -r is dropped
+# whatever it is, so a case-ending and a final letter of the word pass alike.
 quote_match_bo:
 - lang: bo
   quote: སེམས་དཔའ་ཆེན་པོ
@@ -10,7 +12,12 @@ quote_match_bo:
   quote: དམ་ཚིག་སེམས་དཔ
   text: དམ་ཚིག་སེམས་དཔར་བརྗོད་པར་བྱ།
   match: exact
-  why: -r dropped
+  why: -r dropped where it replaces the a-chung (the letters of the text)
+- lang: bo
+  quote: ཧེ་ཡི་རྣམ་པ
+  text: ཧེ་ཡི་རྣམ་པས་ཅི་ཞིག་བཤད།
+  match: exact
+  why: -s dropped
 - lang: bo
   quote: རྣལ་འབྱོར་མ
   text: ཇི་ལྟར་རིགས་པ་རྣལ་འབྱོར་མའི།
@@ -26,6 +33,28 @@ quote_match_bo:
   text: རྗེ་བཙུན་གསང་བ་ལས་ཤིན་ཏུ་ཆེས་གསང་བའང་དེ་ནས།
   match: exact
   why: -'ang dropped (the collate.v1 failure)
+# D418:14a.2.7 (II.1)
+- lang: bo
+  quote: ཉི་ཤུ
+  text: སོར་མོ་ཉི་ཤུའམ་དེ་ཡི་ཕྱེད།
+  match: exact
+  why: -'am dropped
+# D417:5a.5.5 (I.3)
+- lang: bo
+  quote: ནམ་མཁའ
+  text: ནམ་མཁའི་དཀྱིལ་འཁོར་ཁྱབ་པ་ཡི།
+  match: exact
+  why: -'i after the name's own a-chung (the citation form)
+- lang: bo
+  quote: རྗེ་བཙུན་གསང་བ་ལ
+  text: རྗེ་བཙུན་གསང་བ་ལས་ཤིན་ཏུ་ཆེས་གསང་བའང་དེ་ནས།
+  match: exact
+  why: las quoted as la (documented, a final -s is dropped on letters alone)
+- lang: bo
+  quote: ལྷ་རྣམ
+  text: ལྷ་རྣམས་ཇི་ལྟར་འབྱུང་བའོ།
+  match: exact
+  why: rnams quoted as rnam (documented, a second suffix -s is dropped too)
 - lang: bo
   quote: ཀུན་འདར་མའོ
   text: ཀུན་འདར་མའོ།
@@ -35,7 +64,17 @@ quote_match_bo:
   quote: སེམས་དཔའ་ཆེན་པ
   text: སེམས་དཔའ་ཆེན་པོར་བརྗོད་པར་བྱ།
   match: null
-  why: the rest of the syllable is not a particle
+  why: the letters left out (-or) are not a particle's
+- lang: bo
+  quote: དམ་ཚིག་སེམས་དཔའ
+  text: དམ་ཚིག་སེམས་དཔར་བརྗོད་པར་བྱ།
+  match: null
+  why: the a-chung that -r replaced is not restored
+- lang: bo
+  quote: གོས་དཀའ
+  text: མ་ནི་ལྷ་མོ་གོས་དཀར་མོ།
+  match: null
+  why: dka' is not dkar (no a-chung swapped for -r)
 - lang: bo
   quote: ཆེན་པོ་བརྗོད
   text: སེམས་དཔའ་ཆེན་པོར་བརྗོད་པར་བྱ།
@@ -51,3 +90,18 @@ quote_match_bo:
   text: ཀུན་འདར་མའོ།
   match: null
   why: longer than the text
+
+# V6 reads negators from a Tibetan quote completed to whole syllables of its text
+# (collate/quotes.py: completed_quote). D418:15a.2.8 (II.2): mi'am ci (kimnara) negates
+# nothing, but its first syllable cut to mi is a negator form.
+negator_cut:
+  text: གནོད་སྦྱིན་མིའམ་ཅི་ལས་ཀྱང་།
+  quote: གནོད་སྦྱིན་མི
+  wit_text: 夜叉緊那羅
+
+# A completed quote keeps its shads (collate/quotes.py: completed_quote). Constructed from
+# I.1 words, as no Derge segment has a negator split by a shad: ma ends one clause and yin
+# begins the next, so completing pa to par must not read ma yin across the shad.
+negator_across_shad:
+  text: རྣལ་འབྱོར་མ། ཡིན་པར་བྱ།
+  quote: རྣལ་འབྱོར་མ། ཡིན་པ

@@ -20,6 +20,7 @@ from hevajra_matrix.collate.verify import (
     FLAG_QUOTE_VARIANT,
     CheckLexicon,
 )
+from hevajra_matrix.core.translit import contains_transcription
 from hevajra_matrix.core.types import Segment
 from hevajra_matrix.llm.fake import (
     FakeClient,
@@ -169,6 +170,15 @@ def test_c3_reference_quote_must_cover_whole_syllables(lexicon):
     assert R_SKULL not in _by_ref(codes)
 
 
+def test_c3_reference_quote_may_leave_out_a_fused_particle(lexicon):
+    answer = _answer()
+    for slot in ("agent", "place"):                 # -s and -r left out, as V4 allows
+        s = _slot(answer, H_YOGIN, slot)
+        s["ref_quote"] = s["ref_quote"][:-1]
+    codes, diagnostics = _run(answer, lexicon)
+    assert diagnostics == [] and len(_by_ref(codes)[R_YOGIN]) == 4
+
+
 def test_c3_witness_quote_must_come_from_the_pairs_own_segments(lexicon):
     assert Q["zh_elsewhere"] in STORE[W_LONG].text
     answer = _answer()
@@ -220,6 +230,18 @@ def test_c4_uses_the_witness_mantra_charset(lexicon):
     assert _run(_answer(), lexicon)[1] == []
 
 
+def test_c4_keeps_the_whole_quote_density(lexicon):
+    """The name quoted with the word before it: two transcription characters stand
+    together, so V11 and V12 would accept it, but C4 needs at least half the quote."""
+    answer = _answer()
+    s = _slot(answer, H_HERUKA, "patient")
+    narrow = dataclasses.replace(lexicon, translit_charset=frozenset(s["wit_quote"][1:]))
+    s["wit_quote"] = STORE[W_SALUTE].text + STORE[W_NAME].text           # density 2/6
+    assert contains_transcription(s["wit_quote"], "zh", narrow.translit_charset)
+    detail = _failed(_run(answer, narrow)[1], R_HERUKA)
+    assert "C4 patient/lit" in detail and "C3" not in detail
+
+
 # --------------------------------------------------------------------------- C5 polarity
 def test_c5_flip_without_a_negation_slot_fails(lexicon):
     answer = _answer()
@@ -265,6 +287,22 @@ def test_flip_is_corroborated_only_by_a_negator_on_one_side(lexicon):
     codes, diagnostics = _run(answer, lexicon)
     assert diagnostics == []
     assert all(c.flags == {FLAG_POLARITY_UNCORROBORATED} for c in _by_ref(codes)[R_LAMP])
+
+
+def test_flip_reads_a_cut_tibetan_quote_completed_to_whole_syllables(lexicon):
+    """C3 lets mi'am be quoted as mi (a fused -'am left out); the negator check still reads
+    mi'am, which negates nothing, so the flip stays uncorroborated."""
+    case = FIXTURE["negator_cut"]
+    (ref,) = _segments([case["reference"]], FIXTURE["reference_witness"], "bo")
+    (wit,) = _segments([case["witness"]], FIXTURE["witness"], "zh")
+    pair = C.Pair(ref.id, (wit.id,), "reversal", True, frozenset({C.SELECT_DEVIATION}))
+    (batch,) = C.plan_batches([pair], {ref.id: ref, wit.id: wit}, 12)
+    (handle,) = batch.handles()
+    answer = {"pairs": [{"pair": handle, "polarity_flip": True, "slots": [
+        {"slot": "negation_modality", "code": "sub", "ref_quote": case["ref_quote"], "wit_quote": wit.text}]}]}
+    request = C.build_request(batch, C.ComponentTaskSettings(), "system")
+    codes, diagnostics = C.verify(ok_response(request, answer), batch, lexicon)
+    assert diagnostics == [] and [c.flags for c in codes] == [{FLAG_POLARITY_UNCORROBORATED}]
 
 
 def test_identical_slot_entries_are_merged_with_a_flag(lexicon):

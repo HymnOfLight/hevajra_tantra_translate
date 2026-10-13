@@ -30,8 +30,11 @@ each line is "[<segment id>] <text>".
 
 Conventions (collate.v2): blind sheets carry ``blind_convention``, reveal sheets also
 ``machine_convention`` and ``final_convention``, gold ref sheets ``convention`` (values in
-``review.verdicts``). A blank cell imports as ``none``; a sheet exported before the columns
-existed imports with "" (not annotated), but a sheet with only some of them is refused.
+``review.verdicts``). A blank cell imports as ``none``; a cell holding ``?``
+(``verdicts.CONVENTION_DEFERRED``: not decided yet) imports as "" (not annotated) and is
+refused where no convention can be recorded (orphan rows; no_counterpart, lacuna and
+unresolved); a sheet exported before the columns existed imports with "" (not annotated),
+but a sheet with only some of them is refused.
 Beside every gold, blind and reveal sheet, ``standing_renderings.csv`` lists the verified
 standing renderings (the same entries the collate.v2 prompt shows; header only while none is
 verified). A human ``standing_rendering`` is accepted only when the import's glossary check
@@ -65,6 +68,7 @@ from .verdicts import (
     VerdictError,
     VerdictRecord,
     convention_problem,
+    deferred_problem,
     flag_problems,
     is_orphan,
     normalise_convention,
@@ -341,11 +345,14 @@ def context_texts(row: Mapping[str, str]) -> dict[str, str]:
 
 
 def check_decision(unit_id: str, value: str, ids: Sequence[str], flags: frozenset[str], where: str,
-                   errors: list[str], convention: str = "", check: GlossaryCheck | None = None) -> None:
+                   errors: list[str], convention: str = "", check: GlossaryCheck | None = None,
+                   cell: str | None = None) -> None:
     """Append every problem of one human decision to ``errors``.
 
-    ``convention`` is "" when the sheet has no convention column. A ``standing_rendering``
-    on a linked decision is confirmed by ``check`` (no check: refused).
+    ``convention`` is the normalised cell: "" when the sheet has no convention column or the
+    cell holds ``?``; ``cell`` is the raw cell (None without the column), so a ``?`` on a
+    decision that takes no convention is refused. A ``standing_rendering`` on a linked
+    decision is confirmed by ``check`` (no check: refused).
     """
     allowed = ORPHAN_VALUES if is_orphan(unit_id) else UNIT_VALUES
     if value not in allowed:
@@ -355,7 +362,7 @@ def check_decision(unit_id: str, value: str, ids: Sequence[str], flags: frozense
     if value in LINKED_RELATIONS and not ids:
         errors.append(f"{where}: relation {value} needs witness segment ids")
     errors.extend(f"{where}: {p}" for p in flag_problems(flags))
-    problem = convention_problem(unit_id, value, convention)
+    problem = convention_problem(unit_id, value, convention) or deferred_problem(unit_id, value, cell)
     if problem:
         errors.append(f"{where}: {problem}")
     elif convention == Convention.STANDING_RENDERING.value and ids:
@@ -384,8 +391,9 @@ def _import_blind(row: Mapping[str, str], n: int, task: str, plan: Mapping[str, 
         errors.append(f"{where}: task {row['task']!r} in a {task} import")
     item_id, unit_id = row["item_id"].strip(), row["unit_id"].strip()
     ids, flags = parse_ids(row["blind_wit_loci"]), parse_flags(row["blind_flags"])
-    conv = normalise_convention(row["blind_convention"]) if "blind_convention" in row else ""
-    check_decision(unit_id, value, ids, flags, where, errors, conv, check)
+    cell = row.get("blind_convention")
+    conv = "" if cell is None else normalise_convention(cell)
+    check_decision(unit_id, value, ids, flags, where, errors, conv, check, cell)
     item = plan.get(item_id)
     if item is None and task != "resolve":
         errors.append(f"{where}: item {item_id} is not in the plan (pass the plan's items)")

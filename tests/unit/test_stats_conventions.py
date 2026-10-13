@@ -8,6 +8,7 @@ distances) refuses ``any_conv`` instead of computing D_any under that name.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -181,7 +182,8 @@ def test_e1_any_conv_equals_e1_any_without_conventions():
         b = tp.prevalence(draws, "any_conv", name="E1", conventions=conv)
         assert (a.point, a.lo, a.hi, a.n, a.sources) == (b.point, b.lo, b.hi, b.n, b.sources)
         assert anyconv.summary(cells, plain, strata) == {"verdicts": 2, "unannotated": 2, "with_convention": 0,
-                                                         "nondev_with_convention": 0, "verified_with_convention": 0}
+                                                         "nondev_with_convention": 0, "verified_with_convention": 0,
+                                                         "verified_unannotated": 0, "verified_nondev_unannotated": 0}
 
 
 def test_summary_counts_the_verdicts_without_an_annotated_convention():
@@ -191,8 +193,39 @@ def test_summary_counts_the_verdicts_without_an_annotated_convention():
              verdict("n1", "abridged", convention=SR)]
     assert anyconv.summary(built, verdicts + extra, strata) == {
         "verdicts": 5, "unannotated": 2, "with_convention": 2, "nondev_with_convention": 1,
-        "verified_with_convention": 3}    # v1, the gold n0 and the audited n1
+        "verified_with_convention": 3,    # v1, the gold n0 and the audited n1
+        "verified_unannotated": 0, "verified_nondev_unannotated": 0}    # sample verdicts are counted above
     assert anyconv.convention_counts(verdicts + extra, strata) == {"neg:B:other": (2, 1)}
+
+
+def test_summary_counts_the_units_gold_or_resolve_decided_without_a_convention():
+    built, strata, verdicts = _matrix()
+    built[2] = cell("n0", "paraphrase", Grade.A, source="gold:dev_r1")
+    gold = [Verdict(batch_id="g", item_id="gold:n0", task="gold", unit_id="n0", fingerprint="f",
+                    blind_relation="paraphrase")]                                  # a '?' left on the gold sheet
+    resolved = [verdict("n2", "equivalent", task="resolve"), verdict("n3", "no_counterpart", task="resolve"),
+                verdict("n1", "abridged", task="resolve", convention="none")]
+    out = anyconv.summary(built, verdicts + resolved, strata, gold=gold)
+    assert (out["verified_unannotated"], out["verified_nondev_unannotated"]) == (3, 2)   # n0, n2; n3 deviates
+    assert out["unannotated"] == 0 and out["verified_with_convention"] == 1, "they count as none"
+    assert anyconv.summary(built, verdicts + resolved, strata)["verified_unannotated"] == 2, "no gold verdicts given"
+
+
+def test_summary_takes_the_deciding_verdict_known_conventions_reads():
+    # a unit with gold and a later review verdict: the review verdict decides, as in E1_any_conv
+    built, strata, verdicts = _matrix()
+    built[2] = cell("n0", "paraphrase", Grade.A, source="gold:dev_r1")
+    unannotated = [Verdict(batch_id="g", item_id="gold:n0", task="gold", unit_id="n0", fingerprint="f",
+                           blind_relation="paraphrase")]
+    audited = verdicts + [verdict("n0", "paraphrase", convention=TN)]
+    out = anyconv.summary(built, audited, strata, gold=unannotated)
+    assert anyconv.known_conventions(built, audited)["n0"] is True
+    assert (out["verified_with_convention"], out["verified_unannotated"]) == (2, 0)     # v1, n0
+    annotated = [replace(unannotated[0], blind_convention=TN)]
+    resolved = verdicts + [verdict("n0", "paraphrase", task="resolve")]
+    out = anyconv.summary(built, resolved, strata, gold=annotated)
+    assert anyconv.known_conventions(built, resolved)["n0"] is False
+    assert (out["verified_with_convention"], out["verified_unannotated"]) == (1, 1)     # v1; n0
 
 
 def test_e1_any_conv_refuses_missing_conventions():

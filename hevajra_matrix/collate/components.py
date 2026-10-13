@@ -28,15 +28,21 @@ What code checks (a pair is kept only if every rule passes; otherwise the pair g
     C2 quote shape  ret, gen, sub and lit need both quotes; ``om`` needs a reference quote
                     and an empty witness quote; ``add`` the reverse
     C3 verbatim     each non-empty quote occurs in its own side's full text
-                    (``collate.verify.quote_match``; a match only after variant folding is
-                    kept with flag ``quote_variant_form``)
-    C4 lit          the witness quote is at least 50% transcription (``core.translit``;
-                    the quote is the coded word, so the whole-quote density applies,
-                    not V11's ``contains_transcription``)
+                    (``collate.quotes.quote_match``, as V4: a Tibetan quote may stop where
+                    the letters of a fused particle begin; a match only after variant
+                    folding is kept with flag ``quote_variant_form``)
+    C4 lit          the witness quote is at least 50% transcription (``core.translit``).
+                    C4 knowingly keeps the whole-quote density, not V11's
+                    ``contains_transcription``: the quote is the coded word. It also rejects
+                    a bare, fully transcribed word whose characters are missing from the
+                    mantra charset (samayasattva at 0.40 on T0892), a known false failure
+                    (see ``core.translit``)
     C5 polarity     ``polarity_flip`` requires a ``negation_modality`` slot coded sub, om or add
 Non-fatal flags: ``corroborated`` / ``polarity_uncorroborated`` (a negator occurs in exactly
-one quote of the negation_modality slot(s) of a flipped pair), ``polarity_disagrees`` (T2's
-flip differs from the collation's), ``duplicate_slot`` (an identical slot entry was dropped).
+one quote of the negation_modality slot(s) of a flipped pair; a Tibetan quote is read
+completed to whole syllables, ``collate.quotes.completed_quote``), ``polarity_disagrees``
+(T2's flip differs from the collation's), ``duplicate_slot`` (an identical slot entry was
+dropped).
 
 A refusal, a truncation or a schema-invalid answer gives every pair of the batch a
 diagnostic with that reason and no codes. Server-side fallback is on for this task

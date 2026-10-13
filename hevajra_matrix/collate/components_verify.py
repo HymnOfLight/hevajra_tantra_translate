@@ -17,7 +17,8 @@ from ..core.types import (
 from ..llm.client import LLMResponse
 from ..llm.schema import validate
 from .components_request import SCHEMA, ComponentBatch, PairText
-from .verify import FLAG_CORROBORATED, FLAG_POLARITY_UNCORROBORATED, FLAG_QUOTE_VARIANT, CheckLexicon, quote_match
+from .quotes import completed_quote, quote_match
+from .verify import FLAG_CORROBORATED, FLAG_POLARITY_UNCORROBORATED, FLAG_QUOTE_VARIANT, CheckLexicon
 
 BOTH_QUOTES = frozenset({"ret", "gen", "sub", "lit"})
 FLIP_CODES = frozenset({"sub", "om", "add"})
@@ -128,13 +129,19 @@ def _check_pair(entry: Mapping[str, Any], item: PairText, batch: ComponentBatch,
     if flip != item.pair.polarity_flip:
         flags.add(FLAG_POLARITY_DISAGREES)
     if flip:
-        corroborated = any(_negated(r, batch.ref_lang, lex) != _negated(w, batch.wit_lang, lex) for r, w in negation)
+        corroborated = any(_negated(r, item.ref.text, batch.ref_lang, lex)
+                           != _negated(w, item.wit_text, batch.wit_lang, lex) for r, w in negation)
         flags.add(FLAG_CORROBORATED if corroborated else FLAG_POLARITY_UNCORROBORATED)
     p = item.pair
     return [SlotCode(p.ref_id, p.wit_ids, slot, code, r, w, flip, frozenset(flags), reason)
             for slot, code, r, w in slots], errors
 
 
-def _negated(text: str, lang: str, lex: CheckLexicon) -> bool:
+def _negated(quote: str, text: str, lang: str, lex: CheckLexicon) -> bool:
+    """Whether a negator occurs in ``quote`` read completed to whole syllables of ``text``
+    (``collate.quotes.completed_quote``, as V6 reads it)."""
+    if not quote:
+        return False
     negators = lex.negators
-    return bool(text) and bool(find_terms(text, lang, negators.for_lang(lang), negators.exclusions_for(lang)))
+    whole = completed_quote(quote, text, lang, lex.variants.for_lang(lang))
+    return bool(find_terms(whole, lang, negators.for_lang(lang), negators.exclusions_for(lang)))

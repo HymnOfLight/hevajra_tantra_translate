@@ -18,11 +18,13 @@ Gold rows whose decision is ``lacuna`` or ``unresolved`` are not scored (listed 
 
 Conventions (collate.v2): ``convention`` is kept apart from ``relation`` (draft Q6), so the
 v1 and the v2 caliber can both be computed from one gold. "" means not annotated (a file
-or sheet made before the column existed; a file without the column still loads), ``none``
-annotated without a convention. ``GoldRow.link`` carries a convention as the link flag of
-the same name, as a collate.v2 link does. ``score`` reads a predicted convention only when
-the caller says the source produces them (``conventions``); convention precision and
-recall, D_any_conv agreement and relation agreement are defined in ``scores``.
+or sheet made before the column existed, or a sheet cell marked ``?``:
+``review.verdicts.CONVENTION_DEFERRED``, not decided yet; a file without the column still
+loads), ``none`` annotated without a convention. ``GoldRow.link`` carries a convention as
+the link flag of the same name, as a collate.v2 link does. ``score`` reads a predicted
+convention only when the caller says the source produces them (``conventions``);
+convention precision and recall, D_any_conv agreement and relation agreement are defined in
+``scores``.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ from .scores import (COLLATE_V2_FAMILIES, METRICS, UNALIGNED, AlignmentScores, U
                      convention_unsupported_rate, dany_conv_kappa, dany_kappa, interval_estimates, invalid_handle_rate,
                      link_f1, link_precision, link_recall, null_precision, null_recall, quote_failure_rate,
                      refusal_by_group, refusal_rate, relation_kappa, relation_kappa_shared, relation_recall,
-                     status_correct, status_kappa, witness_only_kind_agreement, witness_only_recall)
+                     status_correct, status_kappa, without_each_window, witness_only_kind_agreement,
+                     witness_only_recall)
 from .windows import (WINDOWS_COLUMNS, TestWindow, dev_region_units, draw_test_windows, region_window,
                       window_units)
 
@@ -58,7 +61,7 @@ __all__ = [
     "GOLD_COLUMNS", "SETS", "GoldError", "GoldRow", "GoldSet", "load", "save", "read_windows", "write_windows",
     "from_verdicts", "to_verdicts", "score", "human_kappa",
     "UnitScore", "WitnessOnlyScore", "AlignmentScores", "METRICS", "COLLATE_V2_FAMILIES", "interval_estimates",
-    "status_correct", "confidence_reliability",
+    "status_correct", "confidence_reliability", "without_each_window",
     "link_precision", "link_recall", "link_f1", "null_precision", "null_recall", "witness_only_recall",
     "witness_only_kind_agreement", "status_kappa", "dany_kappa", "dany_conv_kappa", "relation_kappa",
     "relation_kappa_shared", "relation_recall", "convention_precision", "convention_recall", "convention_f1",
