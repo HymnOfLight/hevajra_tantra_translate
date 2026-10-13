@@ -273,7 +273,9 @@ def annotate_topics(truth: dict[str, Any], sheet: Path) -> None:
 def make_root(tmp: Path, raw: Path) -> Path:
     root = tmp / "repo"
     shutil.copytree(REPO / "config", root / "config")
-    shutil.copytree(REPO / "data", root / "data", ignore=shutil.ignore_patterns("raw", "reference", "__pycache__"))
+    # the project's own drawn test windows stay behind: each test project draws its own
+    shutil.copytree(REPO / "data", root / "data",
+                    ignore=shutil.ignore_patterns("raw", "reference", "__pycache__", "windows.csv"))
     shutil.copytree(raw, root / "data" / "raw")
     path = root / "config" / "preregistration.yaml"
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))

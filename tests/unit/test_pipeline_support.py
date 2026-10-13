@@ -37,7 +37,9 @@ def make_root(tmp_path: Path, gold: dict[str, Any] | None = None) -> Path:
     """A repository root under ``tmp_path`` whose raw texts are the mini fixtures."""
     root = tmp_path / "repo"
     shutil.copytree(REPO / "config", root / "config")
-    shutil.copytree(REPO / "data", root / "data", ignore=shutil.ignore_patterns("raw", "reference", "__pycache__"))
+    # the project's own drawn test windows stay behind: each test project draws its own
+    shutil.copytree(REPO / "data", root / "data",
+                    ignore=shutil.ignore_patterns("raw", "reference", "__pycache__", "windows.csv"))
     raw = root / "data" / "raw"
     raw.mkdir(parents=True, exist_ok=True)
     shutil.copy(FIXTURES / "mini_cbeta.xml", raw / "T18n0892.xml")
