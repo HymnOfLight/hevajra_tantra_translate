@@ -36,8 +36,8 @@ codebook (``generalised`` for merged lists; names and seed syllables judged as t
 ``relation_kappa_shared`` is the relation agreement on the units the two codebooks code
 alike: linked gold units (relation not ``no_counterpart``) whose gold convention is annotated
 as ``none`` and whose gold relation is neither ``generalised`` nor ``category_name_omitted``.
-The section-7 adoption rule ("v2 not worse than v1 on relation agreement") compares
-``relation_kappa_shared``, never ``relation_kappa``.
+The section-7 adoption rule ("v2 not worse than v1 on relation agreement", with a
+non-inferiority margin of 0.05) compares ``relation_kappa_shared``, never ``relation_kappa``.
 
 ``COLLATE_V2_FAMILIES`` names the metric families collate.v2 added; a ledger record written
 before them lacks these keys and nothing else (``pipeline.measure.already_ledgered``).

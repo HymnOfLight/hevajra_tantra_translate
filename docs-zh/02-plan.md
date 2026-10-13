@@ -102,7 +102,7 @@ hevajra_tantra_translate/
 
 1. 专家核实译名表（`data/codebook/collate.v2/standing_renderings.yaml`，目前 Hevajra 一条为 `proposed`），最好在盲标开始之前。核实的条目会进入 v2 的提示词，也决定了标注时能不能填 `standing_rendering`，所以至迟要在第 3 步之前完成。如果盲标先开始，含这些名字的单元惯例列填 `?`（读作"未标注"，不进入惯例指标；注意留空读作"没有惯例"），核实后再改，不必重标关系；
 2. 专家做开发集盲标，同时填惯例列（[`03-review-guide.md`](03-review-guide.md) §1a）；
-3. 在开发集金标准上对照 v1 与 v2：每版 3 次重复（与正式测量相同），比较两版各自的共识，约 36 次调用（I.1 冒烟测试之后由 1 次重复改为 3 次，见 [`09-collate-v2-draft.md`](09-collate-v2-draft.md) §9.3）；采用 v2 的条件是 `relation_kappa_shared` 不比 v1 差，且惯例标记的精确率 ≥ 0.8；
+3. 在开发集金标准上对照 v1 与 v2：每版 3 次重复（与正式测量相同），比较两版各自的共识，约 36 次调用（I.1 冒烟测试之后由 1 次重复改为 3 次，见 [`09-collate-v2-draft.md`](09-collate-v2-draft.md) §9.3）；采用 v2 的条件是：`relation_kappa_shared` 不低于 v1 减 0.05，惯例标记的精确率 ≥ 0.8，且 v2 的重复间 Fleiss κ 达到 G2 的门槛 0.80（I.1 上 v2 只有 0.77，见 09 §9.4）；
 4. `prereg freeze`。
 
 ---

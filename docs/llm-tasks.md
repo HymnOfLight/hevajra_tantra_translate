@@ -377,8 +377,9 @@ v1-vs-v2 comparison possible; only the convention precision, recall, F1 and
 the placebo, external alignments, a v1 consensus). `relation_kappa_shared` is the relation kappa
 on the units the v1 and v2 codebooks code alike (linked gold units whose gold convention is
 annotated `none` and whose gold relation is neither `generalised` nor `category_name_omitted`);
-the adoption rule of docs-zh/09 section 7 ("v2 not worse than v1 on relation agreement")
-compares it, while the overall `relation_kappa` is descriptive (a v1 source scored on v2 gold is
+the adoption rule of docs-zh/09 section 7 ("v2 not worse than v1 on relation agreement",
+judged with a non-inferiority margin of 0.05, together with v2's replicate kappa reaching the
+G2 floor of 0.80) compares it, while the overall `relation_kappa` is descriptive (a v1 source scored on v2 gold is
 structurally lower on it). A `convention_unsupported` on a consensus link may come from the
 consensus rule above rather than from a replicate's V12, and then counts in
 `convention_unsupported_rate` too. No gate uses a convention metric. Sentinels of kind `relation_in` may restrict conventions with

@@ -155,7 +155,7 @@ experiment overattribution plan / run / score（Claude T4 受试、T5 评分）
 
 之所以测试集要随机抽而不是用审查推荐的那几品：挑出来的难品得到的误差率不能外推到全经；它们留作开发集与哨兵。标注者在"辅助复核"阶段看过机器结论后给出的裁决，进入矩阵算 A 级，但**永远不作为 G1 的金标准**（否则是循环论证）。
 
-**collate.v1 与 v2 的对照（开发集）。** 金标准表与各复核表格都把关系和惯例分两列记录（[`03-review-guide.md`](03-review-guide.md) §1a），所以两个版本可以在同一份开发集金标准上比较。`evaluate` 在金标准上另报告 `relation_kappa`、`relation_kappa_shared`、`dany_conv_kappa` 与惯例标记的精确率、召回率、F1。采用 v2 的条件分两半：关系一半是 `relation_kappa_shared` 不比 v1 差——它只在两个码本编码一致的单元上计算关系 κ（金标准有链接、惯例标注为 `none`、关系不是 `generalised` 或 `category_name_omitted`），总体的 `relation_kappa` 只作描述，因为 v1 在 v2 金标准上结构性偏低；惯例一半是 v2 惯例标记的精确率 ≥ 0.8。每个版本跑 3 次重复并比较各自的共识（与正式测量相同），约 36 次调用；满足条件后再冻结预注册（[`09-collate-v2-draft.md`](09-collate-v2-draft.md) §7）。这些指标都不进入门控。
+**collate.v1 与 v2 的对照（开发集）。** 金标准表与各复核表格都把关系和惯例分两列记录（[`03-review-guide.md`](03-review-guide.md) §1a），所以两个版本可以在同一份开发集金标准上比较。`evaluate` 在金标准上另报告 `relation_kappa`、`relation_kappa_shared`、`dany_conv_kappa` 与惯例标记的精确率、召回率、F1。采用 v2 的条件分两半：关系一半是 `relation_kappa_shared` 不比 v1 差——它只在两个码本编码一致的单元上计算关系 κ（金标准有链接、惯例标注为 `none`、关系不是 `generalised` 或 `category_name_omitted`），总体的 `relation_kappa` 只作描述，因为 v1 在 v2 金标准上结构性偏低；惯例一半是 v2 惯例标记的精确率 ≥ 0.8。"不比 v1 差"按非劣效界值 0.05 判断；v2 的重复间 Fleiss κ 还须达到 G2 的门槛 0.80（[`09-collate-v2-draft.md`](09-collate-v2-draft.md) §9.4）。每个版本跑 3 次重复并比较各自的共识（与正式测量相同），约 36 次调用；满足条件后再冻结预注册（[`09-collate-v2-draft.md`](09-collate-v2-draft.md) §7）。这些指标都不进入门控。
 
 ### 5.2 对照组与扰动（每次 `evaluate` 都算，不能关）
 
