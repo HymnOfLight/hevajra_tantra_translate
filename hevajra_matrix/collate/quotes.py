@@ -11,7 +11,7 @@ a-chung (sems dpar) nothing is restored: the quote stops where the text's letter
 (sems dp), never at the citation form (sems dpa'), and dka' never matches dkar. The only
 consumer that reads meaning from a Tibetan quote, the negator check, reads the quote
 completed to whole syllables of its text (its own punctuation kept, so a two-syllable
-negator such as ma yin is never read across a shad).
+negator such as ma yin is never read across a shad of the quote).
 """
 
 from __future__ import annotations

@@ -1,6 +1,7 @@
 """The collate stage and the instrument digests under a selected prompt version: v2 plans,
 requests, check lexicon, provenance and the glossary's witness check; v1 digests and
-provenance unchanged by the version field; the collated text recorded and checked."""
+provenance unchanged by the version field; the collated text recorded and checked (by its
+shas, or for an older run by its request keys or its name)."""
 
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from hevajra_matrix.llm.client import LLMRequest, canonical_json, sha256_text
 from hevajra_matrix.llm.fake import FakeClient
 from hevajra_matrix.pipeline import StageError, plan_collation
 from hevajra_matrix.pipeline.context import load_texts
-from hevajra_matrix.pipeline.instrument import check_prompt
+from hevajra_matrix.pipeline.instrument import COLLATED_SHAS, check_prompt
 from hevajra_matrix.pipeline.store import read_alignment
 from hevajra_matrix.prereg import instruments
 
@@ -139,13 +140,27 @@ def test_build_refuses_a_text_revised_under_the_same_name(ingested, capsys) -> N
     assert not (run / "alignments" / "claude.jsonl").exists()
 
 
-def test_a_run_from_before_the_recorded_text_is_checked_by_name_only(ingested) -> None:
-    root, run = ingested
-    collate_offline(root, run)
+def _drop_keys(run: Path, *keys: str) -> None:
+    """``replicates.json`` as an older collate wrote it."""
     path = run / "collation" / "replicates.json"
     index = json.loads(path.read_text(encoding="utf-8"))
-    path.write_text(json.dumps({k: v for k, v in index.items() if k not in ("prompt_sha", "schema_sha")}),
-                    encoding="utf-8")
+    path.write_text(json.dumps({k: v for k, v in index.items() if k not in keys}), encoding="utf-8")
+
+
+def test_a_run_from_before_the_recorded_text_is_checked_by_its_request_keys(ingested) -> None:
+    root, run = ingested
+    collate_offline(root, run)
+    _drop_keys(run, *COLLATED_SHAS)
+    assert check_prompt(context(root, run)) == PROMPT_V1, "the plan of its 1 replicate, not of the configured 3"
+    _edit_examples_in_place(root)
+    with pytest.raises(StageError, match=r"another collate\.v1 instrument \(its request_keys differ"):
+        check_prompt(context(root, run))
+
+
+def test_a_run_from_before_the_request_keys_is_checked_by_name_only(ingested) -> None:
+    root, run = ingested
+    collate_offline(root, run)
+    _drop_keys(run, *COLLATED_SHAS, "request_keys")
     _edit_examples_in_place(root)
     assert check_prompt(context(root, run)) == PROMPT_V1
 

@@ -12,17 +12,8 @@ from typing import Any, Callable, Mapping, Sequence
 
 from ..collate import collator, components
 from ..collate.merge import verify_all
-from ..collate.perturb import (
-    NegationTruth,
-    Rate,
-    deletion_recall,
-    delete_segments,
-    false_link_rate,
-    negated_pairs,
-    negation_recall,
-    remove_negators,
-    wrong_window,
-)
+from ..collate.perturb import (NegationTruth, Rate, deletion_recall, delete_segments, false_link_rate, negated_pairs,
+                               negation_recall, remove_negators, wrong_window)
 from ..collate.verify import CheckLexicon, Collation, verify
 from ..collate.windows import Window, WindowParams, plan
 from ..core.ids import REF_CHAPTERS
@@ -137,10 +128,13 @@ def collated_prompt(ctx: RunContext) -> str | None:
 
 def check_prompt(ctx: RunContext, texts: Texts | None = None) -> str | None:
     """Refuse a configured ``tasks.collate.prompt`` other than the version this run collated
-    with (like ``context.check_backend`` for the backend): building, perturbing or
-    digest-checking a v1 consensus as v2 (or the reverse) would mix two instruments. A run that recorded its
-    ``COLLATED_SHAS`` is refused too when the configured instrument's differ (a text revised
-    under the same name); an older run is checked by name only. Returns that version."""
+    with (like ``context.check_backend`` for the backend): building, perturbing, digest-checking
+    or revealing a v1 consensus as v2 (or the reverse) would mix two instruments. Under the
+    same name, a run that recorded its ``COLLATED_SHAS`` is refused when the configured
+    instrument's differ (a text revised in place); one from before them, when the current plan
+    of its chapters and replicate count sends requests other than its ``request_keys`` (prompt,
+    examples, glossary or parameters changed); a run with neither is checked by name only.
+    Returns that version."""
     index = _replicates_index(ctx)
     if index is None:
         return None
@@ -158,6 +152,11 @@ def check_prompt(ctx: RunContext, texts: Texts | None = None) -> str | None:
         if changed:
             raise StageError(f"{ctx.run_dir} was collated with another {recorded} text ({'; '.join(changed)}): its "
                              "template, examples or glossary changed under the same name; restore them, or collate anew")
+    elif "request_keys" in index:
+        cplan = plan_collation(ctx, ",".join(index.get("chapters") or ()), len(index["tags"]), texts)
+        if sorted(r.key() for _, _, r in cplan.requests()) != sorted(index["request_keys"]):
+            raise StageError(f"{ctx.run_dir} was collated with another {recorded} instrument (its request_keys differ "
+                             "from the current plan's: prompt, examples, glossary or parameters changed); collate anew")
     return recorded
 
 

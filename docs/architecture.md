@@ -216,8 +216,8 @@ ingest   -> ingest/segments_<witness>.jsonl, footnotes.jsonl, variants.csv,
   baselines              -> alignments/dp_zero.jsonl (P1), dp_anchor.jsonl (B0)
   baselines import --tsv -> alignments/external_<name>.jsonl
   collate (T1, k reps)   -> alignments/claude.r<k>.jsonl, collation/r<k>.json,
-                            collation/replicates.json (incl. the request keys and the prompt
-                            version), llm_audit.jsonl,
+                            collation/replicates.json (tags, prompt version, prompt_sha,
+                            schema_sha, chapters, windows, request keys), llm_audit.jsonl,
                             cache entries, <cache>/llm_spend.jsonl
     build                -> alignments/claude.jsonl (consensus), alignments/shuffled.jsonl (P2),
                             collation/consensus.json, integrity.json, diagnostics.jsonl,

@@ -267,7 +267,9 @@ def review_import(ctx: RunContext, task: str, path: Path, annotator: str, date: 
     batch = sheets.batch_of(path, ".reveal.csv" if task == "reveal" else ".blind.csv")
     target = ann.verdict_dir(ctx, texts.witness_id) / f"{batch}.csv"
     if task == "reveal":
-        check_prompt(ctx)        # the verdicts record the digest of the version the run collated with
+        # refuses a run collated with another prompt text or schema (an older run: other request keys);
+        # the digest the verdicts record is the configured instrument's, not one read from the run
+        check_prompt(ctx, texts)
         blind = verdict_files.read_file(require(target, "review import"))
         new = sheets.import_(path, "reveal", params=params, date=date, blind=blind,
                              instrument_digest=collate_digest(ctx, texts), check=check, **langs)

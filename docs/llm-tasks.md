@@ -234,10 +234,16 @@ selects the version; an unknown name is a configuration error.
 
 The task name stays `collate` for both. v1 stays the default until the dev-gold comparison of
 v1 and v2 (docs-zh/09-collate-v2-draft.md, section 7) supports a switch. `collation/
-replicates.json` records the version a run collated with (absent = v1), and `evaluate`,
-`perturb` and `review reveal` refuse a configured version that differs
-(`pipeline/instrument.py: check_prompt`): one run directory holds one instrument. A switch
-after `prereg freeze` needs `prereg freeze --amend`.
+replicates.json` records the version a run collated with (absent = v1) and the `prompt_sha` and
+`schema_sha` of its requests, and `build`, `evaluate`, `perturb` and `review reveal` refuse a
+configured version that differs, or the same version with other shas (a text revised in place:
+template, examples or glossary) (`pipeline/instrument.py: check_prompt`): one run directory
+holds one instrument. A run collated before the shas were recorded is checked by its
+`request_keys` instead: the current plan of its chapters and replicate count must send the same
+requests, so a changed template, example, glossary entry or request parameter is caught too (the
+runs of the superseded collate.v2 texts are refused); a run without request keys is checked by
+name only. These stages rewrite `manifest.json: instrument_digests` from the current
+configuration. A switch after `prereg freeze` needs `prereg freeze --amend`.
 
 collate.v2 adds a second dimension next to the relation, the **convention**, for differences that
 are conventions of the translation rather than changes of content:
@@ -333,7 +339,7 @@ UNALIGNED with a reason; non-fatal ones keep the link with a flag (any flag exce
 | V3 consistency | `no_counterpart` exactly when `wit` is empty | `verification_failed` |
 | V4 verbatim quotes | `ref_quote` in the unit, `wit_quote` in the linked segments (`core.textnorm.quote_in`; a Tibetan quote covers whole syllables but may stop where the letters of a particle fused to its last syllable begin, -s, -r, -'i, -'o, -'ang, -'am, as V12 does: the unit's -por quoted as -po. The test is on letters alone, so a final -s or -r is dropped whatever it is: la for las, na for nas and rnam for rnams pass, because spelling cannot tell a fused particle from a final letter; any other letters left out of a syllable fail. After a final a-chung the particle's own a-chung is the quote's (nam mkha' in nam mkha'i); where -r or -s replaces the a-chung (sems dpar) the quote stops where the text's letters stop (sems dp), never at the restored citation form. The only consumer that reads meaning from a Tibetan quote, the negator check (V6, C5), reads it completed to whole syllables; `collate/quotes.py: quote_match`, also used by C3) | no match: `verification_failed`; match only after variant folding: flag `quote_variant_form` |
 | V5 required quotes | `ref_quote` for every relation except equivalent, paraphrase, expanded; `wit_quote` whenever `wit` is non-empty | `verification_failed` |
-| V6 polarity | `reversal` exactly when `polarity_flip`; a negator in exactly one quote corroborates (a Tibetan quote read completed to whole syllables of its text, `collate/quotes.py: completed_quote`: mi cut from mi'am is no negator) | flags `polarity_mismatch`, `corroborated` / `polarity_uncorroborated` |
+| V6 polarity | `reversal` exactly when `polarity_flip`; a negator in exactly one quote corroborates (a Tibetan quote read completed to whole syllables of its text, `collate/quotes.py: completed_quote`: mi cut from mi'am is no negator; a quote that stops at a syllable boundary inside an exclusion context, mi quoted from mi rnams, still reads a negator: known and left open) | flags `polarity_mismatch`, `corroborated` / `polarity_uncorroborated` |
 | V7 locality | links outside the core window | flag `relocation` and a `relocation` diagnostic |
 | V8 order | units off the longest order-preserving chain | flag `crossing`; crossing count in a diagnostic; never removed |
 | V9 exhaustiveness | after merging a chapter's chunks, every core-window witness segment is linked or witness-only | `unaccounted` diagnostic |
@@ -375,9 +381,10 @@ human convention, and every unverified unit drawn non-deviating carries a conven
 share its stratum's phase-2 sample verdicts record. Machine conventions never enter (as
 machine classes do not), so the estimate is valid for a collate.v1 run too, where conventions
 come in through the human verdicts only, and on a v2 run the machine's convention errors are
-calibrated by the sample. A sample verdict without an annotated convention counts as none;
-`stats/details.json: any_conv` reports how many there are. It equals `E1_any` when no
-non-deviating verified unit and no non-deviating phase-2 sample verdict records a convention.
+calibrated by the sample. A sample verdict without an annotated convention counts as none, and
+so does a gold or resolve decision without one; `stats/details.json: any_conv` reports both
+counts. It equals `E1_any` when no non-deviating verified unit and no non-deviating phase-2
+sample verdict records a convention.
 The Manski bounds of `any_conv` read the built cells and are computed only for a run collated
 with collate.v2. Human gold and verdicts record the relation and the convention separately, so
 both calibers come from one gold. On gold, `evaluate` adds `relation_kappa`, `relation_kappa_shared`, `dany_conv_kappa`, convention
@@ -389,12 +396,20 @@ v1-vs-v2 comparison possible; only the convention precision, recall, F1 and
 the placebo, external alignments, a v1 consensus). `relation_kappa_shared` is the relation kappa
 on the units the v1 and v2 codebooks code alike (linked gold units whose gold convention is
 annotated `none` and whose gold relation is neither `generalised` nor `category_name_omitted`);
-the adoption rule of docs-zh/09 section 7 ("v2 not worse than v1 on relation agreement",
-judged with a non-inferiority margin of 0.05, together with v2's replicate kappa reaching the
-G2 floor of 0.80) compares it, while the overall `relation_kappa` is descriptive (a v1 source scored on v2 gold is
-structurally lower on it). A `convention_unsupported` on a consensus link may come from the
-consensus rule above rather than from a replicate's V12, and then counts in
-`convention_unsupported_rate` too. No gate uses a convention metric. Sentinels of kind `relation_in` may restrict conventions with
+the adoption rule of docs-zh/09 section 7 compares it, while the overall `relation_kappa` is
+descriptive (a v1 source scored on v2 gold is structurally lower on it). That rule, fixed on
+2026-10-13 before any dev result, is decided on `without_window["I.1"]`, the dev units outside
+I.1, where v2 was tuned (all dev units are reported, descriptive only; the three I.7 units
+D417:8b.5.2-8b.5.4 the second v2 revision was written for are in-sample too, so convention
+precision is also reported without them). v2 is adopted when (1) its `relation_kappa_shared`
+is at least v1's minus 0.05, a point-estimate tolerance, not a non-inferiority test (about 1.5
+standard deviations of the run-to-run difference between two 3-replicate consensuses, and
+about one sampling standard error); (2) its convention precision is at least 0.8; (3) a
+replicate-kappa floor symmetric in the two versions holds, read from the dev run's
+`collation/integrity.json: fleiss_kappa` (all collated units of the dev chapters, I.1
+included): if v1 reaches 0.80, v2 must too; if v1 does not, the floor does not decide. A
+`convention_unsupported` on a consensus link may come from the consensus rule above rather than
+from a replicate's V12, and then counts in `convention_unsupported_rate` too. No gate uses a convention metric. Sentinels of kind `relation_in` may restrict conventions with
 `expect.conventions`.
 
 **Perturbations** (`collate/perturb.py`, stage `perturb`, gate G2), run on the windows of the

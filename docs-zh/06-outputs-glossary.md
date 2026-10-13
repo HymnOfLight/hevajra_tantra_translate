@@ -9,7 +9,7 @@
 | `manifest.json` | 本次运行的清单：代码版本、git 提交、输入文件与配置的 SHA-256、工具指纹、实际服务的模型、缓存命中数 |
 | `ingest/` | 切分结果、大正藏脚注、德格异文、题记元数据、切分报告、G0 结果 `g0.json`、切分阶段哨兵结果 `sentinels.jsonl` |
 | `alignments/*.jsonl` | 各对齐器的结果：`claude.*`（Claude 对勘）、`dp_zero`（纯长度对照 P1）、`dp_anchor`（锚点基线 B0）、`shuffled`（洗牌对照 P2）、外部导入的对齐 |
-| `collation/` | 每次重复的未判定原因、诊断、替代模型的提示（`r<k>.json`）；最近一次对勘的重复、窗口、请求键与提示词版本（`replicates.json`，G2 只检查这些请求是否被替换；`prompt` 缺省即 collate.v1）；共识等级；重复间一致性（`integrity.json`，collate.v2 另有惯例的 Fleiss κ `convention_kappa`，只描述） |
+| `collation/` | 每次重复的未判定原因、诊断、替代模型的提示（`r<k>.json`）；最近一次对勘的重复、窗口、请求键、提示词版本，以及所用提示词与 schema 的 sha（`replicates.json`，G2 只检查这些请求是否被替换；`prompt` 缺省即 collate.v1；`build`、`evaluate`、`perturb` 和揭示表导入据此拒绝用另一份文本对勘的运行）；共识等级；重复间一致性（`integrity.json`，collate.v2 另有惯例的 Fleiss κ `convention_kappa`，只描述） |
 | `matrix/cells.csv` | 矩阵长表：每行一个（参照单元，见证）单元格；`flags` 列可含惯例标记 `standing_rendering`、`transcribed_name` 和 `convention_unsupported` |
 | `matrix/units.csv`、`wide_status.csv` | 单元表；按状态的宽表 |
 | `matrix/stale_verdicts.csv` | 因原文指纹变化而**未被套用**的人工裁决 |

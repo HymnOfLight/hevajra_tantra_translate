@@ -13,13 +13,15 @@
                          Manski bounds; E3 (counts, A2 bound, O/E/O-E, phi) and E4 only where
                          gate G4 passes
 
-E1_any_conv is the sensitivity variant with conventions counted (collate.v2): D_any plus every
-counted unit carrying a standing rendering or a transcribed name, comparable with a caliber that
-counts transcription as deviation; never the primary outcome. Its conventions are imputed with
-the class from the phase-2 verdicts (``stats.anyconv``; machine conventions never enter), so a
-collate.v1 run has it too; it equals E1_any when no non-deviating verified unit or phase-2
-verdict records a convention. It is printed beside E1_any with what the imputation rests on
-(``report.sections.conventions``); its Manski bounds exist only for a collate.v2 run.
+E1_any_conv is the sensitivity variant with conventions counted (collate.v2), on D_any_conv: any
+deviation, or any transcribed, part-transcribed or standing-rendered name in the unit; wider
+than collate.v1's D_any (docs-zh/09 section 9.2) and not directly the caliber of published
+counts that include transcriptions (the comparable one is D_any); never the primary outcome.
+Its conventions are imputed with the class from the phase-2 verdicts (``stats.anyconv``;
+machine conventions never enter), so a collate.v1 run has it too; it equals E1_any when no
+non-deviating verified unit or phase-2 verdict records a convention. It is printed beside
+E1_any with what the imputation rests on (``report.sections.conventions``); its Manski bounds
+exist only for a collate.v2 run.
 
 At every level: human-verified (grade A) counts, printed as instrument-independent lower
 bounds; the confirmatory/exploratory line; and for every estimand that cannot be printed

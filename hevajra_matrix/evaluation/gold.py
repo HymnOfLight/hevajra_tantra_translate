@@ -16,8 +16,8 @@ stay in every denominator: they count as missed links and as status disagreement
 Gold rows whose decision is ``lacuna`` or ``unresolved`` are not scored (listed in
 ``AlignmentScores.excluded``).
 
-Conventions (collate.v2): ``convention`` is kept apart from ``relation`` (draft Q6), so the
-v1 and the v2 caliber can both be computed from one gold. "" means not annotated (a file
+Conventions (collate.v2): ``convention`` is kept apart from ``relation`` (draft Q6), so
+both calibers, D_any and D_any_conv, can be computed from one gold. "" means not annotated (a file
 or sheet made before the column existed, or a sheet cell marked ``?``:
 ``review.verdicts.CONVENTION_DEFERRED``, not decided yet; a file without the column still
 loads), ``none`` annotated without a convention. ``GoldRow.link`` carries a convention as

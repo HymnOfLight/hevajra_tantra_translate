@@ -58,25 +58,29 @@ scored.
 
 The relation and the convention are recorded separately (draft question Q6), so that one gold
 serves both calibers: the primary D_any, which sets conventions aside, and the sensitivity
-D_any_conv, which counts them as deviations (the v1 instrument's reading). On the blind ref
-sheet (`<set>_<window>.ref.csv`) the `convention` column comes after `relation`; a blank cell
-is imported as `none`, and a cell holding `?` (`review.verdicts.CONVENTION_DEFERRED`: not
-decided yet, e.g. a glossary entry awaiting verification) as empty, i.e. not annotated: the
-unit is then left out of the convention metrics (and of `dany_conv_kappa`), but in the built
-matrix and the estimates (Manski `any_conv`, E1_any_conv) it counts as `none` until the `?` is
-replaced (`stats/details.json: any_conv` reports how many units it concerns). A `?` on a
-`no_counterpart`, `lacuna` or `unresolved` row is refused (these take no convention: leave the
-cell blank). A full-width question mark or semicolon typed with a Chinese input method is read
-as `?` or `;`. How to fill the sheet:
-`docs-zh/03-review-guide.md`. `standing_rendering` is only for a term of the verified
-glossary of the witness's standing renderings: `standing_renderings.csv` beside the sheets lists
-exactly the entries the collate.v2 prompt shows, and the import refuses a `standing_rendering`
-(naming the line) unless the unit contains a listed reference form and the linked witness
-segments a rendering of the same entry; while no entry is verified every one is refused.
-`transcribed_name` is for a proper name, seed syllable or letter rendered by sound. Fill the
-relation as if the name or term had been translated; a convention never turns a missing,
-reversed or replaced element into `equivalent`. In the matrix and in `GoldSet.alignment` a
-convention travels as the link or cell flag of the same name.
+D_any_conv, which counts them as deviations (any deviation, or any transcribed,
+part-transcribed or standing-rendered name in the unit: wider than the v1 instrument's D_any,
+docs-zh/09 section 9.2, and not directly the caliber of published counts that include
+transcriptions, the comparable one being D_any). On the blind ref sheet
+(`<set>_<window>.ref.csv`) the `convention` column comes after `relation`; a blank cell is
+imported as `none`, and a cell holding `?` (`review.verdicts.CONVENTION_DEFERRED`: not decided
+yet, e.g. a glossary entry awaiting verification) as empty, i.e. not annotated: the unit is
+then left out of the convention metrics (and of `dany_conv_kappa`), but in the built matrix and
+the estimates (Manski `any_conv`, E1_any_conv) it counts as `none` until the `?` is replaced
+(`stats/details.json: any_conv` reports how many units it concerns, as E1_any_conv reads them:
+there a later usable review verdict decides over the gold cell, whereas the built cell lets
+gold win). A `?` on a `no_counterpart`, `lacuna` or `unresolved` row is refused (these take no
+convention: leave the cell blank). A full-width question mark or semicolon typed with a Chinese
+input method is read as `?` or `;`. How to fill the sheet: `docs-zh/03-review-guide.md`.
+`standing_rendering` is only for a term of the verified glossary of the witness's standing
+renderings: `standing_renderings.csv` beside the sheets lists exactly the entries the
+collate.v2 prompt shows, and the import refuses a `standing_rendering` (naming the line) unless
+the unit contains a listed reference form and the linked witness segments a rendering of the
+same entry; while no entry is verified every one is refused. `transcribed_name` is for a proper
+name, seed syllable or letter rendered by sound. Fill the relation as if the name or term had
+been translated; a convention never turns a missing, reversed or replaced element into
+`equivalent`. In the matrix and in `GoldSet.alignment` a convention travels as the link or cell
+flag of the same name.
 
 ## `windows.csv`
 

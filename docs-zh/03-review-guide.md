@@ -118,7 +118,7 @@ hevajra-matrix review status                                              # 看�
 # 再次 review export --task verify --hours 4，得到下一批；如此循环直到各层完成
 ```
 
-揭示表的 `machine_convention` 是机器多数决的惯例（collate.v1 的运行一律为 `none`）；程序未能核实的惯例显示为 `<惯例>:unsupported`。`final_*` 各栏预填盲判的结论。盲判的惯例未标注时（盲表填了 `?`，或 collate.v2 以前的盲表），凡关系可带惯例的行，`blind_convention` 与 `final_convention` 都显示为 `?`：不改动就仍是未标注；改为确定的惯例不算改判，不必写 `revised_reason`。盲判的惯例已确定时，只改惯例也算改判（这时 `final_convention` 留空或填 `?` 都读作 `none`），要写 `revised_reason`。
+揭示表的 `machine_convention` 是机器多数决的惯例（collate.v1 的运行一律为 `none`）；程序未能核实的惯例显示为 `<惯例>:unsupported`。`final_*` 各栏预填盲判的结论。盲判的惯例未标注时（盲表填了 `?`，或 collate.v2 以前的盲表），凡关系可带惯例的行，`blind_convention` 与 `final_convention` 都显示为 `?`：不改动就仍是未标注；改为确定的惯例不算改判，不必写 `revised_reason`。盲判的惯例已确定时，只改惯例也算改判（这时 `final_convention` 留空或填 `?` 都读作 `none`），要写 `revised_reason`。揭示之后仍是 `?` 的条目不会再出现在新的揭示表上；要补填，就在已填好的 `<批次>.reveal.csv`（请自留一份副本：同一批次下一次导出揭示表时会覆盖它）里改 `final_convention`，再用 `review reveal --file` 重新导入。重新导入会用表上的内容覆盖所有行的 final 各栏，并把 `final_date` 改为这次导入的日期；盲判各栏不变，补填惯例不必写 `revised_reason`。
 
 同一批次的盲表和揭示表文件名固定（`<批次>.blind.csv`、`<批次>.reveal.csv`）。表中所有条目都已导入后，下一批会直接覆盖它；只要表中还有**未导入**的条目，导出就会拒绝覆盖并列出这些条目——先导入，或确认放弃后加 `--force`。
 

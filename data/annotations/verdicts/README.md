@@ -105,7 +105,16 @@ conventions from the human decisions only (`stats/anyconv.py`): the final conven
 phase-2 verify or audit verdict calibrates its stratum, and a verified unit keeps its own; an
 empty one counts as none and is reported in `stats/details.json: any_conv` (sample verdicts,
 and units decided by gold or resolve), so record the convention on every decision and replace
-every `?` before the measurement.
+every `?` before the measurement. A verify or audit item revealed with a `?` left in
+`final_convention` is never put on a reveal sheet again (`review export --task reveal` lists
+only items without a final decision, even with `--force`), and re-importing its blind sheet
+cannot reach it (the revealed verdict is kept as it is, and a `standing_rendering` or
+`transcribed_name` entered in its blind column is refused). To decide it, edit
+`final_convention` on the filled `<batch>.reveal.csv` in the run directory (or a saved copy:
+the batch's next reveal export replaces that file) and import it again with `review reveal`:
+every row with a `final_relation` is applied again over the committed final columns, with this
+import's date (`--date`) and the configured collate digest, and deciding the `?` needs no
+`revised_reason`. Otherwise it stays unannotated and counts as none.
 
 ## How verdicts are used
 

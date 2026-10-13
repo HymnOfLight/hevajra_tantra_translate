@@ -226,8 +226,11 @@ def _dev_conv_pairs(s: AlignmentScores) -> list[tuple[str, str]]:
 
 
 def dany_conv_kappa(s: AlignmentScores) -> float | None:
-    """Cohen's kappa on D_any_conv (conventions counted as deviations; the caliber of a
-    collate.v1 source) over the units whose gold convention is annotated."""
+    """Cohen's kappa on D_any_conv (any deviation, or any transcribed, part-transcribed or
+    standing-rendered name in the unit; wider than collate.v1's D_any, docs-zh/09 section 9.2,
+    and not directly the caliber of published counts that include transcriptions, the
+    comparable one being D_any) over the units whose gold convention is annotated. A source
+    without conventions is read by its own D_any."""
     return cohen_kappa(_dev_conv_pairs(s))
 
 

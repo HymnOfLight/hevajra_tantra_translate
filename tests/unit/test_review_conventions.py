@@ -252,6 +252,14 @@ def test_deciding_a_deferred_blind_convention_at_reveal_is_no_revision(tmp_path:
     assert (v.blind_convention, v.final_convention, v.note) == ("", "transcribed_name", "")
 
 
+def test_deferring_a_blind_none_at_reveal_is_no_revision(tmp_path: Path):
+    path, header, rows, blind = _reveal(tmp_path, "none")
+    rows[0]["final_convention"] = "?"
+    write_rows(path, header, rows)
+    v = sheets.import_(path, "reveal", params=PARAMS, blind=blind)[0]
+    assert (v.blind_convention, v.final_convention, v.note) == ("none", "", "")
+
+
 def test_reveal_refuses_a_prefilled_question_mark_on_a_relation_without_a_convention(tmp_path: Path):
     path, header, rows, blind = _reveal(tmp_path, "")
     rows[0].update(final_relation="no_counterpart", final_wit_loci="", revised_reason="no counterpart after all")
