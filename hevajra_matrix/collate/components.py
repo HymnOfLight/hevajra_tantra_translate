@@ -30,7 +30,9 @@ What code checks (a pair is kept only if every rule passes; otherwise the pair g
     C3 verbatim     each non-empty quote occurs in its own side's full text
                     (``collate.verify.quote_match``; a match only after variant folding is
                     kept with flag ``quote_variant_form``)
-    C4 lit          the witness quote is at least 50% transcription (V11, ``core.translit``)
+    C4 lit          the witness quote is at least 50% transcription (``core.translit``;
+                    the quote is the coded word, so the whole-quote density applies,
+                    not V11's ``contains_transcription``)
     C5 polarity     ``polarity_flip`` requires a ``negation_modality`` slot coded sub, om or add
 Non-fatal flags: ``corroborated`` / ``polarity_uncorroborated`` (a negator occurs in exactly
 one quote of the negation_modality slot(s) of a flipped pair), ``polarity_disagrees`` (T2's

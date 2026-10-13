@@ -134,21 +134,40 @@ def _example3() -> dict:
     return yaml.safe_load((V2_DIR / "examples.yaml").read_text(encoding="utf-8"))["examples"][2]
 
 
-def check_example3(**changes) -> frozenset[str]:
+def check_example3(ref: str = "r001", **changes) -> frozenset[str]:
     ex = _example3()
     w = _example_window(3, ex)
-    first = {**ex["answer"]["units"][0], **changes}
-    answer = {**ex["answer"], "units": [first, *ex["answer"]["units"][1:]]}
+    units = [{**u, **changes} if u["ref"] == ref else u for u in ex["answer"]["units"]]
+    answer = {**ex["answer"], "units": units}
     lex = CheckLexicon(lexicon().negators, lexicon().variants, transliteration_charset(w.text))
     result = verify(raw(w, answer), w, lex, SOURCE)
     assert dict(result.unresolved) == {}
-    return result.alignment.by_ref()[w.ref_handles["r001"]].flags
+    return result.alignment.by_ref()[w.ref_handles[ref]].flags
+
+
+def _witness_line(handle: str) -> str:
+    return _example3()["witness"][int(handle[1:]) - 1]["text"]
 
 
 def test_v12_transcribed_name_needs_a_transcription_quote() -> None:
     assert check_example3() == {TN}
     meaning = _example3()["witness"][1]["text"][0]       # the verb before the name, rendered by meaning
     assert check_example3(wit_quote=meaning) == {TN, FLAG_CONVENTION_UNSUPPORTED}
+
+
+def test_v12_a_name_quoted_with_the_words_around_it_is_supported() -> None:
+    # the whole line: the city's name by sound between a verb and a noun by meaning (density
+    # below one half, but three transcription characters stand together)
+    assert check_example3(wit_quote=_witness_line("z0002")) == {TN}
+    # one transcription character among other words is not enough
+    assert check_example3("r002", wit_quote=_witness_line("z0003")) == {TN, FLAG_CONVENTION_UNSUPPORTED}
+    assert check_example3("r002") == {TN}                # the syllable alone
+
+
+def test_v11_a_transcribed_word_quoted_with_its_sentence_is_supported() -> None:
+    for ref, line in (("r003", "z0004"), ("r005", "z0007")):    # blood; the class of beings
+        assert check_example3(ref) == frozenset()
+        assert check_example3(ref, wit_quote=_witness_line(line)) == frozenset()
 
 
 def test_v12_transcribed_name_needs_a_reference_quote() -> None:

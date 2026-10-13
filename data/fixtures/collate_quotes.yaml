@@ -1,0 +1,53 @@
+# V4 on Tibetan quotes (collate/verify.py: quote_match). Short quotes from the Derge
+# text of chapter I.1; "match" is "exact" or null (not verbatim).
+quote_match_bo:
+- lang: bo
+  quote: སེམས་དཔའ་ཆེན་པོ
+  text: སེམས་དཔའ་ཆེན་པོར་བརྗོད་པར་བྱ།
+  match: exact
+  why: -r dropped
+- lang: bo
+  quote: དམ་ཚིག་སེམས་དཔ
+  text: དམ་ཚིག་སེམས་དཔར་བརྗོད་པར་བྱ།
+  match: exact
+  why: -r dropped
+- lang: bo
+  quote: རྣལ་འབྱོར་མ
+  text: ཇི་ལྟར་རིགས་པ་རྣལ་འབྱོར་མའི།
+  match: exact
+  why: -'i dropped
+- lang: bo
+  quote: ཀུན་འདར་མ
+  text: ཀུན་འདར་མའོ།
+  match: exact
+  why: -'o dropped
+- lang: bo
+  quote: གསང་བ་ལས་ཤིན་ཏུ་ཆེས་གསང་བ
+  text: རྗེ་བཙུན་གསང་བ་ལས་ཤིན་ཏུ་ཆེས་གསང་བའང་དེ་ནས།
+  match: exact
+  why: -'ang dropped (the collate.v1 failure)
+- lang: bo
+  quote: ཀུན་འདར་མའོ
+  text: ཀུན་འདར་མའོ།
+  match: exact
+  why: whole syllables
+- lang: bo
+  quote: སེམས་དཔའ་ཆེན་པ
+  text: སེམས་དཔའ་ཆེན་པོར་བརྗོད་པར་བྱ།
+  match: null
+  why: the rest of the syllable is not a particle
+- lang: bo
+  quote: ཆེན་པོ་བརྗོད
+  text: སེམས་དཔའ་ཆེན་པོར་བརྗོད་པར་བྱ།
+  match: null
+  why: a particle left out inside the quote
+- lang: bo
+  quote: ན་འདར་མའོ
+  text: ཀུན་འདར་མའོ།
+  match: null
+  why: starts inside a syllable
+- lang: bo
+  quote: ཀུན་འདར་མའོ་ནི
+  text: ཀུན་འདར་མའོ།
+  match: null
+  why: longer than the text

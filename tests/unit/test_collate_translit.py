@@ -7,7 +7,13 @@ from dataclasses import replace
 import pytest
 
 from hevajra_matrix.core.textnorm import for_quote
-from hevajra_matrix.core.translit import transliteration_charset, transliteration_density
+from hevajra_matrix.core.translit import (
+    MIN_TRANSCRIBED_RUN,
+    contains_transcription,
+    looks_transcribed,
+    transliteration_charset,
+    transliteration_density,
+)
 
 from test_collate_support import reference, seg, witness
 
@@ -39,3 +45,24 @@ def test_tibetan_density_uses_sanskrit_only_letters() -> None:
 
 def test_other_languages_have_no_transliteration_density() -> None:
     assert transliteration_density("om ah hum", "sa") == 0.0
+
+
+def test_contains_transcription_finds_a_transcribed_stretch_among_other_words() -> None:
+    charset = transliteration_charset(witness())
+    prose, mantra = seg(Z_TREES).text, for_quote(seg(Z_MANTRA).text, "zh")
+    assert not contains_transcription(prose, "zh", charset)
+    padded = prose + mantra[:MIN_TRANSCRIBED_RUN] + prose
+    assert not looks_transcribed(padded, "zh", charset)
+    assert contains_transcription(padded, "zh", charset)
+    # transcription characters apart from each other do not make a transcription
+    apart = mantra[0] + prose + mantra[1]
+    assert not contains_transcription(apart, "zh", charset)
+    assert contains_transcription(mantra, "zh", charset)                   # mostly transcription
+    assert contains_transcription(mantra[0], "zh", charset)
+
+
+def test_contains_transcription_elsewhere_is_looks_transcribed() -> None:
+    for text in (seg(U_MANTRA).text, seg(U_SAID).text, seg(U_SAID).text + seg(U_MANTRA).text):
+        assert contains_transcription(text, "bo") is looks_transcribed(text, "bo")
+    assert contains_transcription(seg(U_MANTRA).text, "bo")
+    assert not contains_transcription("om ah hum", "sa")

@@ -98,7 +98,7 @@ module. Every module below is English only (enforced, see [contributing](contrib
 | `core/types.py` | shared frozen value types (frozen contract) | `Segment`, `Quote`, `Link`, `Alignment`, `Diagnostic`, `Cell`, `Verdict`, `Estimate`, `InstrumentId`; enums `Status`, `Relation`, `WitnessOnlyKind`, `Grade`, `OutcomeClass`, `Convention`; `REASON_*`; conventions as flags: `CONVENTION_FLAGS`, `FLAG_CONVENTION_UNSUPPORTED`, `convention_of`, `with_convention` |
 | `core/ids.py` | coordinate-derived ids | `segment_id`, `note_id`, `orphan_row_id`, `orphan_source`, `assign_ids`, `id_kind`, `parse_segment_id`, `parse_snellgrove_id`, `sort_key`, `REF_CHAPTERS` |
 | `core/textnorm.py` | tokenisation, quote keys, fingerprints, numerals | `chunks`, `for_quote`, `quote_in`, `fingerprint`, `fold_variants`, `find_terms`, `bo_syllables`, `length`, `numerals` |
-| `core/translit.py` | transliteration density (V11, V12, C4 and `d_lit`) | `transliteration_charset`, `transliteration_density`, `looks_transcribed`, `MIN_TRANSLITERATION_DENSITY` |
+| `core/translit.py` | transliteration density (V11, V12, C4 and `d_lit`) | `transliteration_charset`, `transliteration_density`, `looks_transcribed`, `contains_transcription` (V11, V12), `MIN_TRANSLITERATION_DENSITY`, `MIN_TRANSCRIBED_RUN` |
 | `core/lexicon.py` | loaders for `data/lexicon/*.yaml` and the collate.v2 glossary | `load_numerals`, `load_negators`, `load_variant_forms`, `read_lexicon`, `load_standing_renderings` (verified entries only), `StandingRenderings`, `StandingEntry` |
 | `core/io.py` | YAML/CSV/JSONL I/O, atomic writes, git, manifest | `read_yaml`, `read_csv`, `write_csv`, `read_jsonl`, `write_jsonl`, `append_jsonl`, `sha256_file`, `git_commit`, `write_manifest` |
 

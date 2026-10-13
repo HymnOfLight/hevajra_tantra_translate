@@ -14,9 +14,10 @@ convention flags make the consensus grade C), and window-level findings become
                          with no witness segment is UNALIGNED(verification_failed)
     V3  consistency      ``no_counterpart`` exactly when ``wit`` is empty, else verification_failed
     V4  verbatim quotes  ``ref_quote`` in the unit, ``wit_quote`` in the linked segments
-                         (``core.textnorm.quote_in``); a match only after variant folding
-                         keeps the link with flag ``quote_variant_form``; no match is
-                         verification_failed
+                         (``core.textnorm.quote_in``; a Tibetan quote may leave out a
+                         particle fused to its last syllable, as in V12); a match only
+                         after variant folding keeps the link with flag
+                         ``quote_variant_form``; no match is verification_failed
     V5  required quotes  ``ref_quote`` for every relation except equivalent, paraphrase and
                          expanded; ``wit_quote`` whenever ``wit`` is non-empty
     V6  polarity         ``reversal`` exactly when ``polarity_flip`` (else flag
@@ -27,8 +28,10 @@ convention flags make the consensus grade C), and window-level findings become
                          ``crossing``; the number of crossing pairs goes in a diagnostic
     V9  exhaustiveness   see ``collate.merge`` (needs all chunks of a chapter)
     V10 overlap          see ``collate.merge`` (needs two adjacent chunks)
-    V11 transliteration  ``transliterated`` needs a witness quote at least 50% transcription
-                         (``core.translit``), else flag ``transliteration_unsupported``; a
+    V11 transliteration  ``transliterated`` needs a witness quote that contains a
+                         transcription (``core.translit.contains_transcription``: at least
+                         50% transcription, or two transcription characters together),
+                         else flag ``transliteration_unsupported``; a
                          non-mantra reference unit linked to a mantra segment gets the
                          candidate flag ``instruction_as_mantra``
     V12 conventions      (collate.v2) a claimed convention goes on the link as its flag
@@ -37,7 +40,7 @@ convention flags make the consensus grade C), and window-level findings become
                          standing_renderings``, the entries shown in the prompt) with a
                          reference form in ``ref_quote`` and a rendering of the same entry
                          in ``wit_quote``; a transcribed name needs a ``ref_quote`` and a
-                         witness quote that passes the V11 measure. Otherwise the claim is
+                         witness quote that passes the V11 test. Otherwise the claim is
                          kept and the flag ``convention_unsupported`` added (never fatal)
 
 Witness-only records are checked for V2, V4 and V5 too; a failing one is dropped (its
@@ -64,7 +67,7 @@ from ..core.lexicon import (
 from ..core.textnorm import TSHEG, find_terms, fold_variants, for_quote, quote_in
 from ..core.translit import (  # noqa: F401  (MIN_TRANSLITERATION_DENSITY re-exported)
     MIN_TRANSLITERATION_DENSITY,
-    looks_transcribed,
+    contains_transcription,
     transliteration_charset,
 )
 from ..core.types import (  # noqa: F401  (CONVENTION_FLAGS, FLAG_CONVENTION_UNSUPPORTED re-exported)
@@ -250,7 +253,7 @@ def _check_unit(unit: Segment, rec: RawUnit, duplicate: bool, window: Window, le
         found.append(Diagnostic(FLAG_RELOCATION, (unit.id,), outside,
                                 detail=f"{window.key}: linked outside the core window {sorted(window.core_locals)} "
                                        f"to witness chapter(s) {where}"))
-    if relation is Relation.TRANSLITERATED and not looks_transcribed(               # V11
+    if relation is Relation.TRANSLITERATED and not contains_transcription(          # V11
             rec.wit_quote, window.wit_lang, lex.translit_charset):
         flags.add(FLAG_TRANSLITERATION_UNSUPPORTED)
     if unit.kind != "mantra" and any(window.segment[i].kind == "mantra" for i in wit_ids):
@@ -269,8 +272,8 @@ def convention_flags(rec: RawUnit, window: Window, lex: CheckLexicon) -> set[str
     if rec.convention is Convention.STANDING_RENDERING:
         supported = standing_supported(rec.ref_quote, rec.wit_quote, window.ref_lang, window.wit_lang, lex)
     else:
-        supported = bool(rec.ref_quote.strip()) and looks_transcribed(rec.wit_quote, window.wit_lang,
-                                                                      lex.translit_charset)
+        supported = bool(rec.ref_quote.strip()) and contains_transcription(rec.wit_quote, window.wit_lang,
+                                                                           lex.translit_charset)
     return {rec.convention.value} | (set() if supported else {FLAG_CONVENTION_UNSUPPORTED})
 
 
@@ -336,13 +339,21 @@ def _check_witness_only(handles: Sequence[str], kind: WitnessOnlyKind, quote: st
 
 
 def quote_match(quote: str, text: str, lang: str, variants: Mapping[str, str]) -> str | None:
-    """"exact", "variant" (only after folding variant forms) or None (not verbatim)."""
-    if quote_in(quote, text, lang):
+    """"exact", "variant" (only after folding variant forms) or None (not verbatim).
+
+    A Tibetan quote may end where a particle fused to its last syllable begins (the name
+    without its case ending: the unit's -por quoted as -po), the boundary V12 uses for
+    glossary forms; it may not stop inside a syllable anywhere else."""
+    q, t = for_quote(quote, lang), for_quote(text, lang)
+    if _verbatim(q, t, lang):
         return "exact"
-    if variants and quote_in(fold_variants(for_quote(quote, lang), variants),
-                             fold_variants(for_quote(text, lang), variants), lang):
+    if variants and _verbatim(fold_variants(q, variants), fold_variants(t, variants), lang):
         return "variant"
     return None
+
+
+def _verbatim(quote_key: str, text_key: str, lang: str) -> bool:
+    return quote_in(quote_key, text_key, lang) or (lang == "bo" and _term_in(quote_key, text_key, lang))
 
 
 def _resolve(handles: Sequence[str], window: Window) -> tuple[tuple[str, ...], tuple[str, ...]]:
