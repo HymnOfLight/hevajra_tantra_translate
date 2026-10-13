@@ -72,8 +72,9 @@ __all__ = [
 ]
 
 GOLD_COLUMNS = ("set", "window_id", "row_type", "unit_id", "fingerprint", "wit_ids", "relation", "convention",
-                "polarity_flip", "flags", "witness_only_kind", "annotator", "date", "minutes")
-GOLD_LEGACY_OPTIONAL = frozenset({"convention"})     # absent from files written before collate.v2
+                "polarity_flip", "flags", "witness_only_kind", "annotator", "date", "minutes", "note")
+# absent from older files: convention before collate.v2, note before 2026-10-13
+GOLD_LEGACY_OPTIONAL = frozenset({"convention", "note"})
 SETS = ("dev", "test", "test_second")
 ROW_REF, ROW_WITNESS_ONLY = "ref", "witness_only"
 WINDOWS_FILE = "windows.csv"
@@ -104,6 +105,7 @@ class GoldRow:
     date: str = ""
     minutes: float | None = None
     convention: str = ""               # ref rows: "" (not annotated) or a Convention value
+    note: str = ""                     # the annotator's markers and ids (e.g. an out-of-window segment id)
 
     @property
     def scored(self) -> bool:
@@ -157,7 +159,7 @@ def load(path: Path, reference: str = "") -> GoldSet:
     if name not in SETS:
         raise GoldError(f"{path}: gold set must be one of {SETS}, got {name!r}")
     header, rows = _read(path)
-    if header not in (set(GOLD_COLUMNS), set(GOLD_COLUMNS) - GOLD_LEGACY_OPTIONAL):
+    if not header <= set(GOLD_COLUMNS) or not set(GOLD_COLUMNS) - header <= GOLD_LEGACY_OPTIONAL:
         raise GoldError(f"{path}: wrong columns (unexpected {sorted(header - set(GOLD_COLUMNS))}, "
                         f"missing {sorted(set(GOLD_COLUMNS) - header)})")
     parsed = [_row(r, f"{path.name} line {n}", name) for n, r in enumerate(rows, start=2)]
@@ -192,7 +194,8 @@ def _row(raw: Mapping[str, str], where: str, set_name: str) -> GoldRow:
     row = GoldRow(set_name=set_name, window_id=v["window_id"], row_type=v["row_type"], unit_id=v["unit_id"],
                   fingerprint=v["fingerprint"], wit_ids=parse_ids(v["wit_ids"]), relation=v["relation"],
                   polarity_flip=flip, flags=parse_flags(v["flags"]), witness_only_kind=v["witness_only_kind"],
-                  annotator=v["annotator"], date=v["date"], minutes=minutes, convention=v["convention"])
+                  annotator=v["annotator"], date=v["date"], minutes=minutes, convention=v["convention"],
+                  note=v["note"])
     problem = _problem(row)
     if problem:
         raise GoldError(f"{where}: {row.unit_id or '(no unit_id)'}: {problem}")
@@ -251,7 +254,7 @@ def _to_row(r: GoldRow) -> dict[str, object]:
             "convention": r.convention, "polarity_flip": "true" if r.polarity_flip else "false",
             "flags": format_flags(r.flags), "witness_only_kind": r.witness_only_kind, "annotator": r.annotator,
             "date": r.date,
-            "minutes": "" if r.minutes is None else r.minutes}
+            "minutes": "" if r.minutes is None else r.minutes, "note": r.note}
 
 
 def read_windows(path: Path) -> list[TestWindow]:
@@ -286,7 +289,7 @@ def from_verdicts(verdicts: Iterable[Verdict], set_name: str, witness: str, refe
             unit_id=v.unit_id, fingerprint=v.fingerprint, wit_ids=wit_ids, relation="" if orphan else value,
             polarity_flip=v.polarity_flip, flags=v.flags, witness_only_kind=value if orphan else "",
             annotator=v.annotator, date=v.blind_date, minutes=v.minutes,
-            convention=decision_convention(v)))
+            convention=decision_convention(v), note=v.note))
     for n, row in enumerate(rows):
         problem = _problem(row)
         if problem:
@@ -300,7 +303,7 @@ def to_verdicts(gold: GoldSet) -> list[Verdict]:
     return [Verdict(batch_id=f"{gold.name}_{r.window_id}", item_id=f"gold:{r.unit_id}", task="gold",
                     unit_id=r.unit_id, fingerprint=r.fingerprint, blind_relation=r.relation or r.witness_only_kind,
                     blind_wit_ids=r.wit_ids, blind_convention=r.convention, polarity_flip=r.polarity_flip,
-                    flags=r.flags, annotator=r.annotator, blind_date=r.date, minutes=r.minutes)
+                    flags=r.flags, annotator=r.annotator, blind_date=r.date, minutes=r.minutes, note=r.note)
             for r in gold.rows]
 
 

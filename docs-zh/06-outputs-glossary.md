@@ -30,7 +30,7 @@
 | 文件 | 内容 |
 |---|---|
 | `data/annotations/verdicts/<见证>/<批次>.csv` | 已提交的人工裁决（27 列，含揭示时记录的机器极性判断 `machine_polarity_flip`，以及惯例三列 `machine_convention`、`blind_convention`、`final_convention`；旧的 23、24 列文件仍可读取） |
-| `data/annotations/gold/<见证>/<集>.csv` | 已提交的金标准（14 列，含 `convention`；旧的 13 列文件仍可读取，惯例读作"未标注"） |
+| `data/annotations/gold/<见证>/<集>.csv` | 已提交的金标准（15 列，含 `convention` 与 `note`；旧的 13 列文件仍可读取，惯例读作"未标注"） |
 | `data/codebook/collate.v2/standing_renderings.yaml` | collate.v2 的译名表；只有 `verified` 条目进入提示词、核验 V12 和复核表格旁的 `standing_renderings.csv` |
 | `data/annotations/verdicts/<见证>/plan_<批次>.csv`、`strata_<批次>.json` | 核验/抽检计划与抽样时冻结的分层（只有 id 与分层，无原文；与裁决一起提交，新运行目录也读取；旧运行目录里的 `review/plan_*.csv` 仍作后备） |
 | `data/ledger/test_evaluations.jsonl` | 测试集评估账本；完全相同的重复评分不追加（工具指纹、预注册、门控结果相同，已入账的每个指标都在且相等；新记录只可多出 collate.v2 新增指标族的键）。梵文参照模式下按参照与见证分账：`test_evaluations.<参照>.<见证>.jsonl` |

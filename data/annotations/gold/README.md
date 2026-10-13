@@ -24,9 +24,10 @@ filled in (with text) live under `runs/<id>/review/` and are never committed.
 
 ## `<set>.csv`
 
-UTF-8 (a byte-order mark is tolerated). Exactly these 14 columns, in any order. A file
-written before collate.v2 has no `convention` column (13 columns); it still loads, and every
-row then reads as not annotated for conventions.
+UTF-8 (a byte-order mark is tolerated). Exactly these 15 columns, in any order. A file
+written before collate.v2 has no `convention` column; it still loads, and every row then reads
+as not annotated for conventions. A file written before 2026-10-13 has no `note` column; it
+still loads with empty notes.
 
 | Column | Content |
 |---|---|
@@ -43,6 +44,7 @@ row then reads as not annotated for conventions.
 | `witness_only_kind` | `witness_only` rows: `addition`, `translator_note`, `paratext` or `belongs_elsewhere`; empty for `ref` rows |
 | `annotator` | name or initials |
 | `date` | `YYYY-MM-DD` |
+| `note` | the annotator's note from the sheet, kept short: markers and ids such as an out-of-window segment id, never copied source text |
 | `minutes` | minutes spent on the window, when recorded |
 
 Rules checked on load: every relation except `no_counterpart` names at least one witness

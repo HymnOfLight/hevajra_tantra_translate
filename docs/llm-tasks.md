@@ -407,7 +407,7 @@ standard deviations of the run-to-run difference between two 3-replicate consens
 about one sampling standard error); (2) its convention precision is at least 0.8; (3) a
 replicate-kappa floor symmetric in the two versions holds, read from the dev run's
 `collation/integrity.json: fleiss_kappa` (all collated units of the dev chapters, I.1
-included): if v1 reaches 0.80, v2 must too; if v1 does not, the floor does not decide. A
+included): if v1 reaches 0.80, v2 must too; if v1 does not, the floor does not decide. Convention precision without those three units is computed by hand from the per-unit records, not by `without_window`; they stay in condition (2) because three of about 262 units can move precision only a little, and the separate figure shows whether they do. Any prompt or effort tuning after the comparison first names the regions it may look at, and the comparison is then redone on the other regions only. A
 `convention_unsupported` on a consensus link may come from the consensus rule above rather than
 from a replicate's V12, and then counts in `convention_unsupported_rate` too. No gate uses a convention metric. Sentinels of kind `relation_in` may restrict conventions with
 `expect.conventions`.

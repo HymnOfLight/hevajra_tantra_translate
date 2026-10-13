@@ -47,6 +47,19 @@ def test_a_file_without_the_column_still_loads(tmp_path: Path):
     assert back.rows == GOLD.rows and all(r.convention == "" for r in back.rows)
 
 
+def test_the_note_is_kept_and_a_file_without_it_still_loads(tmp_path: Path):
+    noted = (dataclasses.replace(NAMED[0], note="out-of-window T0892:0593b19.1"), *NAMED[1:])
+    path = saved(tmp_path, noted)
+    assert G.load(path, reference=REF).rows[0].note == "out-of-window T0892:0593b19.1"
+    assert G.to_verdicts(G.load(path, reference=REF))[0].note == "out-of-window T0892:0593b19.1"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    k = lines[0].split(",").index("note")
+    path.write_text("\n".join(",".join(x for i, x in enumerate(line.split(",")) if i != k) for line in lines) + "\n",
+                    encoding="utf-8")
+    back = G.load(path, reference=REF)
+    assert [r.note for r in back.rows] == [""] * len(NAMED) and back.rows[1:] == NAMED[1:]
+
+
 @pytest.mark.parametrize("bad, message", [
     (row("D:1.1", "equivalent", ["T:1.1"], convention="name"), "convention 'name' is not one of"),
     (row("D:1.1", "no_counterpart", convention="transcribed_name"), "needs a linked relation"),

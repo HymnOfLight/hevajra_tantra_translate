@@ -68,7 +68,7 @@ def test_save_load_roundtrip(tmp_path: Path):
 def test_columns_exactly_as_specified():
     assert G.GOLD_COLUMNS == ("set", "window_id", "row_type", "unit_id", "fingerprint", "wit_ids", "relation",
                               "convention", "polarity_flip", "flags", "witness_only_kind", "annotator", "date",
-                              "minutes")
+                              "minutes", "note")
 
 
 @pytest.mark.parametrize("bad, message", [
