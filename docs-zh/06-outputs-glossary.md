@@ -17,7 +17,7 @@
 | `evaluation/scores.json`、`gate.json`、`sentinels.jsonl` | 门控所依据的那次评估的得分；门控结果与报告级别（`gating`、`gold_set`、`baselines_only` 说明它来自哪次评估：只有 Claude 在测试集上的评估才门控）；哨兵核对结果（每行一条） |
 | `evaluation/perturbations.json` | 扰动测试：错窗误链率、删句召回；`perturb --negation` 时另有去否定的极性召回 `negation`（只报告，不门控） |
 | `stats/estimates.json` | 各估计量（含区间、覆盖的误差来源、无法估计的原因）；含惯例的敏感性变体 `E1_any_conv`（只有 final 列；惯例与类别按分层从 phase-2 裁决联合插补，只用人工惯例，v1 运行同样有效）；另有先验敏感性 `E1_<主结局>_prior`；E3 可计算时另有 `E3.phi_V`、`E3.phi_S` |
-| `stats/details.json` | 改判率、Manski 界（`any`、`cov`；collate.v2 运行另有 `any_conv`）、E1_any_conv 的插补依据 `any_conv`（phase-2 裁决数、其中未标注惯例的个数（按无计）、记有惯例的个数、无偏移且记有惯例的个数、记有人工惯例的已核实单元数）、矩阵的惯例计数 `conventions`（固定译名、专名音写、未获核实、人工判定；只作描述）、未校正分层 `uncalibrated`、夹注上的仅见于汉文声明数 `ingest_notes`、Δ 的诊断（置换 p、TOST、重叠、机器标签的朴素 Δ 与衰减、匹配、按品/长度三分位的误判表、叙述框架句负对照、`power`）；分解 `e3`（写本列、被搁置的校勘本 `editions_ignored`、共同见证、各类计数与逐单元归类、O/E/O−E 与 φ、A2 界 `bound`）；梵文参照模式下的见证距离与 UPGMA 树 `distance` |
+| `stats/details.json` | 改判率、Manski 界（`any`、`cov`；collate.v2 运行另有 `any_conv`）、E1_any_conv 的插补依据 `any_conv`（phase-2 裁决数、其中未标注惯例的个数（按无计）、记有惯例的个数、无偏移且记有惯例的个数、记有人工惯例的已核实单元数、由金标准或解决裁决决定而未标注惯例的已核实单元数（按无计）及其中无偏移的个数）、矩阵的惯例计数 `conventions`（固定译名、专名音写、未获核实、人工判定；只作描述）、未校正分层 `uncalibrated`、夹注上的仅见于汉文声明数 `ingest_notes`、Δ 的诊断（置换 p、TOST、重叠、机器标签的朴素 Δ 与衰减、匹配、按品/长度三分位的误判表、叙述框架句负对照、`power`）；分解 `e3`（写本列、被搁置的校勘本 `editions_ignored`、共同见证、各类计数与逐单元归类、O/E/O−E 与 φ、A2 界 `bound`）；梵文参照模式下的见证距离与 UPGMA 树 `distance` |
 | `stats/power.json` | 主题标签齐全后，在真实标签上模拟的最小可检测效应与功效曲线（G4 取它与预注册 `stats.mde` 的较大者） |
 | `experiments/overattribution/`（预实验在 `pilot/` 子目录） | 试次表 `trials.jsonl`、回答 `responses.jsonl`、结果 `results.json`（含 `phase`、`outcome_basis`、`human_codes_set_aside`）、盲编码表 `human_coding_sheet.csv`、其私钥 `human_sample.json` |
 | `summary.md`、`*.svg` | 分级报告与图 |
