@@ -28,7 +28,8 @@ Conventions (collate.v2; ``core.types.Convention``)
     ``machine_convention``, ``blind_convention`` and ``final_convention`` record a
     convention apart from the relation, each in its own column (never in ``flags``): the
     blind value must survive the reveal. Three states: "" = not annotated (a file or sheet
-    made before the columns existed), ``none``, or a convention. "" and ``none`` are equal
+    made before the columns existed, or a cell marked ``?``: not decided yet), ``none``, or
+    a convention. A blank cell of a sheet that has the column is ``none``. "" and ``none`` are equal
     wherever a revision is judged (``same_convention``). A convention other than none needs
     a linked relation (a ``Relation`` other than no_counterpart; never lacuna, unresolved or
     an orphan row); ``decision_convention`` follows the column rule of ``decision``.
@@ -122,9 +123,17 @@ def decision_date(v: Verdict) -> str:
 
 
 # --------------------------------------------------------------------------- conventions
+CONVENTION_DEFERRED = "?"   # a sheet cell for "not decided yet": imports as "" (not annotated)
+
+
 def normalise_convention(value: str | None) -> str:
-    """A convention cell of a sheet that HAS the column: blank means ``none``."""
-    return (value or "").strip() or Convention.NONE.value
+    """A convention cell of a sheet that HAS the column: blank means ``none``;
+    ``CONVENTION_DEFERRED`` means not decided yet and reads as "" (not annotated), e.g. a
+    unit with a glossary term whose entry awaits verification."""
+    cell = (value or "").strip()
+    if cell == CONVENTION_DEFERRED:
+        return ""
+    return cell or Convention.NONE.value
 
 
 def same_convention(a: str, b: str) -> bool:

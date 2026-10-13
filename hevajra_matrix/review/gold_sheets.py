@@ -13,8 +13,9 @@ witness-only, keyed by its orphan row id. Written and read through ``review.shee
 and ``review.sheets.import_`` with task "gold".
 
 ``convention`` (collate.v2) is recorded apart from the relation, so that both the v1 and
-the v2 caliber can be computed from one gold: a blank cell imports as ``none``; a ref sheet
-exported before the column existed imports with "" (not annotated). Witness-only rows carry
+the v2 caliber can be computed from one gold: a blank cell imports as ``none``, a cell
+marked ``?`` (``verdicts.CONVENTION_DEFERRED``: not decided yet) and every row of a ref
+sheet exported before the column existed import with "" (not annotated). Witness-only rows carry
 no convention.
 """
 

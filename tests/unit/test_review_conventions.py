@@ -238,6 +238,14 @@ def test_gold_import_records_the_convention_and_checks_standing_renderings(tmp_p
         sheets.import_(ref_path, "gold", params=PARAMS, check=accept)
 
 
+def test_a_deferred_gold_convention_imports_unannotated(tmp_path: Path):
+    ref_path, header, rows = _gold_sheet(tmp_path)
+    rows[1]["convention"] = "?"           # the glossary entry awaits verification: no check, no value
+    write_rows(ref_path, header, rows)
+    out = sheets.import_(ref_path, "gold", params=PARAMS)
+    assert [v.blind_convention for v in out] == ["transcribed_name", "", "none"]
+
+
 def test_a_gold_sheet_of_before_the_column_imports_unannotated(tmp_path: Path):
     ref_path, header, rows = _gold_sheet(tmp_path)
     old = [c for c in header if c != "convention"]

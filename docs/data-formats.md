@@ -411,8 +411,11 @@ Import (`review import`, `review reveal`, `topics import`) drops every text colu
 (`text, ref_text, zh_context, context_before, context_after, machine_quotes`) and the
 `hint_other_model` column, and writes the committed files of section 3. A blind verify or audit
 sheet never contains a `machine_*` column. On a sheet with a convention column a blank cell
-reads as `none`; a sheet exported before collate.v2 lacks all its convention columns and imports
-as not annotated (a sheet lacking only some is refused). Conventions and
+reads as `none` and a cell holding `?` as not annotated (`review/verdicts.py:
+CONVENTION_DEFERRED`: not decided yet, e.g. a unit with a glossary term whose entry awaits
+verification; such a unit is left out of the convention metrics and of `relation_kappa_shared`);
+a sheet exported before collate.v2 lacks all its convention columns and imports as not annotated
+(a sheet lacking only some is refused). Conventions and
 `convention_unsupported` are refused in a `flags` column.
 
 Export never overwrites a blind or reveal sheet that holds an item without an imported verdict

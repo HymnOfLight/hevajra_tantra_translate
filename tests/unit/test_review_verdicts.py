@@ -100,6 +100,7 @@ def test_convention_states() -> None:
     assert CONVENTIONS == ("none", "standing_rendering", "transcribed_name")
     assert normalise_convention("") == normalise_convention(None) == normalise_convention("  ") == "none"
     assert normalise_convention(" transcribed_name ") == "transcribed_name"
+    assert normalise_convention("?") == normalise_convention(" ? ") == ""     # not decided yet
     assert same_convention("", "none") and same_convention("none", "") and same_convention("", "")
     assert not same_convention("", "transcribed_name") and not same_convention("none", "standing_rendering")
 
